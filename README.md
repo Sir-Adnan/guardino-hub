@@ -37,3 +37,8 @@ Use `POST /api/v1/admin/nodes/{id}/test-connection` to verify credentials and re
 - POST /api/v1/reseller/user-ops/quote
 - POST /api/v1/reseller/user-ops
 Adapters provision is mock-only for now: set `node.credentials.mock=true`.
+
+
+## Step 5: Real provisioning via panel APIs
+- Marzban/Pasarguard: POST /api/user (Bearer token)
+- WGDashboard: POST /api/addPeers/{configuration} + POST /api/sharePeer/create

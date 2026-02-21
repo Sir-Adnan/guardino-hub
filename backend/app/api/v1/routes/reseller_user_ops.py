@@ -18,6 +18,12 @@ from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse,
 
 router = APIRouter()
 
+def _panel_username(base_label: str, node_id: int) -> str:
+    # Keep it URL-safe and panel-friendly
+    safe = "".join([c for c in base_label if c.isalnum() or c in ("-","_")]).strip()[:24] or "user"
+    suffix = secrets.token_hex(3)
+    return f"{safe}-{node_id}-{suffix}"
+
 @router.post("/quote", response_model=PriceQuoteResponse)
 async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
@@ -73,7 +79,8 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     try:
         for n in nodes:
             adapter = get_adapter(n)
-            pr = await adapter.provision_user(label=payload.label, total_gb=payload.total_gb, expire_at=expire_at)
+            panel_username = _panel_username(payload.label, n.id)
+            pr = await adapter.provision_user(label=panel_username, total_gb=payload.total_gb, expire_at=expire_at)
             sa = SubAccount(
                 user_id=user.id,
                 node_id=n.id,
