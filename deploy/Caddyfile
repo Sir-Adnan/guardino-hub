@@ -1,0 +1,21 @@
+{
+  email {$ADMIN_EMAIL}
+}
+
+{$DOMAIN} {
+  encode gzip
+
+  route /api/* {
+    reverse_proxy api:8000
+  }
+
+  route /api/docs* {
+    reverse_proxy api:8000
+  }
+
+  route /docs* {
+    reverse_proxy api:8000
+  }
+
+  reverse_proxy web:3000
+}

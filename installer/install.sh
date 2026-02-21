@@ -66,3 +66,8 @@ echo "Superadmin password: $ADMIN_PASS"
 echo "Open: http://<server-ip>/"
 echo "API docs: http://<server-ip>/api/docs (proxied)"
 echo "----------------------------------------"
+
+
+# Optional HTTPS (Caddy)
+# 1) set DOMAIN and ADMIN_EMAIL in .env
+# 2) run: docker compose -f docker-compose.yml -f deploy/docker-compose.https.yml up -d --build

@@ -110,3 +110,22 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 - Frontend production build
 - Backend gunicorn+uvicorn workers
 - Installer: `sudo bash installer/install.sh`
+
+
+## Step 19: Backup/Restore + HTTPS option
+### Backup
+```bash
+bash deploy/backup.sh /opt/guardino-hub /opt/guardino-hub/backups
+```
+
+### Restore
+```bash
+bash deploy/restore.sh /opt/guardino-hub /opt/guardino-hub/backups/db_XXXX.sql
+```
+
+### HTTPS (optional)
+Set `DOMAIN` and `ADMIN_EMAIL` in `.env` then:
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.https.yml up -d --build
+```
+(This uses Caddy for automatic Let's Encrypt)
