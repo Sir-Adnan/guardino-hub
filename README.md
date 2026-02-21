@@ -80,3 +80,8 @@ A periodic task syncs `used_traffic` from Marzban/Pasarguard and disables users 
 
 ## Step 12: Central status policy
 Introduced `app.services.status_policy` to standardize how Guardino maps and enforces statuses across panels.
+
+
+## Step 13: Worker reliability
+- Added Redis locks to prevent overlapping task runs
+- Added basic task run stats counters

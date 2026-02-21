@@ -11,17 +11,28 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
 from app.services.status_policy import enforce_time_expiry
+from app.services.locks import redis_lock
+from app.services.task_metrics import TaskRunStats
 
 @celery_app.task(name="app.tasks.expiry.expire_due_users")
 def expire_due_users():
-    asyncio.run(_expire_due_users_async())
+    with redis_lock('guardino:lock:expire_due_users', ttl_seconds=110) as ok:
+        if not ok:
+            return
+    
+
+# internal
+
+
 
 async def _expire_due_users_async():
+    stats = TaskRunStats()
     now = datetime.now(timezone.utc)
     async with AsyncSessionLocal() as db:
         # Find active users whose expire_at <= now
         q = await db.execute(select(GuardinoUser).where(GuardinoUser.status == UserStatus.active, GuardinoUser.expire_at <= now).limit(500))
         users = q.scalars().all()
+        stats.scanned_users = len(users)
         if not users:
             return
 
@@ -35,6 +46,7 @@ async def _expire_due_users_async():
         # Expire each user (best-effort remote delete/restrict)
         for u in users:
             u.status = UserStatus.disabled
+        stats.affected_users = len(users)
 
         await db.commit()
 
@@ -47,7 +59,11 @@ async def _expire_due_users_async():
                 adapter = get_adapter(n)
                 # For all panels, best-effort delete to enforce expiry.
                 # If you prefer restrict over delete for some panels, we can add adapter.restrict_user later.
+                stats.remote_actions += 1
                 await enforce_time_expiry(n.panel_type, adapter, s.remote_identifier)
 
             except Exception:
+                stats.remote_failures += 1
                 pass
+
+        print('expire_due_users stats:', stats)

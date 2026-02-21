@@ -11,18 +11,29 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node
 from app.services.adapters.factory import get_adapter
 from app.services.status_policy import enforce_volume_exhausted
+from app.services.locks import redis_lock
+from app.services.task_metrics import TaskRunStats
 
 BYTES_PER_GB = 1024 ** 3
 
 @celery_app.task(name="app.tasks.usage.sync_usage")
 def sync_usage():
-    asyncio.run(_sync_usage_async())
+    with redis_lock('guardino:lock:sync_usage', ttl_seconds=280) as ok:
+        if not ok:
+            return
+    
+
+# internal
+
+
 
 async def _sync_usage_async():
+    stats = TaskRunStats()
     now = datetime.now(timezone.utc)
     async with AsyncSessionLocal() as db:
         q = await db.execute(select(GuardinoUser).where(GuardinoUser.status == UserStatus.active).limit(2000))
         users = q.scalars().all()
+        stats.scanned_users = len(users)
         if not users:
             return
 
@@ -63,10 +74,15 @@ async def _sync_usage_async():
 
             # enforce volume
             if u.used_bytes >= int(u.total_gb) * BYTES_PER_GB:
+                stats.affected_users += 1
                 u.status = UserStatus.disabled
                 # best-effort remote enforcement across panels
+                        stats.remote_actions += 1
                         await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
                     except Exception:
+                        stats.remote_failures += 1
                         pass
 
         await db.commit()
+
+        print('sync_usage stats:', stats)
