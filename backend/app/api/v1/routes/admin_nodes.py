@@ -67,3 +67,15 @@ async def soft_delete_node(node_id: int, db: AsyncSession = Depends(get_db), adm
     n.is_enabled = False
     await db.commit()
     return {"ok": True, "is_enabled": n.is_enabled}
+
+@router.post("/{node_id}/test-connection")
+async def test_connection(node_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    q = await db.execute(select(Node).where(Node.id == node_id))
+    n = q.scalar_one_or_none()
+    if not n:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    from app.services.adapters.factory import get_adapter
+    adapter = get_adapter(n)
+    result = await adapter.test_connection()
+    return {"ok": result.ok, "detail": result.detail, "meta": result.meta}

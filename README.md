@@ -27,3 +27,7 @@ API docs: http://localhost:8000/docs
 - `deploy/` compose & nginx templates
 
 > NOTE: This is a scaffold. Adapters for Marzban/Pasarguard/WGDashboard are stubbed and will be filled based on official API specs.
+
+
+## Admin node connection test
+Use `POST /api/v1/admin/nodes/{id}/test-connection` to verify credentials and reachability (no changes are applied to panel DB).
