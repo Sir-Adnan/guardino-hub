@@ -4,11 +4,15 @@ import * as React from "react";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/components/auth-context";
+import { Button } from "@/components/ui/button";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
 
 export default function UsersPage() {
+  const { me } = useAuth();
+  const locked = (me?.balance ?? 1) <= 0;
   const [q, setQ] = React.useState("");
   const [data, setData] = React.useState<UsersPage | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
@@ -35,7 +39,11 @@ export default function UsersPage() {
           <div className="text-sm text-[hsl(var(--fg))]/70">لیست کاربران شما</div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input placeholder="جستجو..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="flex items-center justify-between gap-2">
+            <Input placeholder="جستجو..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="text-xs text-[hsl(var(--fg))]/70">Balance: <span className="font-semibold">{me?.balance ?? "—"}</span></div>
+          </div>
+          {locked ? <div className="text-xs rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3">بالانس شما صفر است؛ فقط لیست کاربران قابل مشاهده است.</div> : null}
           {err ? <div className="text-sm text-red-500">{err}</div> : null}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

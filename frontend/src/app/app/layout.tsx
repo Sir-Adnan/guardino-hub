@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
+import { AuthProvider } from "@/components/auth-context";
 import { storage } from "@/lib/storage";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -13,7 +14,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [r]);
 
   return (
-    <div className="min-h-screen flex">
+    <AuthProvider><div className="min-h-screen flex">
       <Sidebar />
       <main className="flex-1 p-6 bg-[hsl(var(--bg))]">
         {children}

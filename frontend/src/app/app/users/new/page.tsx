@@ -46,8 +46,9 @@ export default function NewUserPage() {
 
   async function loadNodes() {
     try {
-      const res = await apiFetch<any[]>("/api/v1/admin/nodes");
-      setNodes(res.map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type })));
+      const res = await apiFetch<any>("/api/v1/reseller/nodes");
+      const arr = res.items || [];
+      setNodes(arr.map((n:any) => ({ id: n.id, name: n.name, panel_type: n.panel_type })));
       push({ title: "Nodes loaded", type: "success" });
     } catch (e:any) {
       push({ title: "Cannot load nodes", desc: String(e.message||e), type: "error" });

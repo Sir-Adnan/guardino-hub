@@ -32,6 +32,16 @@ export default function AdminResellersPage() {
   const [creditId, setCreditId] = React.useState<number>(0);
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
 
+  async function load() {
+  try {
+    const res = await apiFetch<any>("/api/v1/admin/reports/resellers");
+    setItems(res.items || []);
+    push({ title: "Loaded", type: "success" });
+  } catch (e: any) {
+    push({ title: "Error", desc: String(e.message || e), type: "error" });
+  }
+}
+
   async function create() {
     try {
       const res = await apiFetch<ResellerOut>("/api/v1/admin/resellers", {
@@ -84,7 +94,7 @@ export default function AdminResellersPage() {
                   <Input placeholder="bundle/GB" type="number" value={bundleGb} onChange={(e) => setBundleGb(Number(e.target.value))} />
                   <Input placeholder="price/day" type="number" value={priceDay} onChange={(e) => setPriceDay(Number(e.target.value))} />
                 </div>
-                <Button type="button" onClick={create}>Create</Button>
+                <div className="flex gap-2"><Button type="button" onClick={create}>Create</Button><Button type="button" variant="outline" onClick={load}>Load</Button></div>
               </div>
             </div>
 

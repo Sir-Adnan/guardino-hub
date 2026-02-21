@@ -165,3 +165,9 @@ docker compose exec -T api alembic upgrade head
 - Reseller node list endpoint (only allowed nodes)
 - Better WG usage reporting (if available)
 - UI polish: node picker, charts, tables, pagination
+
+
+## Step 21: UI polish + admin reports + role-based sidebar
+- `/api/v1/auth/me` for role/balance
+- Reseller nodes endpoint for proper node picker
+- Admin reports endpoints + UI pages (ledger/orders)

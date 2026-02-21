@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { useAuth } from "@/components/auth-context";
 import { LayoutDashboard, Users, Server, Settings } from "lucide-react";
 
 const items = [
@@ -11,18 +12,22 @@ const items = [
 { href: "/app/admin/resellers", label: "Resellers", icon: Users },
 { href: "/app/admin/nodes", label: "Admin Nodes", icon: Server },
   { href: "/app/admin/allocations", label: "Allocations", icon: Server },
+  { href: "/app/admin/reports/ledger", label: "Ledger", icon: Server },
+  { href: "/app/admin/reports/orders", label: "Orders", icon: Server },
   { href: "/app/users", label: "Users", icon: Users },
   { href: "/app/nodes", label: "Nodes", icon: Server },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
+  const { me } = useAuth();
+  const isAdmin = me?.role === "admin";
   const p = usePathname();
   return (
     <aside className="w-64 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))]">
       <div className="p-4 text-lg font-semibold">Guardino Hub</div>
       <nav className="px-2">
-        {items.map((it) => {
+        {items.filter(it => isAdmin ? true : !it.href.startsWith('/app/admin')).map((it) => {
           const active = p === it.href || (it.href !== "/app" && p.startsWith(it.href));
           const Icon = it.icon;
           return (
