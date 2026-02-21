@@ -103,3 +103,10 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 
 ## Step 17: Allocations UI
 - Admin allocations page + quick node selection helper in create user wizard
+
+
+## Step 18: Production deploy + installer
+- Nginx reverse proxy (port 80)
+- Frontend production build
+- Backend gunicorn+uvicorn workers
+- Installer: `sudo bash installer/install.sh`

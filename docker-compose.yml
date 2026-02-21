@@ -45,14 +45,23 @@ beat:
   command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app beat --loglevel=INFO"]
 
 web:
-  build: ./frontend
-  env_file:
-    - .env
+    build: ./frontend
+    env_file:
+      - .env
+    depends_on:
+      - api
+    expose:
+      - "3000"
+
+nginx:
+  image: nginx:1.27-alpine
   depends_on:
     - api
+    - web
   ports:
-    - "3000:3000"
-  command: ["bash", "-lc", "npm install && npm run dev"]
+    - "80:80"
+  volumes:
+    - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   guardino_db:

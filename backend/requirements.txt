@@ -13,3 +13,5 @@ python-multipart==0.0.12
 
 celery==5.4.0
 redis==5.0.8
+
+gunicorn==22.0.0
