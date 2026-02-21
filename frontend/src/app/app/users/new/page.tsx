@@ -1,0 +1,196 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
+
+type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
+type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
+
+const durationPresets = [
+  { key: "7d", label: "۷ روز" },
+  { key: "1m", label: "۱ ماه" },
+  { key: "3m", label: "۳ ماه" },
+  { key: "6m", label: "۶ ماه" },
+  { key: "1y", label: "۱ سال" },
+];
+
+export default function NewUserPage() {
+  const r = useRouter();
+  const { push } = useToast();
+
+  const [label, setLabel] = React.useState("");
+  const [username, setUsername] = React.useState("");
+  const [randomize, setRandomize] = React.useState(false);
+
+  const [totalGb, setTotalGb] = React.useState<number>(10);
+  const [pricingMode, setPricingMode] = React.useState<"per_node" | "bundle">("per_node");
+
+  const [preset, setPreset] = React.useState<string>("1m");
+  const [days, setDays] = React.useState<number>(30);
+
+  const [nodeIds, setNodeIds] = React.useState<string>(""); // comma-separated for now
+
+  const [quote, setQuote] = React.useState<QuoteResp | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  function randomName() {
+    const v = `u_${Math.random().toString(16).slice(2, 10)}`;
+    setUsername(v);
+  }
+
+  async function doQuote() {
+    setLoading(true);
+    try {
+      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const payload: any = {
+        label,
+        username: username || undefined,
+        randomize_username: randomize,
+        total_gb: totalGb,
+        days,
+        duration_preset: preset || undefined,
+        pricing_mode: pricingMode,
+        node_ids,
+      };
+      const res = await apiFetch<QuoteResp>("/api/v1/reseller/user-ops/quote", { method: "POST", body: JSON.stringify(payload) });
+      setQuote(res);
+      push({ title: "پیش‌فاکتور آماده شد", type: "success" });
+    } catch (e: any) {
+      push({ title: "خطا در محاسبه قیمت", desc: String(e.message || e), type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function doCreate() {
+    setLoading(true);
+    try {
+      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const payload: any = {
+        label,
+        username: username || undefined,
+        randomize_username: randomize,
+        total_gb: totalGb,
+        days,
+        duration_preset: preset || undefined,
+        pricing_mode: pricingMode,
+        node_ids,
+      };
+      const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", { method: "POST", body: JSON.stringify(payload) });
+      push({ title: "کاربر ساخته شد", desc: `ID: ${res.user_id}`, type: "success" });
+      r.push(`/app/users/${res.user_id}`);
+    } catch (e: any) {
+      push({ title: "خطا در ساخت کاربر", desc: String(e.message || e), type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="text-xl font-semibold">ساخت کاربر</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">نام کاربری دستی یا رندوم، پکیج زمانی، حجم، و حالت قیمت</div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm">Label (نمایش)</label>
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً customer-01" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm">Username (اختیاری)</label>
+              <div className="flex gap-2">
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اگر خالی باشد label استفاده می‌شود" />
+                <Button type="button" variant="outline" onClick={randomName}>Random</Button>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/70">
+                <input type="checkbox" checked={randomize} onChange={(e) => setRandomize(e.target.checked)} />
+                ساخت نام کاربری رندوم در سمت سرور
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm">حجم (GB)</label>
+              <Input type="number" value={totalGb} onChange={(e) => setTotalGb(Number(e.target.value))} />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm">حالت قیمت</label>
+              <div className="flex gap-2">
+                <Button type="button" variant={pricingMode === "per_node" ? "primary" : "outline"} onClick={() => setPricingMode("per_node")}>Per Node</Button>
+                <Button type="button" variant={pricingMode === "bundle" ? "primary" : "outline"} onClick={() => setPricingMode("bundle")}>Bundle</Button>
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">Bundle یعنی قیمت مرکزی برای کل پنل‌ها فقط یک‌بار حساب شود.</div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm">پکیج زمانی</label>
+              <div className="flex flex-wrap gap-2">
+                {durationPresets.map((p) => (
+                  <Button
+                    key={p.key}
+                    type="button"
+                    variant={preset === p.key ? "primary" : "outline"}
+                    onClick={() => {
+                      setPreset(p.key);
+                      // days is derived on backend, but we set UI hint too
+                      if (p.key === "7d") setDays(7);
+                      if (p.key === "1m") setDays(30);
+                      if (p.key === "3m") setDays(90);
+                      if (p.key === "6m") setDays(180);
+                      if (p.key === "1y") setDays(365);
+                    }}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">می‌توانی روزها را هم دستی تغییر بدهی (اختیاری)</div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm">Days (اختیاری)</label>
+              <Input type="number" value={days} onChange={(e) => setDays(Number(e.target.value))} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm">Node IDs (اختیاری)</label>
+            <Input value={nodeIds} onChange={(e) => setNodeIds(e.target.value)} placeholder="مثلاً 1,2,3 (اگر خالی باشد default nodes)" />
+            <div className="text-xs text-[hsl(var(--fg))]/70">در نسخه بعد، این بخش به انتخاب گرافیکی نودها تبدیل می‌شود.</div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>محاسبه قیمت</Button>
+            <Button type="button" disabled={loading} onClick={doCreate}>ساخت کاربر</Button>
+            <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>بازگشت</Button>
+          </div>
+
+          {quote ? (
+            <Card>
+              <CardHeader>
+                <div className="text-sm text-[hsl(var(--fg))]/70">پیش‌فاکتور</div>
+                <div className="text-xl font-semibold">{quote.total_amount.toLocaleString()} تومان</div>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <div>هزینه زمان: {quote.time_amount.toLocaleString()}</div>
+                <div className="text-[hsl(var(--fg))]/70">جزئیات per-node (اگر per_node باشد):</div>
+                <pre className="text-xs bg-[hsl(var(--muted))] rounded-xl p-3 overflow-auto">{JSON.stringify(quote.per_node_amount, null, 2)}</pre>
+              </CardContent>
+            </Card>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

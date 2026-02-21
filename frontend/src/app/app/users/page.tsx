@@ -25,7 +25,13 @@ export default function UsersPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="text-xl font-semibold">Users</div>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xl font-semibold">Users</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">لیست کاربران شما</div>
+            </div>
+            <a href="/app/users/new" className="rounded-xl px-4 py-2 text-sm font-medium bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] shadow-soft">ساخت کاربر</a>
+          </div>
           <div className="text-sm text-[hsl(var(--fg))]/70">لیست کاربران شما</div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -46,7 +52,7 @@ export default function UsersPage() {
                 {items.map((u) => (
                   <tr key={u.id} className="border-b border-[hsl(var(--border))]">
                     <td className="py-2">{u.id}</td>
-                    <td className="py-2">{u.label}</td>
+                    <td className="py-2"><a className="underline decoration-[hsl(var(--border))] hover:opacity-80" href={`/app/users/${u.id}`}>{u.label}</a></td>
                     <td className="py-2">{u.total_gb}</td>
                     <td className="py-2">{new Date(u.expire_at).toLocaleString()}</td>
                     <td className="py-2">{u.status}</td>

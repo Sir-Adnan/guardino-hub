@@ -90,3 +90,8 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 ## Step 14: Frontend UI scaffold
 - Next.js (App Router) + RTL + light/dark + accent picker
 - Pages: /login, /app (dashboard), /app/users, /app/settings
+
+
+## Step 15: Reseller UI
+- Create user wizard
+- User detail: links + ops
