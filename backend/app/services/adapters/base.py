@@ -15,9 +15,4 @@ class ProvisionResult:
     direct_sub_url: str | None = None
     meta: dict[str, Any] | None = None
 
-class PanelAdapter(Protocol):
-    async def test_connection(self) -> TestConnectionResult: ...
-    async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult: ...
-
-class AdapterError(RuntimeError):
-    pass
+\1    async def get_direct_subscription_url(self, remote_identifier: str) -> str | None: ...

@@ -159,3 +159,7 @@ class WGDashboardAdapter:
 
         # remote_identifier: we use public key (unique)
         return ProvisionResult(remote_identifier=pub, direct_sub_url=direct, meta={"ip": ip, "share_id": share_id, "add_peers_response": js})
+
+async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
+    # WGDashboard direct link should be created at provision time (sharePeer). We cannot reliably recreate without more stored data.
+    return None

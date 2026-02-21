@@ -73,3 +73,20 @@ class MarzbanAdapter:
             js = r.json()
             sub_url = js.get("subscription_url") or None
             return ProvisionResult(remote_identifier=str(js.get("username", label)), direct_sub_url=sub_url, meta={"panel": "marzban"})
+
+async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
+    """Fetch direct subscription URL for an existing user from panel."""
+    # Token login
+    url_token = f"{self.base_url}/api/admin/token"
+    data = {"username": self.username, "password": self.password}
+    async with build_async_client() as client:
+        r = await client.post(url_token, data=data)
+        r.raise_for_status()
+        token = r.json().get("access_token")
+        if not token:
+            return None
+        url_user = f"{self.base_url}/api/user/{remote_identifier}"
+        ru = await client.get(url_user, headers={"Authorization": f"Bearer {token}"})
+        ru.raise_for_status()
+        js = ru.json()
+        return js.get("subscription_url")

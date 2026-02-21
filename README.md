@@ -42,3 +42,8 @@ Adapters provision is mock-only for now: set `node.credentials.mock=true`.
 ## Step 5: Real provisioning via panel APIs
 - Marzban/Pasarguard: POST /api/user (Bearer token)
 - WGDashboard: POST /api/addPeers/{configuration} + POST /api/sharePeer/create
+
+
+## Step 6: Links + Master subscription
+- GET /api/v1/reseller/users/{id}/links?refresh=true
+- GET /api/v1/sub/{token} (public)
