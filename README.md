@@ -47,3 +47,10 @@ Adapters provision is mock-only for now: set `node.credentials.mock=true`.
 ## Step 6: Links + Master subscription
 - GET /api/v1/reseller/users/{id}/links?refresh=true
 - GET /api/v1/sub/{token} (public)
+
+
+## Step 7: User lifecycle ops + refund policy
+- POST /api/v1/reseller/users/{id}/extend
+- POST /api/v1/reseller/users/{id}/add-traffic
+- POST /api/v1/reseller/users/{id}/change-nodes
+- POST /api/v1/reseller/users/{id}/refund  (10 days, remaining GB only)
