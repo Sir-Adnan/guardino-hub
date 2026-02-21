@@ -120,3 +120,32 @@ async def delete_user(self, remote_identifier: str) -> None:
             pass
         rd = await client.delete(f"{self.base_url}/api/user/{remote_identifier}", headers={"Authorization": f"Bearer {token}"})
         rd.raise_for_status()
+
+async def set_status(self, remote_identifier: str, status: str) -> None:
+    url_token = f"{self.base_url}/api/admin/token"
+    data = {"username": self.username, "password": self.password}
+    async with build_async_client() as client:
+        r = await client.post(url_token, data=data)
+        r.raise_for_status()
+        token = r.json().get("access_token")
+        if not token:
+            raise AdapterError("Token not found")
+        url_user = f"{self.base_url}/api/user/{remote_identifier}"
+        ru = await client.put(url_user, json={"status": status}, headers={"Authorization": f"Bearer {token}"})
+        ru.raise_for_status()
+
+async def get_used_bytes(self, remote_identifier: str) -> int | None:
+    url_token = f"{self.base_url}/api/admin/token"
+    data = {"username": self.username, "password": self.password}
+    async with build_async_client() as client:
+        r = await client.post(url_token, data=data)
+        r.raise_for_status()
+        token = r.json().get("access_token")
+        if not token:
+            return None
+        url_user = f"{self.base_url}/api/user/{remote_identifier}"
+        ru = await client.get(url_user, headers={"Authorization": f"Bearer {token}"})
+        ru.raise_for_status()
+        js = ru.json()
+        used = js.get("used_traffic")
+        return int(used) if used is not None else None

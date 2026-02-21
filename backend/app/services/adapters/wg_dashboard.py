@@ -178,3 +178,27 @@ class WGDashboardAdapter:
                 headers={"wg-dashboard-apikey": self.apikey},
                 json={"peers": [remote_identifier]},
             )
+
+async def set_status(self, remote_identifier: str, status: str) -> None:
+    # Map statuses to WG actions
+    # active -> allowAccessPeers
+    # limited/disabled/expired -> restrictPeers
+    action = "allow" if status == "active" else "restrict"
+    async with build_async_client() as client:
+        if action == "allow":
+            await client.post(
+                f"{self.base_url}/api/allowAccessPeers/{self.configuration}",
+                headers={"wg-dashboard-apikey": self.apikey},
+                json={"peers": [remote_identifier]},
+            )
+        else:
+            await client.post(
+                f"{self.base_url}/api/restrictPeers/{self.configuration}",
+                headers={"wg-dashboard-apikey": self.apikey},
+                json={"peers": [remote_identifier]},
+            )
+
+async def get_used_bytes(self, remote_identifier: str) -> int | None:
+    # WGDashboard does not provide per-peer total bytes in this collection reliably.
+    # Volume is enforced by schedule job (total_data) configured at provision time.
+    return None

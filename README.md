@@ -66,3 +66,7 @@ On extend/add-traffic/refund/delete we also update/delete on remote panels (best
 
 ## Step 9: Expiry worker (Celery Beat)
 A periodic task marks due users as disabled and enforces expiry on remote panels (including WGDashboard) by deleting/restricting peers.
+
+
+## Step 10: Usage sync worker
+A periodic task syncs `used_traffic` from Marzban/Pasarguard and disables users when volume is exhausted. WGDashboard volume is enforced by its schedule job; used bytes may remain unknown.
