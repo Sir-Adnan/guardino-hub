@@ -44,5 +44,15 @@ beat:
     - redis
   command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app beat --loglevel=INFO"]
 
+web:
+  build: ./frontend
+  env_file:
+    - .env
+  depends_on:
+    - api
+  ports:
+    - "3000:3000"
+  command: ["bash", "-lc", "npm install && npm run dev"]
+
 volumes:
   guardino_db:

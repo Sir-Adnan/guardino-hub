@@ -85,3 +85,8 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 ## Step 13: Worker reliability
 - Added Redis locks to prevent overlapping task runs
 - Added basic task run stats counters
+
+
+## Step 14: Frontend UI scaffold
+- Next.js (App Router) + RTL + light/dark + accent picker
+- Pages: /login, /app (dashboard), /app/users, /app/settings

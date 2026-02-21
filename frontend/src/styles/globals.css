@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 0 0% 100%;
+  --fg: 222 47% 11%;
+  --card: 0 0% 100%;
+  --border: 214 32% 91%;
+  --muted: 210 40% 96%;
+  --accent: 222 89% 55%;
+  --accent-fg: 0 0% 100%;
+  --font-sans: ui-sans-serif;
+}
+
+.dark {
+  --bg: 222 47% 11%;
+  --fg: 210 40% 98%;
+  --card: 222 47% 13%;
+  --border: 217 33% 20%;
+  --muted: 217 33% 17%;
+  --accent: 222 89% 65%;
+  --accent-fg: 222 47% 11%;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: hsl(var(--bg));
+  color: hsl(var(--fg));
+}
