@@ -62,3 +62,7 @@ Adapters provision is mock-only for now: set `node.credentials.mock=true`.
 
 ### Remote updates
 On extend/add-traffic/refund/delete we also update/delete on remote panels (best-effort).
+
+
+## Step 9: Expiry worker (Celery Beat)
+A periodic task marks due users as disabled and enforces expiry on remote panels (including WGDashboard) by deleting/restricting peers.

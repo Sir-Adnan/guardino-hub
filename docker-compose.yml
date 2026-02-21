@@ -26,5 +26,23 @@ services:
       - "8000:8000"
     command: ["bash", "-lc", "uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
+worker:
+  build: ./backend
+  env_file:
+    - .env
+  depends_on:
+    - db
+    - redis
+  command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app worker --loglevel=INFO"]
+
+beat:
+  build: ./backend
+  env_file:
+    - .env
+  depends_on:
+    - db
+    - redis
+  command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app beat --loglevel=INFO"]
+
 volumes:
   guardino_db:
