@@ -52,3 +52,11 @@ def enforce_balance_or_readonly_users(reseller: Reseller, request_path: str, req
     allowed = (request_method == "GET" and request_path.startswith("/api/v1/reseller/users"))
     if not allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Balance is zero: read-only (users list only)")
+
+
+from fastapi import Request
+
+async def block_if_balance_zero(request: Request, reseller: Reseller = Depends(require_reseller)):
+    # Global reseller lock: if balance <= 0, only allow GET /api/v1/reseller/users (list)
+    enforce_balance_or_readonly_users(reseller, request.url.path, request.method)
+    return reseller

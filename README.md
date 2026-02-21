@@ -31,3 +31,9 @@ API docs: http://localhost:8000/docs
 
 ## Admin node connection test
 Use `POST /api/v1/admin/nodes/{id}/test-connection` to verify credentials and reachability (no changes are applied to panel DB).
+
+
+## Step 4 (WIP): Reseller user creation (mock provisioning)
+- POST /api/v1/reseller/user-ops/quote
+- POST /api/v1/reseller/user-ops
+Adapters provision is mock-only for now: set `node.credentials.mock=true`.
