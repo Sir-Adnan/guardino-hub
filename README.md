@@ -76,3 +76,7 @@ A periodic task syncs `used_traffic` from Marzban/Pasarguard and disables users 
 - Marzban/Pasarguard: on time expiry -> disable (no revoke_sub, no delete)
 - WGDashboard: on time expiry -> delete peer
 - On extend/add-traffic: best-effort enable user again
+
+
+## Step 12: Central status policy
+Introduced `app.services.status_policy` to standardize how Guardino maps and enforces statuses across panels.

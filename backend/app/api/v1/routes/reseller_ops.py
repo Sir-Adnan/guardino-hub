@@ -16,6 +16,7 @@ from app.models.ledger import LedgerTransaction
 from app.services.pricing import calculate_price, resolve_allowed_nodes
 from app.services.adapters.factory import get_adapter
 from app.services.refund import refundable_gb_for_user
+from app.services.status_policy import enable_if_needed
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
 from app.schemas.ops import ExtendRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, OpResult
@@ -60,7 +61,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
                 adapter = get_adapter(n)
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
                 try:
-                    await adapter.enable_user(s.remote_identifier)
+                    await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
                 except Exception:
                     pass
                 # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
@@ -123,7 +124,7 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
             adapter = get_adapter(n)
             await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
                 try:
-                    await adapter.enable_user(s.remote_identifier)
+                    await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
                 except Exception:
                     pass
                 # WGDashboard: also update share link ExpireDate if we have ShareID in cached url

@@ -10,6 +10,7 @@ from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
+from app.services.status_policy import enforce_time_expiry
 
 @celery_app.task(name="app.tasks.expiry.expire_due_users")
 def expire_due_users():
@@ -46,13 +47,7 @@ async def _expire_due_users_async():
                 adapter = get_adapter(n)
                 # For all panels, best-effort delete to enforce expiry.
                 # If you prefer restrict over delete for some panels, we can add adapter.restrict_user later.
-                # Time expiry enforcement policy:
-# - WGDashboard: delete peer (hard cut)
-# - Marzban/Pasarguard: disable user (keep subscription URL stable; no revoke_sub)
-if n.panel_type == PanelType.wg_dashboard:
-    await adapter.delete_user(s.remote_identifier)
-else:
-    await adapter.disable_user(s.remote_identifier)
+                await enforce_time_expiry(n.panel_type, adapter, s.remote_identifier)
 
             except Exception:
                 pass

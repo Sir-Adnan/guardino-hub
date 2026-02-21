@@ -10,6 +10,7 @@ from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node
 from app.services.adapters.factory import get_adapter
+from app.services.status_policy import enforce_volume_exhausted
 
 BYTES_PER_GB = 1024 ** 3
 
@@ -63,17 +64,8 @@ async def _sync_usage_async():
             # enforce volume
             if u.used_bytes >= int(u.total_gb) * BYTES_PER_GB:
                 u.status = UserStatus.disabled
-                # best-effort remote restrict across panels
-                for s in u_subs:
-                    n = nodes.get(s.node_id)
-                    if not n:
-                        continue
-                    try:
-                        adapter = get_adapter(n)
-                        if n.panel_type.value == "wg_dashboard":
-                            await adapter.set_status(s.remote_identifier, "limited")
-                        else:
-                            await adapter.disable_user(s.remote_identifier)
+                # best-effort remote enforcement across panels
+                        await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
                     except Exception:
                         pass
 
