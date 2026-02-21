@@ -14,6 +14,7 @@ from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.services.pricing import resolve_allowed_nodes, calculate_price
 from app.services.adapters.factory import get_adapter
+from app.services.user_inputs import resolve_days, sanitize_username, random_username
 from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse, PriceQuoteResponse
 
 router = APIRouter()
@@ -26,19 +27,22 @@ def _panel_username(base_label: str, node_id: int) -> str:
 
 @router.post("/quote", response_model=PriceQuoteResponse)
 async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    days_final = resolve_days(payload.days, payload.duration_preset)
+    days_final = resolve_days(payload.days, payload.duration_preset)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
-    total, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days, pricing_mode=payload.pricing_mode)
+    total, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
     return PriceQuoteResponse(total_amount=total, per_node_amount=per_node, time_amount=time_amount)
 
 @router.post("", response_model=CreateUserResponse)
 async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    days_final = resolve_days(payload.days, payload.duration_preset)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
 
-    total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days, pricing_mode=payload.pricing_mode)
+    total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
 
     # Must have enough balance; balance must never go negative
     if reseller.balance < total_amount:
@@ -57,8 +61,20 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     await db.flush()
 
     now = datetime.now(timezone.utc)
-    expire_at = now + timedelta(days=int(payload.days))
+    expire_at = now + timedelta(days=int(days_final))
     token = secrets.token_hex(16)
+
+# username handling
+effective_username = None
+if payload.randomize_username:
+    effective_username = random_username("u")
+elif payload.username:
+    effective_username = sanitize_username(payload.username)
+    if not effective_username:
+        effective_username = None
+
+remote_label = effective_username or payload.label
+
 
     user = GuardinoUser(
         owner_reseller_id=reseller.id,
