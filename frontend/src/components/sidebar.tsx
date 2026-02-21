@@ -5,7 +5,11 @@ import { cn } from "@/lib/cn";
 import { LayoutDashboard, Users, Server, Settings } from "lucide-react";
 
 const items = [
+  // Reseller + Admin (backend will enforce permissions)
+
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+{ href: "/app/admin/resellers", label: "Resellers", icon: Users },
+{ href: "/app/admin/nodes", label: "Admin Nodes", icon: Server },
   { href: "/app/users", label: "Users", icon: Users },
   { href: "/app/nodes", label: "Nodes", icon: Server },
   { href: "/app/settings", label: "Settings", icon: Settings },

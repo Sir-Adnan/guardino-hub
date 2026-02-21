@@ -95,3 +95,7 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 ## Step 15: Reseller UI
 - Create user wizard
 - User detail: links + ops
+
+
+## Step 16: Admin UI
+- Admin pages for resellers and nodes
