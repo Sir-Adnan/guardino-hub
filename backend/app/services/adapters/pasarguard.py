@@ -149,3 +149,10 @@ async def get_used_bytes(self, remote_identifier: str) -> int | None:
         js = ru.json()
         used = js.get("used_traffic")
         return int(used) if used is not None else None
+
+async def disable_user(self, remote_identifier: str) -> None:
+    # Non-destructive: mark as disabled/expired without revoke_sub or delete
+    await self.set_status(remote_identifier, "disabled")
+
+async def enable_user(self, remote_identifier: str) -> None:
+    await self.set_status(remote_identifier, "active")

@@ -59,6 +59,10 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
             try:
                 adapter = get_adapter(n)
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+                try:
+                    await adapter.enable_user(s.remote_identifier)
+                except Exception:
+                    pass
                 # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
                 try:
                     if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
@@ -118,6 +122,10 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
         try:
             adapter = get_adapter(n)
             await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+                try:
+                    await adapter.enable_user(s.remote_identifier)
+                except Exception:
+                    pass
                 # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
                 try:
                     if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:

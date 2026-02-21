@@ -202,3 +202,9 @@ async def get_used_bytes(self, remote_identifier: str) -> int | None:
     # WGDashboard does not provide per-peer total bytes in this collection reliably.
     # Volume is enforced by schedule job (total_data) configured at provision time.
     return None
+
+async def disable_user(self, remote_identifier: str) -> None:
+    await self.set_status(remote_identifier, "limited")
+
+async def enable_user(self, remote_identifier: str) -> None:
+    await self.set_status(remote_identifier, "active")

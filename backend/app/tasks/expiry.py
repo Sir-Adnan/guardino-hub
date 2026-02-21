@@ -46,6 +46,13 @@ async def _expire_due_users_async():
                 adapter = get_adapter(n)
                 # For all panels, best-effort delete to enforce expiry.
                 # If you prefer restrict over delete for some panels, we can add adapter.restrict_user later.
-                await adapter.delete_user(s.remote_identifier)
+                # Time expiry enforcement policy:
+# - WGDashboard: delete peer (hard cut)
+# - Marzban/Pasarguard: disable user (keep subscription URL stable; no revoke_sub)
+if n.panel_type == PanelType.wg_dashboard:
+    await adapter.delete_user(s.remote_identifier)
+else:
+    await adapter.disable_user(s.remote_identifier)
+
             except Exception:
                 pass

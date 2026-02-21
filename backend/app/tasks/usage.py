@@ -70,7 +70,10 @@ async def _sync_usage_async():
                         continue
                     try:
                         adapter = get_adapter(n)
-                        await adapter.set_status(s.remote_identifier, "limited")
+                        if n.panel_type.value == "wg_dashboard":
+                            await adapter.set_status(s.remote_identifier, "limited")
+                        else:
+                            await adapter.disable_user(s.remote_identifier)
                     except Exception:
                         pass
 

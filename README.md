@@ -70,3 +70,9 @@ A periodic task marks due users as disabled and enforces expiry on remote panels
 
 ## Step 10: Usage sync worker
 A periodic task syncs `used_traffic` from Marzban/Pasarguard and disables users when volume is exhausted. WGDashboard volume is enforced by its schedule job; used bytes may remain unknown.
+
+
+## Step 11: Expiry policy change
+- Marzban/Pasarguard: on time expiry -> disable (no revoke_sub, no delete)
+- WGDashboard: on time expiry -> delete peer
+- On extend/add-traffic: best-effort enable user again
