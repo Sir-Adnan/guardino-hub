@@ -33,7 +33,8 @@ export default function NewUserPage() {
   const [preset, setPreset] = React.useState<string>("1m");
   const [days, setDays] = React.useState<number>(30);
 
-  const [nodeIds, setNodeIds] = React.useState<string>(""); // comma-separated for now
+  const [nodeIds, setNodeIds] = React.useState<string>("");
+  const [nodes, setNodes] = React.useState<Array<{id:number; name:string; panel_type:string}> | null>(null); // comma-separated for now
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -41,6 +42,16 @@ export default function NewUserPage() {
   function randomName() {
     const v = `u_${Math.random().toString(16).slice(2, 10)}`;
     setUsername(v);
+  }
+
+  async function loadNodes() {
+    try {
+      const res = await apiFetch<any[]>("/api/v1/admin/nodes");
+      setNodes(res.map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type })));
+      push({ title: "Nodes loaded", type: "success" });
+    } catch (e:any) {
+      push({ title: "Cannot load nodes", desc: String(e.message||e), type: "error" });
+    }
   }
 
   async function doQuote() {
@@ -136,6 +147,7 @@ export default function NewUserPage() {
             <div className="space-y-2">
               <label className="text-sm">پکیج زمانی</label>
               <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>Load Nodes</Button>
                 {durationPresets.map((p) => (
                   <Button
                     key={p.key}
@@ -171,10 +183,40 @@ export default function NewUserPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>Load Nodes</Button>
             <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>محاسبه قیمت</Button>
             <Button type="button" disabled={loading} onClick={doCreate}>ساخت کاربر</Button>
             <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>بازگشت</Button>
           </div>
+
+          {nodes ? (
+  <Card>
+    <CardHeader>
+      <div className="text-sm text-[hsl(var(--fg))]/70">Nodes</div>
+      <div className="text-lg font-semibold">انتخاب سریع Node IDs</div>
+    </CardHeader>
+    <CardContent className="text-sm space-y-2">
+      <div className="text-xs text-[hsl(var(--fg))]/70">روی یک نود کلیک کن تا ID به فیلد اضافه شود.</div>
+      <div className="grid gap-2 md:grid-cols-2">
+        {nodes.map((n) => (
+          <button
+            key={n.id}
+            type="button"
+            className="text-right rounded-xl border border-[hsl(var(--border))] p-3 hover:bg-[hsl(var(--muted))]"
+            onClick={() => {
+              const ids = nodeIds.trim() ? nodeIds.split(",").map((x) => x.trim()).filter(Boolean) : [];
+              if (!ids.includes(String(n.id))) ids.push(String(n.id));
+              setNodeIds(ids.join(","));
+            }}
+          >
+            <div className="font-medium">{n.name}</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">#{n.id} • {n.panel_type}</div>
+          </button>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+) : null}
 
           {quote ? (
             <Card>

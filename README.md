@@ -99,3 +99,7 @@ Introduced `app.services.status_policy` to standardize how Guardino maps and enf
 
 ## Step 16: Admin UI
 - Admin pages for resellers and nodes
+
+
+## Step 17: Allocations UI
+- Admin allocations page + quick node selection helper in create user wizard
