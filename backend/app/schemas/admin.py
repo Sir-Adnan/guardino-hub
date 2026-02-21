@@ -5,7 +5,9 @@ class CreateResellerRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=6, max_length=128)
     parent_id: Optional[int] = None
-    price_per_gb: int = 0
+    price_per_gb: int
+    bundle_price_per_gb: Optional[int] = 0
+    bundle_price_per_gb: Optional[int] = None
     price_per_day: Optional[int] = None
     can_create_subreseller: bool = True
 
@@ -16,6 +18,7 @@ class ResellerOut(BaseModel):
     status: str
     balance: int
     price_per_gb: int
+    bundle_price_per_gb: Optional[int]
     price_per_day: Optional[int]
 
 class CreditRequest(BaseModel):

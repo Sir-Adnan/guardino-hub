@@ -163,3 +163,19 @@ class WGDashboardAdapter:
 async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
     # WGDashboard direct link should be created at provision time (sharePeer). We cannot reliably recreate without more stored data.
     return None
+
+async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at) -> None:
+    # WGDashboard does not expose data-limit/expire in same way (needs schedule jobs). We'll implement later.
+    return None
+
+async def delete_user(self, remote_identifier: str) -> None:
+    # remote_identifier expected to be peer public key for WGDashboard
+    cfg = str(self.credentials.get("configuration") or "")
+    if not cfg:
+        return None
+    async with build_async_client() as client:
+        await client.post(
+            f"{self.base_url}/api/deletePeers/{cfg}",
+            headers={"wg-dashboard-apikey": self.apikey},
+            json={"peers": [remote_identifier]},
+        )

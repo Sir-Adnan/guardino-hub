@@ -5,7 +5,10 @@ from datetime import datetime
 class CreateUserRequest(BaseModel):
     label: str = Field(min_length=1, max_length=128)
     total_gb: int = Field(gt=0, le=100000)
-    days: int = Field(gt=0, le=3650)
+    days: int
+
+    pricing_mode: str = Field(default="per_node", pattern="^(per_node|bundle)$")
+ = Field(gt=0, le=3650)
 
     # one of:
     node_ids: Optional[List[int]] = None

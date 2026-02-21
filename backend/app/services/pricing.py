@@ -32,8 +32,19 @@ async def resolve_allowed_nodes(db: AsyncSession, reseller_id: int, node_ids: li
     nodes = [n for n in q.scalars().all() if node_group in (n.tags or [])]
     return nodes
 
-async def calculate_price(db: AsyncSession, reseller: Reseller, nodes: list[Node], total_gb: int, days: int) -> tuple[int, dict[int,int], int]:
+async def calculate_price(db: AsyncSession, reseller: Reseller, nodes: list[Node], total_gb: int, days: int, pricing_mode: str = "per_node") -> tuple[int, dict[int,int], int]:
     per_node_amount: dict[int,int] = {}
+    if pricing_mode == "bundle":
+        # Central pricing: charge once for all selected panels
+        price_per_gb = reseller.bundle_price_per_gb if getattr(reseller, 'bundle_price_per_gb', None) not in (None, 0) else reseller.price_per_gb
+        total = int(price_per_gb) * int(total_gb)
+        per_node_amount = {n.id: 0 for n in nodes}
+        time_amount = 0
+        if reseller.price_per_day is not None and reseller.price_per_day > 0:
+            time_amount = int(reseller.price_per_day) * int(days)
+            total += time_amount
+        return total, per_node_amount, time_amount
+
     total = 0
     for n in nodes:
         q = await db.execute(select(NodeAllocation).where(NodeAllocation.reseller_id == reseller.id, NodeAllocation.node_id == n.id))

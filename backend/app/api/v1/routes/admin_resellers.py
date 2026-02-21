@@ -24,6 +24,7 @@ async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Dep
         status=ResellerStatus.active,
         balance=0,
         price_per_gb=payload.price_per_gb,
+        bundle_price_per_gb=payload.bundle_price_per_gb,
         price_per_day=payload.price_per_day,
         can_create_subreseller=payload.can_create_subreseller,
     )

@@ -23,6 +23,10 @@ class Reseller(Base, TimestampMixin):
     balance: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)  # store in smallest unit (e.g. toman*1), or plain integer
 
     price_per_gb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bundle_price_per_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)  # optional; central/bundle price per GB
+    bundle_price_per_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)  # optional; if set and bundle mode used
+
+    #  Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     price_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)  # optional; null => 0
 
     can_create_subreseller: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

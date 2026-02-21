@@ -84,3 +84,39 @@ async def get_direct_subscription_url(self, remote_identifier: str) -> str | Non
         ru.raise_for_status()
         js = ru.json()
         return js.get("subscription_url")
+
+async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at) -> None:
+    """Update data_limit (bytes) and expire (unix timestamp) on panel."""
+    url_token = f"{self.base_url}/api/admin/token"
+    data = {"username": self.username, "password": self.password}
+    async with build_async_client() as client:
+        r = await client.post(url_token, data=data)
+        r.raise_for_status()
+        token = r.json().get("access_token")
+        if not token:
+            raise AdapterError("Token not found")
+        url_user = f"{self.base_url}/api/user/{remote_identifier}"
+        payload = {
+            "data_limit": int(total_gb) * (1024 ** 3),
+            "expire": int(expire_at.timestamp()),
+        }
+        ru = await client.put(url_user, json=payload, headers={"Authorization": f"Bearer {token}"})
+        ru.raise_for_status()
+
+async def delete_user(self, remote_identifier: str) -> None:
+    """Delete user on panel and revoke subscription (best-effort)."""
+    url_token = f"{self.base_url}/api/admin/token"
+    data = {"username": self.username, "password": self.password}
+    async with build_async_client() as client:
+        r = await client.post(url_token, data=data)
+        r.raise_for_status()
+        token = r.json().get("access_token")
+        if not token:
+            raise AdapterError("Token not found")
+        # revoke sub (best-effort)
+        try:
+            await client.post(f"{self.base_url}/api/user/{remote_identifier}/revoke_sub", headers={"Authorization": f"Bearer {token}"})
+        except Exception:
+            pass
+        rd = await client.delete(f"{self.base_url}/api/user/{remote_identifier}", headers={"Authorization": f"Bearer {token}"})
+        rd.raise_for_status()

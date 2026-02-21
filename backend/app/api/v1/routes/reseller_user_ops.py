@@ -29,7 +29,7 @@ async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), 
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
-    total, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days)
+    total, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days, pricing_mode=payload.pricing_mode)
     return PriceQuoteResponse(total_amount=total, per_node_amount=per_node, time_amount=time_amount)
 
 @router.post("", response_model=CreateUserResponse)
@@ -38,7 +38,7 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
 
-    total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days)
+    total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, payload.days, pricing_mode=payload.pricing_mode)
 
     # Must have enough balance; balance must never go negative
     if reseller.balance < total_amount:

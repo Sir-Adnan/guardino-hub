@@ -43,6 +43,22 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     await db.flush()
 
     user.expire_at = user.expire_at + timedelta(days=int(payload.days))
+
+    # Update remote panels (best-effort)
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    if subs:
+        qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+        node_map = {n.id: n for n in qn.scalars().all()}
+        for s in subs:
+            n = node_map.get(s.node_id)
+            if not n:
+                continue
+            try:
+                adapter = get_adapter(n)
+                await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            except Exception:
+                pass
     now = _now()
     charged = 0
     if time_amount > 0:
@@ -79,6 +95,19 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
     await db.flush()
 
     user.total_gb = int(user.total_gb) + int(payload.add_gb)
+
+    # Update remote panels (best-effort)
+    qn2 = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+    node_map2 = {n.id: n for n in qn2.scalars().all()}
+    for s in subs:
+        n = node_map2.get(s.node_id)
+        if not n:
+            continue
+        try:
+            adapter = get_adapter(n)
+            await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+        except Exception:
+            pass
 
     now = _now()
     reseller.balance -= total_amount

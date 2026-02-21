@@ -54,3 +54,11 @@ Adapters provision is mock-only for now: set `node.credentials.mock=true`.
 - POST /api/v1/reseller/users/{id}/add-traffic
 - POST /api/v1/reseller/users/{id}/change-nodes
 - POST /api/v1/reseller/users/{id}/refund  (10 days, remaining GB only)
+
+
+### Pricing modes
+- per_node (default): price per GB is applied for each selected node
+- bundle: a central price per GB is applied once for all selected nodes (uses reseller.bundle_price_per_gb if set; otherwise reseller.price_per_gb)
+
+### Remote updates
+On extend/add-traffic/refund/delete we also update/delete on remote panels (best-effort).
