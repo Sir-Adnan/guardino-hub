@@ -1,107 +1,319 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# One-click installer for Guardino Hub
+# - Asks for domain/subdomain (optional)
+# - Optional Let's Encrypt SSL via certbot (nginx webroot)
+# - Builds & starts docker-compose stack
+# - Runs migrations & creates superadmin
+
 REPO_URL="${REPO_URL:-https://github.com/Sir-Adnan/guardino-hub.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/guardino-hub}"
+BRANCH="${BRANCH:-}"
+RESET_DATA="${RESET_DATA:-0}"   # set to 1 to wipe docker volumes
 
-echo "[1/10] Installing prerequisites..."
+# run as root
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo -E bash "$0" "$@"
+fi
+
+log() { echo -e "\033[1;34m$*\033[0m"; }
+warn(){ echo -e "\033[1;33m$*\033[0m"; }
+err() { echo -e "\033[1;31m$*\033[0m" 1>&2; }
+
+log "Guardino Hub installer"
+
+DOMAIN=""
+USE_SSL="no"
+LE_EMAIL=""
+
+read -r -p "Domain/Subdomain (leave blank to use IP): " DOMAIN || true
+DOMAIN="${DOMAIN// /}"
+if [ -n "${DOMAIN}" ]; then
+  read -r -p "Enable SSL (Let's Encrypt) for ${DOMAIN}? [y/N]: " _ssl || true
+  if [[ "${_ssl}" =~ ^[Yy]$ ]]; then
+    USE_SSL="yes"
+    while [ -z "${LE_EMAIL}" ]; do
+      read -r -p "Email for Let's Encrypt (required): " LE_EMAIL || true
+      LE_EMAIL="${LE_EMAIL// /}"
+    done
+  fi
+fi
+
+log "[1/12] Installing prerequisites..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y ca-certificates curl git openssl
+apt-get install -y ca-certificates curl git openssl jq
 
-echo "[2/10] Installing Docker..."
+log "[2/12] Installing Docker (if needed)..."
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
 fi
-docker compose version >/dev/null
-
-echo "[3/10] Cloning repo into $INSTALL_DIR ..."
-mkdir -p "$INSTALL_DIR"
-if [ ! -d "$INSTALL_DIR/.git" ]; then
-  git clone "$REPO_URL" "$INSTALL_DIR"
-else
-  cd "$INSTALL_DIR" && git pull
+# docker compose v2
+if ! docker compose version >/dev/null 2>&1; then
+  err "Docker Compose v2 is required (docker compose ...)."
+  exit 1
 fi
-cd "$INSTALL_DIR"
 
-echo "[4/10] Creating .env ..."
+if [ "${USE_SSL}" = "yes" ]; then
+  log "[3/12] Installing certbot..."
+  apt-get install -y certbot
+fi
+
+log "[4/12] Preparing install dir: ${INSTALL_DIR}"
+mkdir -p "${INSTALL_DIR}"
+if [ ! -d "${INSTALL_DIR}/.git" ]; then
+  log "Cloning repo..."
+  if [ -n "${BRANCH}" ]; then
+    git clone --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+  else
+    git clone "${REPO_URL}" "${INSTALL_DIR}"
+  fi
+else
+  log "Repo already exists, pulling latest..."
+  (cd "${INSTALL_DIR}" && git pull)
+fi
+cd "${INSTALL_DIR}"
+
+log "[5/12] Generating .env..."
 if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-# Ensure Postgres vars exist
-grep -q '^POSTGRES_DB=' .env || echo "POSTGRES_DB=guardino" >> .env
-grep -q '^POSTGRES_USER=' .env || echo "POSTGRES_USER=guardino" >> .env
+# Ensure core vars exist / are safe for production
+# - Strong DB password
+# - Strong SECRET_KEY
+# - Correct DATABASE_URL
+# - Frontend should call /api behind nginx
 
-POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- || true)"
-if [ -z "${POSTGRES_PASSWORD:-}" ] || [ "${POSTGRES_PASSWORD:-}" = "guardino" ]; then
-  POSTGRES_PASSWORD="$(openssl rand -hex 16)"
-  if grep -q '^POSTGRES_PASSWORD=' .env; then
-    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$POSTGRES_PASSWORD/" .env
+ensure_kv() {
+  local key="$1"; local val="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i "s#^${key}=.*#${key}=${val}#" .env
   else
-    echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
+    echo "${key}=${val}" >> .env
   fi
+}
+
+POSTGRES_DB="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2- || true)"
+POSTGRES_USER="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2- || true)"
+POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- || true)"
+
+POSTGRES_DB="${POSTGRES_DB:-guardino}"
+POSTGRES_USER="${POSTGRES_USER:-guardino}"
+
+if [ -z "${POSTGRES_PASSWORD}" ] || [ "${POSTGRES_PASSWORD}" = "guardino" ]; then
+  POSTGRES_PASSWORD="$(openssl rand -hex 16)"
 fi
 
 SECRET_KEY="$(grep -E '^SECRET_KEY=' .env | cut -d= -f2- || true)"
-if [ -z "${SECRET_KEY:-}" ] || [ "${SECRET_KEY:-}" = "please-change-me" ]; then
+if [ -z "${SECRET_KEY}" ] || [ "${SECRET_KEY}" = "please-change-me" ]; then
   SECRET_KEY="$(openssl rand -hex 32)"
-  if grep -q '^SECRET_KEY=' .env; then
-    sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$SECRET_KEY/" .env
-  else
-    echo "SECRET_KEY=$SECRET_KEY" >> .env
-  fi
 fi
 
-DB_USER="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
-DB_NAME="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
-DATABASE_URL="postgresql+asyncpg://${DB_USER}:${POSTGRES_PASSWORD}@db:5432/${DB_NAME}"
-if grep -q '^DATABASE_URL=' .env; then
-  sed -i "s#^DATABASE_URL=.*#DATABASE_URL=$DATABASE_URL#" .env
+ensure_kv "ENV" "prod"
+ensure_kv "POSTGRES_DB" "${POSTGRES_DB}"
+ensure_kv "POSTGRES_USER" "${POSTGRES_USER}"
+ensure_kv "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
+ensure_kv "SECRET_KEY" "${SECRET_KEY}"
+ensure_kv "REDIS_URL" "redis://redis:6379/0"
+ensure_kv "HTTP_TIMEOUT_SECONDS" "20"
+ensure_kv "PANEL_TLS_VERIFY" "true"
+ensure_kv "NEXT_PUBLIC_API_BASE" "/api"
+
+# For same-origin requests, CORS can be empty. If you want to call API directly, uncomment.
+if [ -n "${DOMAIN}" ]; then
+  ensure_kv "CORS_ORIGINS" "http://${DOMAIN},https://${DOMAIN}"
 else
-  echo "DATABASE_URL=$DATABASE_URL" >> .env
+  ensure_kv "CORS_ORIGINS" ""
 fi
 
-grep -q '^REDIS_URL=' .env || echo "REDIS_URL=redis://redis:6379/0" >> .env
-grep -q '^REFUND_WINDOW_DAYS=' .env || echo "REFUND_WINDOW_DAYS=10" >> .env
-grep -q '^HTTP_TIMEOUT_SECONDS=' .env || echo "HTTP_TIMEOUT_SECONDS=20" >> .env
-grep -q '^PANEL_TLS_VERIFY=' .env || echo "PANEL_TLS_VERIFY=true" >> .env
+DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+ensure_kv "DATABASE_URL" "${DATABASE_URL}"
 
-echo "[5/10] Validating docker-compose.yml ..."
-docker compose config >/dev/null
+log "[6/12] Writing nginx config..."
+mkdir -p deploy/certbot/www
 
-echo "[6/10] Starting services..."
-docker compose down --remove-orphans || true
-docker compose up -d --build
+write_nginx_http() {
+  local server_name="$1"
+  cat > deploy/nginx.conf <<CONF
+server {
+  listen 80;
+  server_name ${server_name};
 
-echo "[7/10] Waiting for API ..."
-for i in $(seq 1 60); do
-  CID="$(docker compose ps -q api || true)"
-  if [ -n "$CID" ] && [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null || echo false)" = "true" ]; then
+  # Let's Encrypt challenge (served from host dir: ./deploy/certbot/www)
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location /health {
+    proxy_pass http://api:8000/health;
+    proxy_set_header Host \$host;
+  }
+
+  location /api/ {
+    proxy_pass http://api:8000/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+  }
+
+  location / {
+    proxy_pass http://web:3000;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+  }
+}
+CONF
+}
+
+write_nginx_https() {
+  local domain="$1"
+  cat > deploy/nginx.conf <<CONF
+server {
+  listen 80;
+  server_name ${domain};
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location / {
+    return 301 https://\$host\$request_uri;
+  }
+}
+
+server {
+  listen 443 ssl http2;
+  server_name ${domain};
+
+  ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 10m;
+  ssl_protocols TLSv1.2 TLSv1.3;
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location /health {
+    proxy_pass http://api:8000/health;
+    proxy_set_header Host \$host;
+  }
+
+  location /api/ {
+    proxy_pass http://api:8000/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+
+  location / {
+    proxy_pass http://web:3000;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+}
+CONF
+}
+
+if [ -n "${DOMAIN}" ]; then
+  write_nginx_http "${DOMAIN}"
+else
+  write_nginx_http "_"
+fi
+
+log "[7/12] Validating docker compose config..."
+docker compose -f docker-compose.yml config >/dev/null
+
+COMPOSE_BASE=(docker compose -f docker-compose.yml)
+COMPOSE_SSL=(docker compose -f docker-compose.yml -f deploy/docker-compose.ssl.yml)
+
+log "[8/12] Starting services (initial)..."
+if [ "${RESET_DATA}" = "1" ]; then
+  warn "RESET_DATA=1 -> removing volumes (database will be wiped)"
+  "${COMPOSE_BASE[@]}" down -v --remove-orphans || true
+else
+  "${COMPOSE_BASE[@]}" down --remove-orphans || true
+fi
+
+# Start without SSL first, so certbot can validate via HTTP
+"${COMPOSE_BASE[@]}" up -d --build
+
+if [ "${USE_SSL}" = "yes" ]; then
+  log "[9/12] Requesting Let's Encrypt certificate for ${DOMAIN}..."
+  # certbot webroot: the token files are written to ./deploy/certbot/www
+  certbot certonly \
+    --webroot -w "${INSTALL_DIR}/deploy/certbot/www" \
+    -d "${DOMAIN}" \
+    --email "${LE_EMAIL}" \
+    --agree-tos --non-interactive \
+    --keep-until-expiring
+
+  log "Certificate issued. Switching nginx to HTTPS..."
+  write_nginx_https "${DOMAIN}"
+
+  # Bring up with SSL overlay (adds 443 + mounts /etc/letsencrypt)
+  "${COMPOSE_SSL[@]}" up -d --no-build --force-recreate nginx
+
+  log "Setting up cert renewal cron..."
+  DOCKER_BIN="$(command -v docker)"
+  cat > /etc/cron.d/guardino-hub-certbot <<CRON
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 3 * * * root certbot renew --quiet --deploy-hook "${DOCKER_BIN} compose -f ${INSTALL_DIR}/docker-compose.yml -f ${INSTALL_DIR}/deploy/docker-compose.ssl.yml restart nginx"
+CRON
+  chmod 644 /etc/cron.d/guardino-hub-certbot
+fi
+
+# Use proper compose for post-setup commands
+if [ "${USE_SSL}" = "yes" ]; then
+  COMPOSE=("${COMPOSE_SSL[@]}")
+else
+  COMPOSE=("${COMPOSE_BASE[@]}")
+fi
+
+log "[10/12] Waiting for API to be healthy..."
+for i in $(seq 1 90); do
+  if curl -fsS http://localhost/health >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
 
-CID="$(docker compose ps -q api || true)"
-if [ -z "$CID" ] || [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null || echo false)" != "true" ]; then
-  echo "ERROR: api is not running."
-  docker compose logs -n 200 --no-color api || true
+if ! curl -fsS http://localhost/health >/dev/null 2>&1; then
+  err "API did not become healthy. Showing last logs:" 
+  "${COMPOSE[@]}" logs -n 200 --no-color api || true
   exit 1
 fi
 
-echo "[8/10] Running migrations..."
-docker compose exec -T api alembic upgrade head
+log "[11/12] Running migrations..."
+"${COMPOSE[@]}" run --rm api alembic upgrade head
 
-echo "[9/10] Creating superadmin..."
+log "[12/12] Creating superadmin (if not exists)..."
 ADMIN_USER="${ADMIN_USER:-admin}"
-ADMIN_PASS="$(openssl rand -base64 18 | tr -d '=+/')"
-docker compose exec -T api python -m app.cli create-superadmin --username "$ADMIN_USER" --password "$ADMIN_PASS" || true
+ADMIN_PASS="${ADMIN_PASS:-ChangeMe_123!}"
+"${COMPOSE[@]}" run --rm api python -m app.cli create-superadmin --username "${ADMIN_USER}" --password "${ADMIN_PASS}" || true
 
-echo "[10/10] Done."
+BASE_URL="http://$(curl -fsS ifconfig.me 2>/dev/null || echo "<server-ip>")"
+if [ "${USE_SSL}" = "yes" ]; then
+  BASE_URL="https://${DOMAIN}"
+elif [ -n "${DOMAIN}" ]; then
+  BASE_URL="http://${DOMAIN}"
+fi
+
+log "Done."
 echo "----------------------------------------"
-echo "Superadmin username: $ADMIN_USER"
-echo "Superadmin password: $ADMIN_PASS"
-echo "Open: http://<server-ip>/"
-echo "API docs: http://<server-ip>/api/docs"
-echo "Health: http://<server-ip>/health"
+echo "URL:        ${BASE_URL}/"
+echo "API docs:   ${BASE_URL}/api/docs"
+echo "Health:     ${BASE_URL}/health"
+echo "Superadmin: ${ADMIN_USER} / ${ADMIN_PASS}"
 echo "----------------------------------------"
