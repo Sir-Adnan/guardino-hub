@@ -9,10 +9,10 @@ async def resolve_allowed_nodes(db: AsyncSession, reseller_id: int, node_ids: li
     # If node_ids provided -> must be allocated/enabled for reseller
     # If node_group provided -> select reseller allocations where node tags include group
     if not node_ids and not node_group:
-        # default nodes for reseller
+        # default nodes for reseller (all enabled allocations)
         q = await db.execute(
             select(Node).join(NodeAllocation, NodeAllocation.node_id == Node.id)
-            .where(NodeAllocation.reseller_id == reseller_id, NodeAllocation.enabled == True, NodeAllocation.default_for_reseller == True, Node.is_enabled == True)
+            .where(NodeAllocation.reseller_id == reseller_id, NodeAllocation.enabled == True, Node.is_enabled == True)
         )
         return q.scalars().all()
 

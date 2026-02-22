@@ -10,5 +10,5 @@ def get_adapter(node: Node):
     if node.panel_type == PanelType.pasarguard:
         return PasarguardAdapter(node.base_url, node.credentials)
     if node.panel_type == PanelType.wg_dashboard:
-        return WGDashboardAdapter(node.base_url, node.credentials)
+        return WGDashboardAdapter(base_url=node.base_url, credentials=creds, verify_ssl=verify_ssl)
     raise ValueError(f"Unsupported panel_type: {node.panel_type}")

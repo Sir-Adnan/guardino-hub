@@ -1,210 +1,96 @@
 from __future__ import annotations
+
+from datetime import datetime
 from typing import Any
-from datetime import datetime, timezone
-import uuid
+
 import httpx
 
-from app.services.http_client import build_async_client
-from app.services.adapters.base import TestConnectionResult, AdapterError, ProvisionResult
-from app.services.wg_keys import generate_wg_keypair
+from app.services.adapters.base import AdapterError, ProvisionResult, TestConnectionResult
 
-def _fmt_dt(dt: datetime) -> str:
-    # WGDashboard examples use: "YYYY-MM-DD HH:MM:SS"
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 class WGDashboardAdapter:
-    """WGDashboard adapter.
-    Expected credentials:
-      {
-        "apikey": "...",
-        "configuration": "wg-external",
-        "ip_prefix": "10.0.0.",
-        "ip_start": 2,
-        "ip_end": 254,
-        "dns": "1.1.1.1",
-        "mtu": 1460,
-        "keep_alive": 21,
-        "endpoint_allowed_ip": "0.0.0.0/0"
-      }
+    """WGDashboard adapter (minimal v4.x support).
+
+    Credentials JSON expected on the node:
+      {"apikey": "...", "interface": "wg0"}
+
+    NOTE: WGDashboard doesn't provide "subscription" in the same sense.
+    For now we return a download URL for the peer config (requires apikey header).
     """
 
-    def __init__(self, base_url: str, credentials: dict[str, Any]):
+    def __init__(self, base_url: str, credentials: dict[str, Any], verify_ssl: bool = True, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
-        self.apikey = str(credentials.get("apikey", "")).strip()
-        self.configuration = str(credentials.get("configuration", "")).strip()
-        self.ip_prefix = str(credentials.get("ip_prefix", "10.0.0.")).strip()
-        self.ip_start = int(credentials.get("ip_start", 2))
-        self.ip_end = int(credentials.get("ip_end", 254))
-        self.dns = str(credentials.get("dns", "1.1.1.1")).strip()
-        self.mtu = int(credentials.get("mtu", 1460))
-        self.keep_alive = int(credentials.get("keep_alive", 21))
-        self.endpoint_allowed_ip = str(credentials.get("endpoint_allowed_ip", "0.0.0.0/0")).strip()
+        self.apikey = str(credentials.get("apikey") or "")
+        self.interface = str(credentials.get("interface") or "wg0")
+        self.verify_ssl = verify_ssl
+        self.timeout = timeout
+
+        if not self.apikey:
+            raise AdapterError("WGDashboard credentials must include 'apikey'")
+
+    def _headers(self) -> dict[str, str]:
+        return {"Accept": "application/json", "wg-dashboard-apikey": self.apikey}
+
+    async def _get_json(self, path: str) -> Any:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.get(url, headers=self._headers())
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} GET {path}: {r.text[:300]}")
+        return r.json()
+
+    async def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.post(url, headers={**self._headers(), "Content-Type": "application/json"}, json=payload)
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} POST {path}: {r.text[:300]}")
+        return r.json()
 
     async def test_connection(self) -> TestConnectionResult:
-        if not self.apikey:
-            return TestConnectionResult(ok=False, detail="Missing credentials: apikey")
-        url = f"{self.base_url}/api/handshake"
         try:
-            async with build_async_client() as client:
-                r = await client.get(url, headers={"wg-dashboard-apikey": self.apikey})
-                if r.status_code >= 400:
-                    return TestConnectionResult(ok=False, detail=f"HTTP {r.status_code}: {r.text[:200]}")
-                js = r.json() if r.headers.get("content-type","").startswith("application/json") else {"raw": r.text[:200]}
-                return TestConnectionResult(ok=True, detail="OK", meta={"response": js})
-        except httpx.RequestError as e:
-            return TestConnectionResult(ok=False, detail=f"Request error: {e}")
+            js = await self._get_json("/api/app")
+            return TestConnectionResult(ok=True, detail="ok", meta={"app": js})
         except Exception as e:
-            raise AdapterError(str(e)) from e
-
-    async def _pick_free_ip(self, client: httpx.AsyncClient) -> str:
-        url = f"{self.base_url}/api/ping/getAllPeersIpAddress"
-        r = await client.get(url, headers={"wg-dashboard-apikey": self.apikey})
-        r.raise_for_status()
-        js = r.json()
-        used = set()
-        # Best-effort parse
-        data = js.get("data") or js.get("Data") or []
-        if isinstance(data, list):
-            for item in data:
-                ip = item.get("ip_address") or item.get("IPAddress") or item.get("ip")
-                if ip:
-                    used.add(str(ip).strip())
-        for i in range(self.ip_start, self.ip_end + 1):
-            ip = f"{self.ip_prefix}{i}"
-            if ip not in used:
-                return ip
-        raise AdapterError("No free IP address found")
+            return TestConnectionResult(ok=False, detail=str(e))
 
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
-        if not self.apikey or not self.configuration:
-            raise AdapterError("Missing credentials: apikey/configuration")
+        # WGDashboard doesn't support data-limit/expire natively; expiry can be managed by Guardino.
+        payload = {"peerCount": 1, "peerName": label}
+        js = await self._post_json(f"/api/addPeers/{self.interface}", payload)
 
-        priv_b64, pub_b64 = generate_wg_keypair()
+        # Try to read created peer id from response; if missing, return label.
+        peer_id = None
+        if isinstance(js, dict):
+            # observed patterns: {"success":true,"peers":[{"id":"..."}]}
+            peers = js.get("peers")
+            if isinstance(peers, list) and peers and isinstance(peers[0], dict):
+                peer_id = peers[0].get("id") or peers[0].get("publicKey")
 
-        async with build_async_client() as client:
-            ip = await self._pick_free_ip(client)
+        remote_identifier = str(peer_id or label)
+        # download link for peer (requires apikey header)
+        direct = f"{self.base_url}/api/downloadPeer/{self.interface}?id={remote_identifier}"
+        return ProvisionResult(remote_identifier=remote_identifier, direct_sub_url=direct, meta=None)
 
-            # Add peer
-            url_add = f"{self.base_url}/api/addPeers/{self.configuration}"
-            payload = {
-                "name": label,
-                "private_key": priv_b64,
-                "public_key": pub_b64,
-                "allowed_ips": [f"{ip}/32"],
-                "allowed_ips_validation": True,
-                "endpoint_allowed_ip": self.endpoint_allowed_ip,
-                "dns_addresses": self.dns,
-                "mtu": self.mtu,
-                "keep_alive": self.keep_alive,
-                "preshared_key": "",
-            }
-            ra = await client.post(url_add, headers={"wg-dashboard-apikey": self.apikey}, json=payload)
-            ra.raise_for_status()
-
-            # Create share link (direct url for customers) with ExpireDate
-            url_share = f"{self.base_url}/api/sharePeer/create"
-            rs = await client.post(
-                url_share,
-                headers={"wg-dashboard-apikey": self.apikey},
-                json={"Configuration": self.configuration, "Peer": pub_b64, "ExpireDate": _fmt_dt(expire_at)},
-            )
-            rs.raise_for_status()
-            js = rs.json()
-            share_id = (js.get("data") or {}).get("ShareID") or (js.get("Data") or {}).get("ShareID") or js.get("ShareID")
-            direct = None
-            if share_id:
-                direct = f"{self.base_url}/api/sharePeer/get?ShareID={share_id}"
-
-            # Enforce volume with schedule job (total_data > total_gb => restrict)
-            try:
-                job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"guardino:{self.configuration}:{pub_b64}:total_data"))
-                url_job = f"{self.base_url}/api/savePeerScheduleJob"
-                job_payload = {
-                    "Job": {
-                        "JobID": job_id,
-                        "Configuration": self.configuration,
-                        "Peer": pub_b64,
-                        "Field": "total_data",
-                        "Operator": "lgt",
-                        "Value": str(int(total_gb)),
-                        "CreationDate": "",
-                        "ExpireDate": "",
-                        "Action": "restrict",
-                    }
-                }
-                rj = await client.post(url_job, headers={"wg-dashboard-apikey": self.apikey}, json=job_payload)
-                # do not hard fail if schedule job isn't supported on some installs
-                if rj.status_code >= 400:
-                    pass
-            except Exception:
-                pass
-
-            return ProvisionResult(remote_identifier=pub_b64, direct_sub_url=direct, meta={"ip": ip, "share_id": share_id, "configuration": self.configuration})
-
-    async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
-        # If we previously created a share link, Guardino stores it as cached url; we do not recreate here.
+    async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
+        # Not supported natively.
         return None
 
-    async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at) -> None:
-        # Update share link expiry if we can recover ShareID from cached URL is handled by API layer (not adapter).
-        # Update schedule job value for total_data
-        async with build_async_client() as client:
-            try:
-                job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"guardino:{self.configuration}:{remote_identifier}:total_data"))
-                url_job = f"{self.base_url}/api/savePeerScheduleJob"
-                job_payload = {
-                    "Job": {
-                        "JobID": job_id,
-                        "Configuration": self.configuration,
-                        "Peer": remote_identifier,
-                        "Field": "total_data",
-                        "Operator": "lgt",
-                        "Value": str(int(total_gb)),
-                        "CreationDate": "",
-                        "ExpireDate": "",
-                        "Action": "restrict",
-                    }
-                }
-                await client.post(url_job, headers={"wg-dashboard-apikey": self.apikey}, json=job_payload)
-            except Exception:
-                pass
-
     async def delete_user(self, remote_identifier: str) -> None:
-        async with build_async_client() as client:
-            await client.post(
-                f"{self.base_url}/api/deletePeers/{self.configuration}",
-                headers={"wg-dashboard-apikey": self.apikey},
-                json={"peers": [remote_identifier]},
-            )
+        # Best-effort: remove peer by id.
+        await self._post_json(f"/api/deletePeer/{self.interface}", {"peerId": remote_identifier})
 
-async def set_status(self, remote_identifier: str, status: str) -> None:
-    # Map statuses to WG actions
-    # active -> allowAccessPeers
-    # limited/disabled/expired -> restrictPeers
-    action = "allow" if status == "active" else "restrict"
-    async with build_async_client() as client:
-        if action == "allow":
-            await client.post(
-                f"{self.base_url}/api/allowAccessPeers/{self.configuration}",
-                headers={"wg-dashboard-apikey": self.apikey},
-                json={"peers": [remote_identifier]},
-            )
-        else:
-            await client.post(
-                f"{self.base_url}/api/restrictPeers/{self.configuration}",
-                headers={"wg-dashboard-apikey": self.apikey},
-                json={"peers": [remote_identifier]},
-            )
+    async def set_status(self, remote_identifier: str, status: str) -> None:
+        # Best-effort: toggle peer.
+        is_active = status == "active"
+        await self._post_json(f"/api/togglePeer/{self.interface}", {"peerId": remote_identifier, "enabled": is_active})
 
-async def get_used_bytes(self, remote_identifier: str) -> int | None:
-    # WGDashboard does not provide per-peer total bytes in this collection reliably.
-    # Volume is enforced by schedule job (total_data) configured at provision time.
-    return None
+    async def disable_user(self, remote_identifier: str) -> None:
+        await self.set_status(remote_identifier, "disabled")
 
-async def disable_user(self, remote_identifier: str) -> None:
-    await self.set_status(remote_identifier, "limited")
+    async def enable_user(self, remote_identifier: str) -> None:
+        await self.set_status(remote_identifier, "active")
 
-async def enable_user(self, remote_identifier: str) -> None:
-    await self.set_status(remote_identifier, "active")
+    async def get_used_bytes(self, remote_identifier: str) -> int | None:
+        # If available, return 0.
+        return None

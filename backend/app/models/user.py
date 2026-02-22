@@ -1,18 +1,25 @@
-from sqlalchemy import Integer, String, ForeignKey, DateTime, Enum, BigInteger, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from __future__ import annotations
+
+import enum
 from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.core.db import Base
 from app.models.common import TimestampMixin
-import enum
+
 
 class UserStatus(str, enum.Enum):
     active = "active"
     disabled = "disabled"
     deleted = "deleted"
 
+
 class NodeSelectionMode(str, enum.Enum):
-    manual = "manual"
-    group = "group"
+    manual = "manual"  # selection stored in metadata.requested_node_ids
+    group = "group"    # selection stored in node_group
+
 
 class GuardinoUser(Base, TimestampMixin):
     __tablename__ = "users"
@@ -29,7 +36,11 @@ class GuardinoUser(Base, TimestampMixin):
 
     master_sub_token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
 
-    node_selection_mode: Mapped[NodeSelectionMode] = mapped_column(Enum(NodeSelectionMode), default=NodeSelectionMode.manual, nullable=False)
-    node_group: Mapped[str | None] = mapped_column(String(64), nullable=True)  # group name/tag
+    node_selection_mode: Mapped[NodeSelectionMode] = mapped_column(
+        Enum(NodeSelectionMode), default=NodeSelectionMode.manual, nullable=False
+    )
+    node_group: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    meta: Mapped[dict] = mapped_column(\"metadata\", JSON, default=dict, nullable=False)
+    # NOTE: "metadata" is reserved in SQLAlchemy Declarative.
+    # Keep DB column name "metadata" but expose it as "meta".
+    meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)

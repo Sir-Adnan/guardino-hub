@@ -58,5 +58,8 @@ from fastapi import Request
 
 async def block_if_balance_zero(request: Request, reseller: Reseller = Depends(require_reseller)):
     # Global reseller lock: if balance <= 0, only allow GET /api/v1/reseller/users (list)
+    # Admin is never blocked by balance checks.
+    if getattr(reseller, 'role', None) == Role.admin:
+        return reseller
     enforce_balance_or_readonly_users(reseller, request.url.path, request.method)
     return reseller

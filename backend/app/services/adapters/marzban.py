@@ -1,164 +1,136 @@
 from __future__ import annotations
+
+from datetime import datetime
 from typing import Any
-from datetime import datetime, timezone
+
 import httpx
 
-from app.services.http_client import build_async_client
-from app.services.adapters.base import TestConnectionResult, AdapterError, ProvisionResult
+from app.services.adapters.base import AdapterError, ProvisionResult, TestConnectionResult
+
 
 class MarzbanAdapter:
-    """Marzban adapter using official API.
-
-    Expected credentials (node.credentials JSON):
-      {
-        "username": "admin",
-        "password": "secret"
-      }
-    """
-
-    def __init__(self, base_url: str, credentials: dict[str, Any]):
+    def __init__(self, base_url: str, token: str | None = None, verify_ssl: bool = True, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
-        self.username = str(credentials.get("username", "")).strip()
-        self.password = str(credentials.get("password", "")).strip()
+        self.token = token
+        self.verify_ssl = verify_ssl
+        self.timeout = timeout
 
-    async def _get_token(self) -> str:
-        url = f"{self.base_url}/api/admin/token"
-        data = {"username": self.username, "password": self.password}
-        async with build_async_client() as client:
-            r = await client.post(url, data=data)
-            if r.status_code >= 400:
-                raise AdapterError(f"Token request failed: HTTP {r.status_code}: {r.text[:200]}")
-            js = r.json()
-            token = js.get("access_token") or js.get("token") or js.get("accessToken")
-            if not token:
-                raise AdapterError("Token not found in response")
-            return str(token)
+    def _headers(self) -> dict[str, str]:
+        h = {"Accept": "application/json"}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
+
+    async def _get_json(self, path: str) -> Any:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.get(url, headers=self._headers())
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} GET {path}: {r.text[:300]}")
+        return r.json()
+
+    async def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.post(url, headers={**self._headers(), "Content-Type": "application/json"}, json=payload)
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} POST {path}: {r.text[:300]}")
+        return r.json()
+
+    async def _put_json(self, path: str, payload: dict[str, Any]) -> Any:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.put(url, headers={**self._headers(), "Content-Type": "application/json"}, json=payload)
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} PUT {path}: {r.text[:300]}")
+        return r.json() if r.text else None
+
+    async def _delete(self, path: str) -> None:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
+            r = await client.delete(url, headers=self._headers())
+        if r.status_code >= 400:
+            raise AdapterError(f"HTTP {r.status_code} DELETE {path}: {r.text[:300]}")
 
     async def test_connection(self) -> TestConnectionResult:
-        if not self.username or not self.password:
-            return TestConnectionResult(ok=False, detail="Missing credentials: username/password")
         try:
-            _ = await self._get_token()
-            return TestConnectionResult(ok=True, detail="OK")
-        except httpx.RequestError as e:
-            return TestConnectionResult(ok=False, detail=f"Request error: {e}")
+            js = await self._get_json("/api/system")
+            return TestConnectionResult(ok=True, detail="ok", meta={"system": js})
         except Exception as e:
             return TestConnectionResult(ok=False, detail=str(e))
 
+    async def _get_all_inbounds(self) -> tuple[dict[str, list[str]], dict[str, Any]]:
+        """Return (inbounds_map, raw) where map is protocol -> list[tag]."""
+        raw = await self._get_json("/api/inbounds")
+        # raw: { "vless": [{...tag..}, ...], "vmess": [...] }
+        inbounds: dict[str, list[str]] = {}
+        if isinstance(raw, dict):
+            for proto, items in raw.items():
+                tags = []
+                if isinstance(items, list):
+                    for it in items:
+                        if isinstance(it, dict) and it.get("tag"):
+                            tags.append(str(it["tag"]))
+                if tags:
+                    inbounds[str(proto)] = tags
+        return inbounds, raw
+
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
-        if not self.username or not self.password:
-            raise AdapterError("Missing credentials: username/password")
+        inbounds, raw_inbounds = await self._get_all_inbounds()
 
-        token = await self._get_token()
-        url = f"{self.base_url}/api/user"
-
-        # Marzban expects:
-        # - username (required)
-        # - data_limit (bytes) nullable
-        # - expire (int) nullable (commonly unix timestamp seconds; 0 means no expire)
-        expire_ts = int(expire_at.replace(tzinfo=timezone.utc).timestamp())
-        data_limit_bytes = int(total_gb) * 1024 * 1024 * 1024
-
-        payload = {
+        # Default: enable all protocols & all inbounds.
+        payload: dict[str, Any] = {
             "username": label,
-            "data_limit": data_limit_bytes,
-            "expire": expire_ts,
+            "expire": int(expire_at.timestamp()),
+            "data_limit": int(total_gb) * 1024 * 1024 * 1024,
+            "data_limit_reset_strategy": "no_reset",
             "status": "active",
         }
 
-        async with build_async_client() as client:
-            r = await client.post(url, json=payload, headers={"Authorization": f"Bearer {token}"})
-            if r.status_code >= 400:
-                raise AdapterError(f"Create user failed: HTTP {r.status_code}: {r.text[:300]}")
-            js = r.json()
-            sub_url = js.get("subscription_url") or None
-            return ProvisionResult(remote_identifier=str(js.get("username", label)), direct_sub_url=sub_url, meta={"panel": "marzban"})
+        if inbounds:
+            payload["inbounds"] = inbounds
+            payload["proxies"] = {proto: {} for proto in inbounds.keys()}
 
-async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
-    """Fetch direct subscription URL for an existing user from panel."""
-    # Token login
-    url_token = f"{self.base_url}/api/admin/token"
-    data = {"username": self.username, "password": self.password}
-    async with build_async_client() as client:
-        r = await client.post(url_token, data=data)
-        r.raise_for_status()
-        token = r.json().get("access_token")
-        if not token:
-            return None
-        url_user = f"{self.base_url}/api/user/{remote_identifier}"
-        ru = await client.get(url_user, headers={"Authorization": f"Bearer {token}"})
-        ru.raise_for_status()
-        js = ru.json()
-        return js.get("subscription_url")
+        js = await self._post_json("/api/user", payload)
 
-async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at) -> None:
-    """Update data_limit (bytes) and expire (unix timestamp) on panel."""
-    url_token = f"{self.base_url}/api/admin/token"
-    data = {"username": self.username, "password": self.password}
-    async with build_async_client() as client:
-        r = await client.post(url_token, data=data)
-        r.raise_for_status()
-        token = r.json().get("access_token")
-        if not token:
-            raise AdapterError("Token not found")
-        url_user = f"{self.base_url}/api/user/{remote_identifier}"
-        payload = {
-            "data_limit": int(total_gb) * (1024 ** 3),
+        remote_identifier = js.get("username") or label
+        sub_url = js.get("subscription_url")
+        return ProvisionResult(
+            remote_identifier=remote_identifier,
+            direct_sub_url=sub_url,
+            meta={"inbounds": raw_inbounds},
+        )
+
+    async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
+        # Keep existing proxy/inbound selections; only update limit + expire.
+        cur = await self._get_json(f"/api/user/{remote_identifier}")
+        payload: dict[str, Any] = {
             "expire": int(expire_at.timestamp()),
+            "data_limit": int(total_gb) * 1024 * 1024 * 1024,
         }
-        ru = await client.put(url_user, json=payload, headers={"Authorization": f"Bearer {token}"})
-        ru.raise_for_status()
+        if isinstance(cur, dict):
+            if "inbounds" in cur:
+                payload["inbounds"] = cur["inbounds"]
+            if "proxies" in cur:
+                payload["proxies"] = cur["proxies"]
+        await self._put_json(f"/api/user/{remote_identifier}", payload)
 
-async def delete_user(self, remote_identifier: str) -> None:
-    """Delete user on panel and revoke subscription (best-effort)."""
-    url_token = f"{self.base_url}/api/admin/token"
-    data = {"username": self.username, "password": self.password}
-    async with build_async_client() as client:
-        r = await client.post(url_token, data=data)
-        r.raise_for_status()
-        token = r.json().get("access_token")
-        if not token:
-            raise AdapterError("Token not found")
-        # revoke sub (best-effort)
-        try:
-            await client.post(f"{self.base_url}/api/user/{remote_identifier}/revoke_sub", headers={"Authorization": f"Bearer {token}"})
-        except Exception:
-            pass
-        rd = await client.delete(f"{self.base_url}/api/user/{remote_identifier}", headers={"Authorization": f"Bearer {token}"})
-        rd.raise_for_status()
+    async def delete_user(self, remote_identifier: str) -> None:
+        await self._delete(f"/api/user/{remote_identifier}")
 
-async def set_status(self, remote_identifier: str, status: str) -> None:
-    url_token = f"{self.base_url}/api/admin/token"
-    data = {"username": self.username, "password": self.password}
-    async with build_async_client() as client:
-        r = await client.post(url_token, data=data)
-        r.raise_for_status()
-        token = r.json().get("access_token")
-        if not token:
-            raise AdapterError("Token not found")
-        url_user = f"{self.base_url}/api/user/{remote_identifier}"
-        ru = await client.put(url_user, json={"status": status}, headers={"Authorization": f"Bearer {token}"})
-        ru.raise_for_status()
+    async def set_status(self, remote_identifier: str, status: str) -> None:
+        await self._put_json(f"/api/user/{remote_identifier}", {"status": status})
 
-async def get_used_bytes(self, remote_identifier: str) -> int | None:
-    url_token = f"{self.base_url}/api/admin/token"
-    data = {"username": self.username, "password": self.password}
-    async with build_async_client() as client:
-        r = await client.post(url_token, data=data)
-        r.raise_for_status()
-        token = r.json().get("access_token")
-        if not token:
-            return None
-        url_user = f"{self.base_url}/api/user/{remote_identifier}"
-        ru = await client.get(url_user, headers={"Authorization": f"Bearer {token}"})
-        ru.raise_for_status()
-        js = ru.json()
-        used = js.get("used_traffic")
-        return int(used) if used is not None else None
+    async def disable_user(self, remote_identifier: str) -> None:
+        await self.set_status(remote_identifier, "disabled")
 
-async def disable_user(self, remote_identifier: str) -> None:
-    # Non-destructive: mark as disabled/expired without revoke_sub or delete
-    await self.set_status(remote_identifier, "disabled")
+    async def enable_user(self, remote_identifier: str) -> None:
+        await self.set_status(remote_identifier, "active")
 
-async def enable_user(self, remote_identifier: str) -> None:
-    await self.set_status(remote_identifier, "active")
+    async def get_used_bytes(self, remote_identifier: str) -> int | None:
+        js = await self._get_json(f"/api/user/{remote_identifier}")
+        if isinstance(js, dict):
+            used = js.get("used_traffic")
+            if isinstance(used, int):
+                return used
+        return None
