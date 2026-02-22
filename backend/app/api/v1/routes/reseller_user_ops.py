@@ -1,7 +1,6 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
 import secrets
 
@@ -20,14 +19,12 @@ from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse,
 router = APIRouter()
 
 def _panel_username(base_label: str, node_id: int) -> str:
-    # Keep it URL-safe and panel-friendly
     safe = "".join([c for c in base_label if c.isalnum() or c in ("-","_")]).strip()[:24] or "user"
     suffix = secrets.token_hex(3)
     return f"{safe}-{node_id}-{suffix}"
 
 @router.post("/quote", response_model=PriceQuoteResponse)
 async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    days_final = resolve_days(payload.days, payload.duration_preset)
     days_final = resolve_days(payload.days, payload.duration_preset)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
@@ -44,11 +41,9 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
 
     total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
 
-    # Must have enough balance; balance must never go negative
     if reseller.balance < total_amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
-    # Create order (pending)
     order = Order(
         reseller_id=reseller.id,
         user_id=None,
@@ -64,17 +59,14 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     expire_at = now + timedelta(days=int(days_final))
     token = secrets.token_hex(16)
 
-# username handling
-effective_username = None
-if payload.randomize_username:
-    effective_username = random_username("u")
-elif payload.username:
-    effective_username = sanitize_username(payload.username)
-    if not effective_username:
-        effective_username = None
+    # username handling
+    effective_username: str | None = None
+    if payload.randomize_username:
+        effective_username = random_username("u")
+    elif payload.username:
+        effective_username = sanitize_username(payload.username) or None
 
-remote_label = effective_username or payload.label
-
+    remote_label = effective_username or payload.label
 
     user = GuardinoUser(
         owner_reseller_id=reseller.id,
@@ -85,17 +77,16 @@ remote_label = effective_username or payload.label
         master_sub_token=token,
         node_selection_mode=NodeSelectionMode.group if payload.node_group else NodeSelectionMode.manual,
         node_group=payload.node_group,
-        metadata={"requested_node_ids": payload.node_ids, "requested_node_group": payload.node_group},
+        meta={"requested_node_ids": payload.node_ids, "requested_node_group": payload.node_group, "remote_label": remote_label},
     )
     db.add(user)
     await db.flush()
 
-    # Provision on each node (mock-only for now in adapters)
-    provisioned = []
+    provisioned: list[int] = []
     try:
         for n in nodes:
             adapter = get_adapter(n)
-            panel_username = _panel_username(payload.label, n.id)
+            panel_username = _panel_username(remote_label, n.id)
             pr = await adapter.provision_user(label=panel_username, total_gb=payload.total_gb, expire_at=expire_at)
             sa = SubAccount(
                 user_id=user.id,
@@ -109,7 +100,6 @@ remote_label = effective_username or payload.label
             db.add(sa)
             provisioned.append(n.id)
 
-        # Deduct balance & ledger
         reseller.balance -= total_amount
         ledger = LedgerTransaction(
             reseller_id=reseller.id,
@@ -126,7 +116,6 @@ remote_label = effective_username or payload.label
 
         await db.commit()
         return CreateUserResponse(user_id=user.id, master_sub_token=user.master_sub_token, charged_amount=total_amount, nodes_provisioned=provisioned)
-    except Exception as e:
-        # Rollback DB changes (no remote rollback yet; will implement later when real provisioning is in place)
+    except Exception:
         await db.rollback()
         raise

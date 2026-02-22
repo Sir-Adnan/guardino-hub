@@ -171,3 +171,12 @@ docker compose exec -T api alembic upgrade head
 - `/api/v1/auth/me` for role/balance
 - Reseller nodes endpoint for proper node picker
 - Admin reports endpoints + UI pages (ledger/orders)
+
+
+## Known issues
+- None (hotfix: SQLAlchemy reserved attribute `metadata` mapped as `meta`).
+
+
+## Troubleshooting
+- If API exits on boot, check: `docker compose logs -n 200 api`
+- If you see bcrypt/passlib errors, ensure `bcrypt==3.2.2` is installed and rebuild backend.

@@ -2,49 +2,60 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: guardino
-      POSTGRES_USER: guardino
-      POSTGRES_PASSWORD: guardino
+      POSTGRES_DB: ${POSTGRES_DB:-guardino}
+      POSTGRES_USER: ${POSTGRES_USER:-guardino}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-guardino}
     volumes:
       - guardino_db:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-guardino} -d ${POSTGRES_DB:-guardino}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   redis:
     image: redis:7
-    ports:
-      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   api:
     build: ./backend
     env_file:
       - .env
     depends_on:
-      - db
-      - redis
-    ports:
-      - "8000:8000"
-    command: ["bash", "-lc", "uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
 
-worker:
-  build: ./backend
-  env_file:
-    - .env
-  depends_on:
-    - db
-    - redis
-  command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app worker --loglevel=INFO"]
+  worker:
+    build: ./backend
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app worker --loglevel=INFO"]
 
-beat:
-  build: ./backend
-  env_file:
-    - .env
-  depends_on:
-    - db
-    - redis
-  command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app beat --loglevel=INFO"]
+  beat:
+    build: ./backend
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["bash", "-lc", "celery -A app.core.celery_app.celery_app beat --loglevel=INFO"]
 
-web:
+  web:
     build: ./frontend
     env_file:
       - .env
@@ -53,15 +64,15 @@ web:
     expose:
       - "3000"
 
-nginx:
-  image: nginx:1.27-alpine
-  depends_on:
-    - api
-    - web
-  ports:
-    - "80:80"
-  volumes:
-    - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   guardino_db:

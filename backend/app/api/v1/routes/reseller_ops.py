@@ -60,20 +60,20 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
             try:
                 adapter = get_adapter(n)
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
-                try:
-                    await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
-                except Exception:
-                    pass
-                # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
-                try:
-                    if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
-                        qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
-                        sid = (qs.get("ShareID") or [None])[0]
-                        if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
-                            async with build_async_client() as client:
-                                await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
-                except Exception:
-                    pass
+            try:
+                await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
+            except Exception:
+                pass
+            # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
+            try:
+                if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
+                    qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
+                    sid = (qs.get("ShareID") or [None])[0]
+                    if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
+                        async with build_async_client() as client:
+                            await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
+            except Exception:
+                pass
             except Exception:
                 pass
     now = _now()
@@ -123,20 +123,20 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
         try:
             adapter = get_adapter(n)
             await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
-                try:
-                    await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
-                except Exception:
-                    pass
-                # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
-                try:
-                    if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
-                        qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
-                        sid = (qs.get("ShareID") or [None])[0]
-                        if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
-                            async with build_async_client() as client:
-                                await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
-                except Exception:
-                    pass
+            try:
+                await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
+            except Exception:
+                pass
+            # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
+            try:
+                if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
+                    qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
+                    sid = (qs.get("ShareID") or [None])[0]
+                    if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
+                        async with build_async_client() as client:
+                            await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
+            except Exception:
+                pass
         except Exception:
             pass
 

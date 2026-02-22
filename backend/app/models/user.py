@@ -32,4 +32,4 @@ class GuardinoUser(Base, TimestampMixin):
     node_selection_mode: Mapped[NodeSelectionMode] = mapped_column(Enum(NodeSelectionMode), default=NodeSelectionMode.manual, nullable=False)
     node_group: Mapped[str | None] = mapped_column(String(64), nullable=True)  # group name/tag
 
-    metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    meta: Mapped[dict] = mapped_column(\"metadata\", JSON, default=dict, nullable=False)

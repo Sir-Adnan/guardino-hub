@@ -1,20 +1,22 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
 
 class CreateUserRequest(BaseModel):
     label: str = Field(min_length=1, max_length=128)
-    username: str | None = Field(default=None, description="Optional username for remote panels")
+
+    # Optional username for remote panels (Marzban/Pasarguard). WG may ignore.
+    username: Optional[str] = None
     randomize_username: bool = Field(default=False, description="If true, username is auto-generated")
 
-    duration_preset: str | None = Field(default=None, description="One of: 7d, 1m, 3m, 6m, 1y")
+    # One of: 7d, 1m, 3m, 6m, 1y
+    duration_preset: Optional[str] = None
+
     total_gb: int = Field(gt=0, le=100000)
-    days: int
+    days: int = Field(gt=0, le=3650)
 
     pricing_mode: str = Field(default="per_node", pattern="^(per_node|bundle)$")
- = Field(gt=0, le=3650)
 
-    # one of:
+    # Node selection (one of these)
     node_ids: Optional[List[int]] = None
     node_group: Optional[str] = None
 
