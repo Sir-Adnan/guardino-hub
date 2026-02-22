@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-liner friendly installer entrypoint.
-# Intended usage:
-#   bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
-#
-# This script downloads and runs installer/install.sh from the repository.
+# One-liner:
+# bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
 
 REPO_URL_DEFAULT="https://github.com/Sir-Adnan/guardino-hub.git"
 BRANCH_DEFAULT="main"
@@ -20,17 +17,11 @@ echo "REPO_URL=$REPO_URL"
 echo "BRANCH=$BRANCH"
 echo "INSTALL_DIR=$INSTALL_DIR"
 
-# Ensure curl & sudo (raw ubuntu)
-if ! command -v curl >/dev/null 2>&1; then
-  apt-get update -y
-  apt-get install -y curl
-fi
 if ! command -v git >/dev/null 2>&1; then
   apt-get update -y
   apt-get install -y git
 fi
 
-# Clone/pull
 mkdir -p "$INSTALL_DIR"
 if [ ! -d "$INSTALL_DIR/.git" ]; then
   git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
@@ -40,4 +31,9 @@ fi
 
 cd "$INSTALL_DIR"
 chmod +x installer/install.sh
-sudo bash installer/install.sh
+
+if [ "$(id -u)" -eq 0 ]; then
+  bash installer/install.sh
+else
+  sudo bash installer/install.sh
+fi
