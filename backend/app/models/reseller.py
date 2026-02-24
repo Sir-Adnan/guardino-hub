@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -29,7 +29,8 @@ class Reseller(Base, TimestampMixin):
     can_create_subreseller: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[ResellerStatus] = mapped_column(Enum(ResellerStatus), default=ResellerStatus.active, nullable=False)
 
-    balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # NOTE: keep this aligned with DB (PostgreSQL BIGINT) to avoid overflow/mismatch.
+    balance: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     # default pricing for this reseller
     price_per_gb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
