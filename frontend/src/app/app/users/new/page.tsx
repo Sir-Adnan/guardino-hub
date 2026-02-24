@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
+import { useI18n } from "@/components/i18n-context";
+import { HelpTip } from "@/components/ui/help-tip";
 
 type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
 type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
@@ -22,6 +24,7 @@ const durationPresets = [
 export default function NewUserPage() {
   const r = useRouter();
   const { push } = useToast();
+  const { t } = useI18n();
 
   const [label, setLabel] = React.useState("");
   const [username, setUsername] = React.useState("");
@@ -107,25 +110,29 @@ export default function NewUserPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="text-xl font-semibold">ساخت کاربر</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">نام کاربری دستی یا رندوم، پکیج زمانی، حجم، و حالت قیمت</div>
+          <div className="text-xl font-semibold">{t("newUser.title")}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{t("newUser.subtitle")}</div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-sm">Label (نمایش)</label>
+              <label className="text-sm flex items-center gap-2">
+                {t("newUser.label")} <HelpTip text={t("help.label")} />
+              </label>
               <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً customer-01" />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm">Username (اختیاری)</label>
+              <label className="text-sm flex items-center gap-2">
+                {t("newUser.username")} <HelpTip text={t("help.username")} />
+              </label>
               <div className="flex gap-2">
                 <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اگر خالی باشد label استفاده می‌شود" />
-                <Button type="button" variant="outline" onClick={randomName}>Random</Button>
+                <Button type="button" variant="outline" onClick={randomName}>{t("newUser.random")}</Button>
               </div>
               <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/70">
                 <input type="checkbox" checked={randomize} onChange={(e) => setRandomize(e.target.checked)} />
-                ساخت نام کاربری رندوم در سمت سرور
+                {t("newUser.serverRandom")}
               </label>
             </div>
 
@@ -135,12 +142,14 @@ export default function NewUserPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm">حالت قیمت</label>
+              <label className="text-sm flex items-center gap-2">
+                {t("newUser.pricingMode")} <HelpTip text={t("help.pricingMode")} />
+              </label>
               <div className="flex gap-2">
-                <Button type="button" variant={pricingMode === "per_node" ? "primary" : "outline"} onClick={() => setPricingMode("per_node")}>Per Node</Button>
-                <Button type="button" variant={pricingMode === "bundle" ? "primary" : "outline"} onClick={() => setPricingMode("bundle")}>Bundle</Button>
+                <Button type="button" variant={pricingMode === "per_node" ? "primary" : "outline"} onClick={() => setPricingMode("per_node")}>{t("newUser.perNode")}</Button>
+                <Button type="button" variant={pricingMode === "bundle" ? "primary" : "outline"} onClick={() => setPricingMode("bundle")}>{t("newUser.bundle")}</Button>
               </div>
-              <div className="text-xs text-[hsl(var(--fg))]/70">Bundle یعنی قیمت مرکزی برای کل پنل‌ها فقط یک‌بار حساب شود.</div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.bundleHelp")}</div>
             </div>
           </div>
 
@@ -148,7 +157,6 @@ export default function NewUserPage() {
             <div className="space-y-2">
               <label className="text-sm">پکیج زمانی</label>
               <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>Load Nodes</Button>
                 {durationPresets.map((p) => (
                   <Button
                     key={p.key}
@@ -178,16 +186,18 @@ export default function NewUserPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm">Node IDs (اختیاری)</label>
+            <label className="text-sm flex items-center gap-2">
+              {t("newUser.nodeIds")} <HelpTip text={t("help.nodeIds")} />
+            </label>
             <Input value={nodeIds} onChange={(e) => setNodeIds(e.target.value)} placeholder="مثلاً 1,2,3 (اگر خالی باشد default nodes)" />
             <div className="text-xs text-[hsl(var(--fg))]/70">در نسخه بعد، این بخش به انتخاب گرافیکی نودها تبدیل می‌شود.</div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>Load Nodes</Button>
-            <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>محاسبه قیمت</Button>
-            <Button type="button" disabled={loading} onClick={doCreate}>ساخت کاربر</Button>
-            <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>بازگشت</Button>
+            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>{t("newUser.loadNodes")}</Button>
+            <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
+            <Button type="button" disabled={loading} onClick={doCreate}>{t("newUser.create")}</Button>
+            <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>{t("newUser.back")}</Button>
           </div>
 
           {nodes ? (

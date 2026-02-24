@@ -56,6 +56,18 @@ export default function UserDetailPage() {
     }
   }
 
+  async function setStatus(status: "active" | "disabled") {
+    await op(`/api/v1/reseller/users/${userId}/set-status`, { status });
+  }
+
+  async function resetUsage() {
+    await op(`/api/v1/reseller/users/${userId}/reset-usage`, {});
+  }
+
+  async function revoke() {
+    await op(`/api/v1/reseller/users/${userId}/revoke`, {});
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
@@ -75,7 +87,14 @@ export default function UserDetailPage() {
           {user ? (
             <>
               <div>GB: <span className="font-semibold">{user.total_gb}</span></div>
-              <div>Status: <span className="font-semibold">{user.status}</span></div>
+              <div className="flex items-center justify-between gap-2">
+                <div>Status: <span className="font-semibold">{user.status}</span></div>
+                {user.status === "active" ? (
+                  <Button type="button" variant="outline" onClick={() => setStatus("disabled")}>Disable</Button>
+                ) : (
+                  <Button type="button" onClick={() => setStatus("active")}>Enable</Button>
+                )}
+              </div>
               <div>Expire: <span className="font-semibold">{new Date(user.expire_at).toLocaleString()}</span></div>
             </>
           ) : <div className="text-[hsl(var(--fg))]/70">Loading...</div>}
@@ -128,6 +147,17 @@ export default function UserDetailPage() {
             <div className="text-sm text-[hsl(var(--fg))]/70">تمدید / افزایش حجم / ریفاند</div>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="font-medium">Subscription</div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={resetUsage}>Reset Usage</Button>
+                <Button type="button" variant="outline" onClick={revoke}>Revoke (Regenerate)</Button>
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">
+                Revoke: در Marzban/Pasarguard توکن ساب عوض می‌شود. در WGDashboard پییر حذف و دوباره ساخته می‌شود (لینک تغییر می‌کند).
+              </div>
+            </div>
+
             <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
               <div className="font-medium">Extend</div>
               <div className="flex gap-2">
