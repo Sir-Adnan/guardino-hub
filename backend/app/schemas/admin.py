@@ -73,11 +73,6 @@ class CreateAllocationRequest(BaseModel):
     default_for_reseller: bool = False
     price_per_gb_override: Optional[int] = None
 
-class UpdateAllocationRequest(BaseModel):
-    enabled: Optional[bool] = None
-    default_for_reseller: Optional[bool] = None
-    price_per_gb_override: Optional[int] = None
-
 class AllocationOut(BaseModel):
     id: int
     reseller_id: int
