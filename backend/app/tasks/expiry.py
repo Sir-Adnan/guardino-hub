@@ -16,14 +16,13 @@ from app.services.task_metrics import TaskRunStats
 
 @celery_app.task(name="app.tasks.expiry.expire_due_users")
 def expire_due_users():
-    with redis_lock('guardino:lock:expire_due_users', ttl_seconds=110) as ok:
+    with redis_lock("guardino:lock:expire_due_users", ttl_seconds=110) as ok:
         if not ok:
             return
-    
+    asyncio.run(_expire_due_users_async())
+
 
 # internal
-
-
 
 async def _expire_due_users_async():
     stats = TaskRunStats()

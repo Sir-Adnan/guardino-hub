@@ -16,7 +16,8 @@ async def create_superadmin(username: str, password: str):
             password_hash=hash_password(password),
             balance=0,
             price_per_gb=0,
-            price_per_day=None,
+            price_per_day=0,
+            role="admin",
         )
         db.add(admin)
         await db.commit()

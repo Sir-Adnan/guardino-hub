@@ -19,7 +19,7 @@ from app.services.refund import refundable_gb_for_user
 from app.services.status_policy import enable_if_needed
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
-from app.schemas.ops import ExtendRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, OpResult
+from app.schemas.ops import ExtendRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
 
 router = APIRouter()
 
@@ -60,20 +60,33 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
             try:
                 adapter = get_adapter(n)
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            except Exception:
+                # best-effort
+                pass
             try:
+                adapter = get_adapter(n)
                 await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
             except Exception:
                 pass
-            # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
+
+            # WGDashboard share links (legacy support) - best-effort
             try:
-                if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
+                if (
+                    s.panel_sub_url_cached
+                    and "sharePeer/get" in s.panel_sub_url_cached
+                    and "ShareID=" in s.panel_sub_url_cached
+                    and getattr(n, "panel_type", None)
+                    and getattr(n.panel_type, "value", "") == "wg_dashboard"
+                ):
                     qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
                     sid = (qs.get("ShareID") or [None])[0]
-                    if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
+                    if sid:
                         async with build_async_client() as client:
-                            await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
-            except Exception:
-                pass
+                            await client.post(
+                                f"{n.base_url.rstrip('/')}/api/sharePeer/update",
+                                headers={"wg-dashboard-apikey": (n.credentials or {}).get("apikey", "")},
+                                json={"ShareID": sid, "ExpireDate": user.expire_at.strftime("%Y-%m-%d %H:%M:%S")},
+                            )
             except Exception:
                 pass
     now = _now()
@@ -248,3 +261,99 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
 
     await db.commit()
     return OpResult(ok=True, charged_amount=0, refunded_amount=refund_amount, new_balance=reseller.balance, user_id=user.id, detail=f"refunded_gb={refund_gb}")
+
+
+@router.post("/{user_id}/set-status", response_model=OpResult)
+async def set_user_status(user_id: int, payload: SetStatusRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
+    user = q.scalar_one_or_none()
+    if not user or user.status == UserStatus.deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    new_status = UserStatus(payload.status)
+    user.status = new_status
+
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    if subs:
+        qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+        node_map = {n.id: n for n in qn.scalars().all()}
+        for s in subs:
+            n = node_map.get(s.node_id)
+            if not n:
+                continue
+            try:
+                adapter = get_adapter(n)
+                if new_status == UserStatus.active:
+                    await adapter.enable_user(s.remote_identifier)
+                else:
+                    await adapter.disable_user(s.remote_identifier)
+            except Exception:
+                pass
+
+    await db.commit()
+    return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+
+
+@router.post("/{user_id}/reset-usage", response_model=OpResult)
+async def reset_user_usage(user_id: int, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
+    user = q.scalar_one_or_none()
+    if not user or user.status == UserStatus.deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    if subs:
+        qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+        node_map = {n.id: n for n in qn.scalars().all()}
+        for s in subs:
+            n = node_map.get(s.node_id)
+            if not n:
+                continue
+            try:
+                adapter = get_adapter(n)
+                await adapter.reset_usage(s.remote_identifier)
+            except Exception:
+                pass
+            s.used_bytes = 0
+
+    user.used_bytes = 0
+    await db.commit()
+    return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+
+
+@router.post("/{user_id}/revoke", response_model=OpResult)
+async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
+    user = q.scalar_one_or_none()
+    if not user or user.status == UserStatus.deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    if not subs:
+        raise HTTPException(status_code=400, detail="No subaccounts")
+
+    qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+    node_map = {n.id: n for n in qn.scalars().all()}
+    now = _now()
+
+    # Best-effort across nodes. For WGDashboard: delete & recreate (link changes).
+    for s in subs:
+        n = node_map.get(s.node_id)
+        if not n:
+            continue
+        try:
+            adapter = get_adapter(n)
+            pr = await adapter.revoke_subscription(label=user.label, remote_identifier=s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            # WGDashboard may return a NEW identifier.
+            s.remote_identifier = pr.remote_identifier
+            if pr.direct_sub_url:
+                s.panel_sub_url_cached = pr.direct_sub_url
+                s.panel_sub_url_cached_at = now
+        except Exception:
+            pass
+
+    await db.commit()
+    return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)

@@ -20,6 +20,10 @@ class RefundRequest(BaseModel):
     action: str = Field(pattern="^(decrease|delete)$")
     decrease_gb: Optional[int] = Field(default=None, gt=0, le=100000)
 
+
+class SetStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
+
 class OpResult(BaseModel):
     ok: bool
     charged_amount: int = 0
