@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { AuthProvider } from "@/components/auth-context";
 import { storage } from "@/lib/storage";
+import { AppHeader } from "@/components/app-header";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const r = useRouter();
@@ -14,11 +15,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [r]);
 
   return (
-    <AuthProvider><div className="min-h-screen flex">
-      <Sidebar />
-      <main className="flex-1 p-6 bg-[hsl(var(--bg))]">
-        {children}
-      </main>
-    </div>
+    <AuthProvider>
+      <div className="min-h-screen flex bg-[hsl(var(--bg))]">
+        <Sidebar />
+        <div className="flex-1 min-w-0 flex flex-col">
+          <AppHeader />
+          <main className="flex-1 p-6">
+            {children}
+          </main>
+        </div>
+      </div>
+    </AuthProvider>
   );
 }

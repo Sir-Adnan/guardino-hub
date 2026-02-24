@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth-context";
 import { LayoutDashboard, Users, Server, Settings } from "lucide-react";
 import { useI18n } from "@/components/i18n-context";
+import { Badge } from "@/components/ui/badge";
 
 const items = [
   // Reseller + Admin (backend will enforce permissions)
@@ -49,6 +50,19 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t border-[hsl(var(--border))]">
+        <div className="mb-3">
+          <div className="text-xs text-[hsl(var(--fg))]/70">{t("sidebar.signedInAs")}</div>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">{me?.username ?? "—"}</div>
+              <div className="text-xs text-[hsl(var(--fg))]/60 truncate">{me?.role ?? "—"}</div>
+            </div>
+            <Badge variant={(me?.balance ?? 1) <= 0 ? "danger" : "default"}>
+              {t("users.balance")}: {me?.balance ?? "—"}
+            </Badge>
+          </div>
+        </div>
+
         <div className="text-xs text-[hsl(var(--fg))]/70 mb-2">{t("lang.label")}</div>
         <div className="flex gap-2">
           <button

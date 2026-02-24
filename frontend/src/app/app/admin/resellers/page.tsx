@@ -4,10 +4,15 @@ import * as React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Menu } from "@/components/ui/menu";
+import { ConfirmModal } from "@/components/ui/confirm";
+import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { MoreHorizontal } from "lucide-react";
 
 type ResellerOut = {
   id: number;
@@ -20,6 +25,13 @@ type ResellerOut = {
   price_per_day?: number | null;
   can_create_subreseller?: boolean;
 };
+
+function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warning" {
+  if (s === "active") return "success";
+  if (s === "disabled") return "danger";
+  if (s === "deleted") return "muted";
+  return "warning";
+}
 
 export default function AdminResellersPage() {
   const { push } = useToast();
@@ -39,6 +51,9 @@ export default function AdminResellersPage() {
 
   const [creditId, setCreditId] = React.useState<number | "">("");
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
+
+  const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
+  const [busy, setBusy] = React.useState(false);
 
   function resetForm() {
     setEditingId(null);
@@ -192,10 +207,10 @@ export default function AdminResellersPage() {
               <label className="text-sm flex items-center gap-2">
                 {t("adminResellers.canCreateSub")} <HelpTip text={t("adminResellers.help.canCreateSub")} />
               </label>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={canCreateSub} onChange={(e) => setCanCreateSub(e.target.checked)} />
-                <span>{canCreateSub ? t("common.yes") : t("common.no")}</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <Switch checked={canCreateSub} onCheckedChange={setCanCreateSub} />
+                <span className="text-sm text-[hsl(var(--fg))]/75">{canCreateSub ? t("common.yes") : t("common.no")}</span>
+              </div>
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -251,56 +266,94 @@ export default function AdminResellersPage() {
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">{t("adminResellers.username")}</th>
-                  <th className="text-right py-2">{t("adminResellers.status")}</th>
-                  <th className="text-right py-2">{t("adminResellers.balance")}</th>
-                  <th className="text-right py-2">{t("adminResellers.pricePerGb")}</th>
-                  <th className="text-right py-2">{t("adminResellers.bundlePerGb")}</th>
-                  <th className="text-right py-2">{t("adminResellers.pricePerDay")}</th>
-                  <th className="text-right py-2">{t("adminResellers.actions")}</th>
+                  <th className="text-[start] py-2">ID</th>
+                  <th className="text-[start] py-2">{t("adminResellers.username")}</th>
+                  <th className="text-[start] py-2">{t("adminResellers.status")}</th>
+                  <th className="text-[start] py-2">{t("adminResellers.balance")}</th>
+                  <th className="text-[start] py-2">{t("adminResellers.pricePerGb")}</th>
+                  <th className="text-[start] py-2">{t("adminResellers.bundlePerGb")}</th>
+                  <th className="text-[start] py-2">{t("adminResellers.pricePerDay")}</th>
+                  <th className="text-[end] py-2">{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((x) => (
-                  <tr key={x.id} className="border-b border-[hsl(var(--border))]">
+                  <tr key={x.id} className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/40">
                     <td className="py-2">{x.id}</td>
-                    <td className="py-2">{x.username}</td>
                     <td className="py-2">
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={x.status === "active"} onChange={() => toggleStatus(x)} />
-                        <span>{x.status}</span>
-                      </label>
+                      <div className="font-medium">{x.username}</div>
+                      {x.parent_id ? <div className="text-xs text-[hsl(var(--fg))]/60">parent: #{x.parent_id}</div> : null}
+                    </td>
+                    <td className="py-2">
+                      <div className="flex items-center gap-3">
+                        <Badge variant={statusBadgeVariant(x.status)}>{x.status}</Badge>
+                        <Switch
+                          checked={x.status === "active"}
+                          onCheckedChange={() => toggleStatus(x)}
+                          disabled={x.status === "deleted"}
+                        />
+                      </div>
                     </td>
                     <td className="py-2">{x.balance}</td>
                     <td className="py-2">{x.price_per_gb}</td>
                     <td className="py-2">{x.bundle_price_per_gb ?? 0}</td>
                     <td className="py-2">{x.price_per_day ?? 0}</td>
-                    <td className="py-2 flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" onClick={() => startEdit(x)}>
-                        {t("common.edit")}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setCreditId(x.id);
-                          push({ title: t("adminResellers.creditHint"), desc: `${x.username} (#${x.id})`, type: "success" });
-                        }}
-                      >
-                        {t("adminResellers.pickForCredit")}
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => del(x)}>
-                        {t("adminResellers.delete")}
-                      </Button>
+                    <td className="py-2 text-[end]">
+                      <Menu
+                        trigger={
+                          <Button variant="ghost" className="px-2" title={t("common.actions")}>
+                            <MoreHorizontal size={18} />
+                          </Button>
+                        }
+                        items={[
+                          { label: t("common.edit"), onClick: () => startEdit(x) },
+                          {
+                            label: t("adminResellers.pickForCredit"),
+                            onClick: () => {
+                              setCreditId(x.id);
+                              push({ title: t("adminResellers.creditHint"), desc: `${x.username} (#${x.id})`, type: "success" });
+                            },
+                          },
+                          { label: t("common.delete"), onClick: () => setConfirmDelete(x), danger: true },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
+
+                {!filtered.length ? (
+                  <tr>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={8}>
+                      {t("common.empty")}
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => (busy ? null : setConfirmDelete(null))}
+        title={t("common.areYouSure")}
+        body={t("common.thisActionCannotBeUndone")}
+        confirmText={t("common.delete")}
+        cancelText={t("common.cancel")}
+        danger
+        busy={busy}
+        onConfirm={async () => {
+          if (!confirmDelete) return;
+          setBusy(true);
+          try {
+            await del(confirmDelete);
+          } finally {
+            setBusy(false);
+            setConfirmDelete(null);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -4,10 +4,14 @@ import * as React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Menu } from "@/components/ui/menu";
+import { ConfirmModal } from "@/components/ui/confirm";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { MoreHorizontal } from "lucide-react";
 
 type NodeOut = {
   id: number;
@@ -35,6 +39,9 @@ export default function AdminNodesPage() {
   const [visibleInSub, setVisibleInSub] = React.useState(true);
   const [q, setQ] = React.useState("");
 
+  const [confirmDisable, setConfirmDisable] = React.useState<NodeOut | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
   function resetForm() {
     setEditingId(null);
     setName("");
@@ -61,7 +68,7 @@ export default function AdminNodesPage() {
         panel_type: panelType,
         base_url: baseUrl,
         credentials: parseCreds(),
-        tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        tags: tags ? tags.split(",").map((x) => x.trim()).filter(Boolean) : [],
         is_enabled: enabled,
         is_visible_in_sub: visibleInSub,
       };
@@ -134,7 +141,7 @@ export default function AdminNodesPage() {
     setPanelType(n.panel_type);
     setBaseUrl(n.base_url);
     setTags((n.tags || []).join(","));
-    setCreds(JSON.stringify(n.credentials || {}, null, 0) || "{}");
+    setCreds(JSON.stringify(n.credentials || {}, null, 2) || "{}");
     setEnabled(n.is_enabled);
     setVisibleInSub(n.is_visible_in_sub);
   }
@@ -188,14 +195,14 @@ export default function AdminNodesPage() {
               <label className="text-sm flex items-center gap-2">
                 {t("adminNodes.tags")} <HelpTip text={t("adminNodes.help.tags")} />
               </label>
-              <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="group tags: DEFAULT_POOL,VIP_POOL" />
+              <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="DEFAULT_POOL,VIP_POOL" />
             </div>
             <div className="space-y-2">
               <label className="text-sm flex items-center gap-2">
                 {t("adminNodes.credentials")} <HelpTip text={t("adminNodes.help.credentials")} />
               </label>
               <textarea
-                className="w-full min-h-[42px] rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                className="w-full min-h-[90px] rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
                 value={creds}
                 onChange={(e) => setCreds(e.target.value)}
                 spellCheck={false}
@@ -204,25 +211,31 @@ export default function AdminNodesPage() {
 
             <div className="space-y-2">
               <label className="text-sm">{t("adminNodes.enabled")}</label>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-                <span>{enabled ? t("common.yes") : t("common.no")}</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+                <span className="text-sm text-[hsl(var(--fg))]/75">{enabled ? t("common.yes") : t("common.no")}</span>
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm">{t("adminNodes.visibleInSub")}</label>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={visibleInSub} onChange={(e) => setVisibleInSub(e.target.checked)} />
-                <span>{visibleInSub ? t("common.yes") : t("common.no")}</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <Switch checked={visibleInSub} onCheckedChange={setVisibleInSub} />
+                <span className="text-sm text-[hsl(var(--fg))]/75">{visibleInSub ? t("common.yes") : t("common.no")}</span>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button type="button" onClick={createOrSave}>{editingId == null ? t("adminNodes.create") : t("adminNodes.save")}</Button>
-            <Button type="button" variant="outline" onClick={load}>{t("common.reload")}</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={createOrSave}>
+              {editingId == null ? t("adminNodes.create") : t("adminNodes.save")}
+            </Button>
+            <Button type="button" variant="outline" onClick={load}>
+              {t("common.reload")}
+            </Button>
             {editingId != null ? (
-              <Button type="button" variant="outline" onClick={resetForm}>{t("common.cancel")}</Button>
+              <Button type="button" variant="outline" onClick={resetForm}>
+                {t("common.cancel")}
+              </Button>
             ) : null}
           </div>
 
@@ -234,51 +247,79 @@ export default function AdminNodesPage() {
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">Name</th>
-                  <th className="text-right py-2">Type</th>
-                  <th className="text-right py-2">Enabled</th>
-                  <th className="text-right py-2">Actions</th>
+                  <th className="text-[start] py-2">ID</th>
+                  <th className="text-[start] py-2">{t("adminNodes.name")}</th>
+                  <th className="text-[start] py-2">{t("adminNodes.panelType")}</th>
+                  <th className="text-[start] py-2">{t("adminNodes.enabled")}</th>
+                  <th className="text-[start] py-2">{t("adminNodes.visibleInSub")}</th>
+                  <th className="text-[end] py-2">{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((n) => (
-                  <tr key={n.id} className="border-b border-[hsl(var(--border))]">
+                  <tr key={n.id} className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/40">
                     <td className="py-2">{n.id}</td>
-                    <td className="py-2">{n.name}</td>
+                    <td className="py-2">
+                      <div className="font-medium">{n.name}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/60 truncate max-w-[420px]">{n.base_url}</div>
+                    </td>
                     <td className="py-2">{n.panel_type}</td>
                     <td className="py-2">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={n.is_enabled}
-                          onChange={(e) => toggle(n.id, { is_enabled: e.target.checked } as any)}
-                        />
-                        <span>{n.is_enabled ? t("common.yes") : t("common.no")}</span>
-                      </label>
-                      <div className="text-xs text-[hsl(var(--fg))]/60">
-                        {t("adminNodes.visibleInSub")}: {n.is_visible_in_sub ? t("common.yes") : t("common.no")}
-                      </div>
-                      <button
-                        type="button"
-                        className="text-xs underline text-[hsl(var(--fg))]/80 hover:text-[hsl(var(--fg))]"
-                        onClick={() => toggle(n.id, { is_visible_in_sub: !n.is_visible_in_sub } as any)}
-                      >
-                        {t("adminNodes.toggleVisible")}
-                      </button>
+                      <Switch checked={n.is_enabled} onCheckedChange={(v) => toggle(n.id, { is_enabled: v } as any)} />
                     </td>
-                    <td className="py-2 flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" onClick={() => test(n.id)}>{t("adminNodes.test")}</Button>
-                      <Button type="button" variant="outline" onClick={() => startEdit(n)}>{t("common.edit")}</Button>
-                      <Button type="button" variant="outline" onClick={() => disable(n.id)}>{t("adminNodes.disable")}</Button>
+                    <td className="py-2">
+                      <Switch checked={n.is_visible_in_sub} onCheckedChange={(v) => toggle(n.id, { is_visible_in_sub: v } as any)} />
+                    </td>
+                    <td className="py-2 text-[end]">
+                      <Menu
+                        trigger={
+                          <Button variant="ghost" className="px-2" title={t("common.actions")}>
+                            <MoreHorizontal size={18} />
+                          </Button>
+                        }
+                        items={[
+                          { label: t("adminNodes.test"), onClick: () => test(n.id) },
+                          { label: t("common.edit"), onClick: () => startEdit(n) },
+                          { label: t("adminNodes.disable"), onClick: () => setConfirmDisable(n), danger: true },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
+
+                {!filtered.length ? (
+                  <tr>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={6}>
+                      {t("common.empty")}
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmModal
+        open={!!confirmDisable}
+        onClose={() => (busy ? null : setConfirmDisable(null))}
+        title={t("common.areYouSure")}
+        body={t("common.thisActionCannotBeUndone")}
+        confirmText={t("common.disable")}
+        cancelText={t("common.cancel")}
+        danger
+        busy={busy}
+        onConfirm={async () => {
+          if (!confirmDisable) return;
+          setBusy(true);
+          try {
+            await disable(confirmDisable.id);
+          } finally {
+            setBusy(false);
+            setConfirmDisable(null);
+          }
+        }}
+      />
     </div>
   );
 }

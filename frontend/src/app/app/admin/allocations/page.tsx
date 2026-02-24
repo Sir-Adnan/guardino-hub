@@ -4,10 +4,14 @@ import * as React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Menu } from "@/components/ui/menu";
+import { ConfirmModal } from "@/components/ui/confirm";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { MoreHorizontal } from "lucide-react";
 
 type AllocationOut = {
   id: number;
@@ -37,6 +41,9 @@ export default function AllocationsPage() {
   const [enabled, setEnabled] = React.useState(true);
   const [def, setDef] = React.useState(false);
   const [q, setQ] = React.useState("");
+
+  const [confirmDelete, setConfirmDelete] = React.useState<AllocationOut | null>(null);
+  const [busy, setBusy] = React.useState(false);
 
   const resellerMap = React.useMemo(() => {
     const m = new Map<number, ResellerOut>();
@@ -73,6 +80,13 @@ export default function AllocationsPage() {
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
+  }
+
+  async function patchAllocation(id: number, payload: Partial<AllocationOut>) {
+    await apiFetch<AllocationOut>(`/api/v1/admin/allocations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
   }
 
   async function createOrSave() {
@@ -192,14 +206,14 @@ export default function AllocationsPage() {
 
             <div className="space-y-2">
               <label className="text-sm">{t("adminAllocations.flags")}</label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-                <span>{t("adminAllocations.enabled")}</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={def} onChange={(e) => setDef(e.target.checked)} />
-                <span>{t("adminAllocations.default")}</span>
-              </label>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-[hsl(var(--fg))]/75">{t("adminAllocations.enabled")}</span>
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-[hsl(var(--fg))]/75">{t("adminAllocations.default")}</span>
+                <Switch checked={def} onCheckedChange={setDef} />
+              </div>
             </div>
           </div>
 
@@ -225,13 +239,13 @@ export default function AllocationsPage() {
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">{t("adminAllocations.reseller")}</th>
-                  <th className="text-right py-2">{t("adminAllocations.node")}</th>
-                  <th className="text-right py-2">{t("adminAllocations.enabled")}</th>
-                  <th className="text-right py-2">{t("adminAllocations.default")}</th>
-                  <th className="text-right py-2">{t("adminAllocations.priceOverride")}</th>
-                  <th className="text-right py-2">{t("adminAllocations.actions")}</th>
+                  <th className="text-[start] py-2">ID</th>
+                  <th className="text-[start] py-2">{t("adminAllocations.reseller")}</th>
+                  <th className="text-[start] py-2">{t("adminAllocations.node")}</th>
+                  <th className="text-[start] py-2">{t("adminAllocations.enabled")}</th>
+                  <th className="text-[start] py-2">{t("adminAllocations.default")}</th>
+                  <th className="text-[start] py-2">{t("adminAllocations.priceOverride")}</th>
+                  <th className="text-[end] py-2">{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,22 +253,49 @@ export default function AllocationsPage() {
                   const r = resellerMap.get(a.reseller_id);
                   const n = nodeMap.get(a.node_id);
                   return (
-                    <tr key={a.id} className="border-b border-[hsl(var(--border))]">
+                    <tr key={a.id} className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/40">
                       <td className="py-2">{a.id}</td>
                       <td className="py-2">{r ? `${r.username} (#${a.reseller_id})` : a.reseller_id}</td>
                       <td className="py-2">{n ? `${n.name} (${n.panel_type}) (#${a.node_id})` : a.node_id}</td>
-                      <td className="py-2">{a.enabled ? t("common.yes") : t("common.no")}</td>
-                      <td className="py-2">{a.default_for_reseller ? t("common.yes") : t("common.no")}</td>
-                      <td className="py-2">{a.price_per_gb_override ?? "-"}</td>
                       <td className="py-2">
-                        <div className="flex gap-2">
-                          <Button type="button" variant="outline" onClick={() => startEdit(a)}>
-                            {t("common.edit")}
-                          </Button>
-                          <Button type="button" variant="outline" onClick={() => del(a)}>
-                            {t("adminAllocations.delete")}
-                          </Button>
-                        </div>
+                        <Switch
+                          checked={a.enabled}
+                          onCheckedChange={async (v) => {
+                            try {
+                              await patchAllocation(a.id, { enabled: v });
+                              await load();
+                            } catch (e: any) {
+                              push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="py-2">
+                        <Switch
+                          checked={a.default_for_reseller}
+                          onCheckedChange={async (v) => {
+                            try {
+                              await patchAllocation(a.id, { default_for_reseller: v } as any);
+                              await load();
+                            } catch (e: any) {
+                              push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="py-2">{a.price_per_gb_override ?? "-"}</td>
+                      <td className="py-2 text-[end]">
+                        <Menu
+                          trigger={
+                            <Button variant="ghost" className="px-2" title={t("common.actions")}>
+                              <MoreHorizontal size={18} />
+                            </Button>
+                          }
+                          items={[
+                            { label: t("common.edit"), onClick: () => startEdit(a) },
+                            { label: t("common.delete"), onClick: () => setConfirmDelete(a), danger: true },
+                          ]}
+                        />
                       </td>
                     </tr>
                   );
@@ -263,7 +304,7 @@ export default function AllocationsPage() {
                 {!filtered.length ? (
                   <tr>
                     <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={7}>
-                      {t("adminAllocations.empty")}
+                      {t("common.empty")}
                     </td>
                   </tr>
                 ) : null}
@@ -272,6 +313,27 @@ export default function AllocationsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => (busy ? null : setConfirmDelete(null))}
+        title={t("common.areYouSure")}
+        body={t("common.thisActionCannotBeUndone")}
+        confirmText={t("common.delete")}
+        cancelText={t("common.cancel")}
+        danger
+        busy={busy}
+        onConfirm={async () => {
+          if (!confirmDelete) return;
+          setBusy(true);
+          try {
+            await del(confirmDelete);
+          } finally {
+            setBusy(false);
+            setConfirmDelete(null);
+          }
+        }}
+      />
     </div>
   );
 }
