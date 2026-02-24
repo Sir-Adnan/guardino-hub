@@ -300,7 +300,16 @@ log "[11/12] Running migrations..."
 
 log "[12/12] Creating superadmin (if not exists)..."
 ADMIN_USER="${ADMIN_USER:-admin}"
-ADMIN_PASS="${ADMIN_PASS:-ChangeMe_123!}"
+ADMIN_PASS="${ADMIN_PASS:-}"
+
+# Never ship an installer with a known default password.
+# If the operator doesn't provide ADMIN_PASS, generate a strong one and store it locally.
+if [ -z "${ADMIN_PASS}" ]; then
+  ADMIN_PASS="$(openssl rand -base64 24 | tr -d '\n' | tr '/+' '_-' | cut -c1-24)"
+  warn "ADMIN_PASS was not provided; generated a strong password."
+  echo "${ADMIN_PASS}" > "${INSTALL_DIR}/.guardino_admin_password"
+  chmod 600 "${INSTALL_DIR}/.guardino_admin_password" || true
+fi
 "${COMPOSE[@]}" run --rm api python -m app.cli create-superadmin --username "${ADMIN_USER}" --password "${ADMIN_PASS}" || true
 
 BASE_URL="http://$(curl -fsS ifconfig.me 2>/dev/null || echo "<server-ip>")"
@@ -316,4 +325,7 @@ echo "URL:        ${BASE_URL}/"
 echo "API docs:   ${BASE_URL}/api/docs"
 echo "Health:     ${BASE_URL}/health"
 echo "Superadmin: ${ADMIN_USER} / ${ADMIN_PASS}"
+if [ -f "${INSTALL_DIR}/.guardino_admin_password" ]; then
+  echo "Saved to:   ${INSTALL_DIR}/.guardino_admin_password"
+fi
 echo "----------------------------------------"

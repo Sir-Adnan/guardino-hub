@@ -74,6 +74,8 @@ services:
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
+      # Used for Let's Encrypt HTTP-01 challenges when installer enables SSL.
+      - ./deploy/certbot/www:/var/www/certbot:ro
 
-      - ./deploy/certbot/www:/var/www/certbot:rovolumes:
+volumes:
   guardino_db:
