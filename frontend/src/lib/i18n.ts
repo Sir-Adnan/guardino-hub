@@ -23,6 +23,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "sidebar.signedInAs": "ورود به عنوان",
     "sidebar.open": "باز کردن منو",
     "sidebar.close": "بستن منو",
+    "sidebar.logout": "خروج",
     "sidebar.dashboard": "داشبورد",
     "sidebar.users": "کاربران",
 
@@ -305,6 +306,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "sidebar.signedInAs": "Signed in as",
     "sidebar.open": "Open menu",
     "sidebar.close": "Close menu",
+    "sidebar.logout": "Logout",
 
     "users.title": "Users",
     "users.subtitle": "Your users list",
