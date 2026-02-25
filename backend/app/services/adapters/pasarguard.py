@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import asyncio
 from typing import Any
 
 import httpx
@@ -169,6 +170,16 @@ class PasarguardAdapter:
             return None
         return None
 
+    def _all_proxy_settings(self) -> dict[str, Any]:
+        # Force-enable all common proxy families for newly created users.
+        # Pasarguard validates missing optional fields and generates identifiers where needed.
+        return {
+            "vmess": {},
+            "vless": {},
+            "trojan": {},
+            "shadowsocks": {"method": "chacha20-ietf-poly1305"},
+        }
+
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
         data_limit = int(total_gb) * 1024 * 1024 * 1024
         payload: dict[str, Any] = {
@@ -189,26 +200,51 @@ class PasarguardAdapter:
         except Exception:
             group_id = None
 
-        # Preferred: use /api/user with group_ids so ALL inbounds are enabled.
+        payload_with_proxies = {**payload, "proxy_settings": self._all_proxy_settings()}
+
+        created_without_proxy_settings = False
+
+        # Preferred: use /api/user with group_ids + proxy_settings so ALL inbounds and proxies are enabled.
         try:
-            js = await self._post_json("/api/user", payload)
+            js = await self._post_json("/api/user", payload_with_proxies)
         except AdapterError:
-            template_id = await self._pick_default_template_id()
-            if not template_id:
-                raise
-            # from_template only accepts user_template_id + username; then apply limits via PUT
-            js = await self._post_json("/api/user/from_template", {"user_template_id": template_id, "username": label})
-            # Apply limits + group_ids after template creation
-            update_payload: dict[str, Any] = {"expire": int(expire_at.timestamp()), "data_limit": data_limit}
-            if group_id:
-                update_payload["group_ids"] = [group_id]
-            await self._put_json(f"/api/user/{label}", update_payload)
+            # Some Pasarguard versions may reject proxy_settings in create payload.
+            # Retry without proxy_settings before falling back to template creation.
+            try:
+                js = await self._post_json("/api/user", payload)
+                created_without_proxy_settings = True
+            except AdapterError:
+                template_id = await self._pick_default_template_id()
+                if not template_id:
+                    raise
+                # from_template only accepts user_template_id + username; then apply limits via PUT
+                js = await self._post_json("/api/user/from_template", {"user_template_id": template_id, "username": label})
+                # Apply limits + group_ids + proxy settings after template creation
+                update_payload: dict[str, Any] = {
+                    "expire": int(expire_at.timestamp()),
+                    "data_limit": data_limit,
+                    "proxy_settings": self._all_proxy_settings(),
+                }
+                if group_id:
+                    update_payload["group_ids"] = [group_id]
+                await self._put_json(f"/api/user/{label}", update_payload)
 
         remote_identifier = (js or {}).get("username") or label
-        sub_url = (js or {}).get("subscription_url")
+        if created_without_proxy_settings:
+            try:
+                await self._put_json(f"/api/user/{remote_identifier}", {"proxy_settings": self._all_proxy_settings()})
+            except Exception:
+                # Keep the user created even if proxy post-config fails.
+                pass
+
+        sub_url = (js or {}).get("subscription_url") or (js or {}).get("subscriptionUrl")
         if not sub_url:
-            # fetch from user endpoint
-            sub_url = await self.get_direct_subscription_url(remote_identifier)
+            # fetch from user endpoint (retry a bit; some panels populate async)
+            for _ in range(3):
+                sub_url = await self.get_direct_subscription_url(remote_identifier)
+                if sub_url:
+                    break
+                await asyncio.sleep(0.4)
         return ProvisionResult(remote_identifier=remote_identifier, direct_sub_url=sub_url, meta=None)
 
     async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
@@ -233,7 +269,7 @@ class PasarguardAdapter:
     async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
         js = await self._get_json(f"/api/user/{remote_identifier}")
         if isinstance(js, dict):
-            return js.get("subscription_url") or None
+            return js.get("subscription_url") or js.get("subscriptionUrl") or None
         return None
 
     async def revoke_subscription(self, label: str, remote_identifier: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
