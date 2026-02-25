@@ -33,7 +33,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "users.search": "جستجو...",
     "users.balanceZero": "بالانس شما صفر است؛ فقط لیست کاربران قابل مشاهده است.",
 
-        "users.balance": "بالانس",
+        "users.balance": "شارژ حساب",
     "users.usage": "مصرف",
     "users.expiresIn": "انقضا تا {days} روز",
     "users.expired": "منقضی شده",
