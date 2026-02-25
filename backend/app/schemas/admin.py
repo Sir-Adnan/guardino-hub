@@ -14,6 +14,7 @@ class ResellerOut(BaseModel):
     id: int
     parent_id: Optional[int]
     username: str
+    role: str
     status: str
     balance: int
     price_per_gb: int
@@ -66,6 +67,10 @@ class NodeOut(BaseModel):
     is_enabled: bool
     is_visible_in_sub: bool
 
+class NodeList(BaseModel):
+    items: List[NodeOut]
+    total: int
+
 class CreateAllocationRequest(BaseModel):
     reseller_id: int
     node_id: int
@@ -85,3 +90,11 @@ class AllocationOut(BaseModel):
     enabled: bool
     default_for_reseller: bool
     price_per_gb_override: Optional[int]
+
+class AllocationList(BaseModel):
+    items: List[AllocationOut]
+    total: int
+
+class ResellerList(BaseModel):
+    items: List[ResellerOut]
+    total: int
