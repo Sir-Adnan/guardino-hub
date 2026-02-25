@@ -26,16 +26,16 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className={cn("relative w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-soft max-h-[88vh] overflow-hidden", className)}>
+      <div className={cn("relative my-4 w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-soft max-h-[92dvh] overflow-hidden sm:my-0", className)}>
         <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
           <div className="text-base font-semibold">{title}</div>
           <button className="rounded-xl px-2 py-1 text-sm hover:bg-[hsl(var(--muted))]" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
-        <div className="max-h-[calc(88vh-72px)] overflow-auto px-5 py-4">{children}</div>
+        <div className="max-h-[calc(92dvh-72px)] overflow-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );
