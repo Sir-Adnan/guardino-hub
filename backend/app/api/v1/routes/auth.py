@@ -15,10 +15,10 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(Reseller).where(Reseller.username == payload.username))
     user = q.scalar_one_or_none()
     if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="نام کاربری یا رمز عبور اشتباه است.")
 
     if user.status in (ResellerStatus.disabled, ResellerStatus.deleted):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="حساب کاربری شما غیرفعال است.")
 
     # IMPORTANT: role must come from the database, not from parent_id.
     # Otherwise a reseller with parent_id=None could become an admin.
