@@ -9,6 +9,22 @@ import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
 
 type ResellerMini = { id: number; username: string; };
+const ADMIN_FETCH_LIMIT = 200;
+
+async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]> {
+  const all: ResellerMini[] = [];
+  let offset = 0;
+  let total = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const r = await apiFetch<any>(`/api/v1/admin/resellers?offset=${offset}&limit=${ADMIN_FETCH_LIMIT}`);
+    const chunk = (r.items || []).map((x: any) => ({ id: x.id, username: x.username })) as ResellerMini[];
+    all.push(...chunk);
+    total = r.total || all.length;
+    if (!chunk.length || all.length >= total) break;
+    offset += chunk.length;
+  }
+  return all;
+}
 
 export default function OrdersPage() {
   const { push } = useToast();
@@ -37,13 +53,16 @@ export default function OrdersPage() {
     }
   }
 
-  React.useEffect(() => { (async () => {
-    try {
-      const r = await apiFetch<any>("/api/v1/admin/resellers?offset=0&limit=500");
-      setResellers((r.items || []).map((x: any) => ({ id: x.id, username: x.username })));
-    } catch {}
-    await load();
-  })(); /* eslint-disable-next-line */ }, []);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        setResellers(await fetchAllResellersForAdmin());
+      } catch (e: any) {
+        push({ title: "Error", desc: String(e.message || e), type: "error" });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     load();
