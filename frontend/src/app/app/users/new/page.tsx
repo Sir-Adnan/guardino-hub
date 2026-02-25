@@ -36,8 +36,9 @@ export default function NewUserPage() {
   const [preset, setPreset] = React.useState<string>("1m");
   const [days, setDays] = React.useState<number>(30);
 
-  const [nodeIds, setNodeIds] = React.useState<string>("");
-  const [nodes, setNodes] = React.useState<Array<{id:number; name:string; panel_type:string}> | null>(null); // comma-separated for now
+  const [nodeMode, setNodeMode] = React.useState<"all" | "custom">("all");
+  const [nodes, setNodes] = React.useState<Array<{ id: number; name: string; panel_type: string }> | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = React.useState<number[]>([]);
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -51,17 +52,44 @@ export default function NewUserPage() {
     try {
       const res = await apiFetch<any>("/api/v1/reseller/nodes");
       const arr = res.items || [];
-      setNodes(arr.map((n:any) => ({ id: n.id, name: n.name, panel_type: n.panel_type })));
+      const mapped = arr.map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type }));
+      setNodes(mapped);
+
+      const ids = mapped.map((n: any) => Number(n.id)).filter((x: number) => !Number.isNaN(x));
+      // Keep selection sane after refresh
+      setSelectedNodeIds((prev) => {
+        if (nodeMode === "all") return ids;
+        if (!prev.length) return ids;
+        const set = new Set(ids);
+        return prev.filter((x) => set.has(x));
+      });
+
       push({ title: "Nodes loaded", type: "success" });
     } catch (e:any) {
       push({ title: "Cannot load nodes", desc: String(e.message||e), type: "error" });
     }
   }
 
+  React.useEffect(() => {
+    // Auto-load nodes so default "all" works without typing IDs
+    loadNodes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function doQuote() {
     setLoading(true);
     try {
-      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const node_ids =
+        nodes && nodes.length
+          ? nodeMode === "all"
+            ? nodes.map((n) => n.id)
+            : selectedNodeIds
+          : undefined;
+
+      if (nodeMode === "custom" && (!node_ids || node_ids.length === 0)) {
+        push({ title: "حداقل یک نود انتخاب کن", type: "error" });
+        return;
+      }
       const payload: any = {
         label,
         username: username || undefined,
@@ -85,7 +113,17 @@ export default function NewUserPage() {
   async function doCreate() {
     setLoading(true);
     try {
-      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const node_ids =
+        nodes && nodes.length
+          ? nodeMode === "all"
+            ? nodes.map((n) => n.id)
+            : selectedNodeIds
+          : undefined;
+
+      if (nodeMode === "custom" && (!node_ids || node_ids.length === 0)) {
+        push({ title: "حداقل یک نود انتخاب کن", type: "error" });
+        return;
+      }
       const payload: any = {
         label,
         username: username || undefined,
@@ -185,49 +223,97 @@ export default function NewUserPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm flex items-center gap-2">
-              {t("newUser.nodeIds")} <HelpTip text={t("help.nodeIds")} />
-            </label>
-            <Input value={nodeIds} onChange={(e) => setNodeIds(e.target.value)} placeholder="مثلاً 1,2,3 (اگر خالی باشد default nodes)" />
-            <div className="text-xs text-[hsl(var(--fg))]/70">در نسخه بعد، این بخش به انتخاب گرافیکی نودها تبدیل می‌شود.</div>
-          </div>
+          <Card>
+            <CardHeader>
+              <div className="text-sm text-[hsl(var(--fg))]/70">نودها</div>
+              <div className="text-lg font-semibold">انتخاب نود</div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={nodeMode === "all" ? "primary" : "outline"}
+                  onClick={() => {
+                    setNodeMode("all");
+                    if (nodes?.length) setSelectedNodeIds(nodes.map((n) => n.id));
+                  }}
+                >
+                  همه نودها
+                </Button>
+                <Button
+                  type="button"
+                  variant={nodeMode === "custom" ? "primary" : "outline"}
+                  onClick={() => {
+                    setNodeMode("custom");
+                    if (nodes?.length && selectedNodeIds.length === 0) setSelectedNodeIds(nodes.map((n) => n.id));
+                  }}
+                >
+                  انتخاب دستی
+                </Button>
+                <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>
+                  {t("newUser.loadNodes")}
+                </Button>
+              </div>
+
+              {nodes && nodes.length ? (
+                <div className="text-xs text-[hsl(var(--fg))]/70">
+                  {nodeMode === "all"
+                    ? "به صورت پیش‌فرض همه نودهای اختصاص‌داده‌شده برای شما استفاده می‌شود."
+                    : "نودهای موردنظر را انتخاب/غیرفعال کن."}
+                </div>
+              ) : (
+                <div className="text-xs text-[hsl(var(--fg))]/70">در حال دریافت لیست نودها…</div>
+              )}
+
+              {nodeMode === "custom" && nodes && nodes.length ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {nodes.map((n) => {
+                    const checked = selectedNodeIds.includes(n.id);
+                    return (
+                      <button
+                        key={n.id}
+                        type="button"
+                        className={`text-right rounded-xl border p-3 transition hover:bg-[hsl(var(--muted))] ${
+                          checked ? "border-[hsl(var(--primary))]" : "border-[hsl(var(--border))]"
+                        }`}
+                        onClick={() => {
+                          setSelectedNodeIds((prev) =>
+                            prev.includes(n.id) ? prev.filter((x) => x !== n.id) : [...prev, n.id]
+                          );
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{n.name}</div>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedNodeIds((prev) =>
+                                prev.includes(n.id) ? prev.filter((x) => x !== n.id) : [...prev, n.id]
+                              );
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="text-xs text-[hsl(var(--fg))]/70">#{n.id} • {n.panel_type}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {nodeMode === "custom" ? (
+                <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب شده: {selectedNodeIds.length}</div>
+              ) : null}
+            </CardContent>
+          </Card>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={loading} onClick={loadNodes}>{t("newUser.loadNodes")}</Button>
             <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
             <Button type="button" disabled={loading} onClick={doCreate}>{t("newUser.create")}</Button>
             <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>{t("newUser.back")}</Button>
           </div>
-
-          {nodes ? (
-  <Card>
-    <CardHeader>
-      <div className="text-sm text-[hsl(var(--fg))]/70">Nodes</div>
-      <div className="text-lg font-semibold">انتخاب سریع Node IDs</div>
-    </CardHeader>
-    <CardContent className="text-sm space-y-2">
-      <div className="text-xs text-[hsl(var(--fg))]/70">روی یک نود کلیک کن تا ID به فیلد اضافه شود.</div>
-      <div className="grid gap-2 md:grid-cols-2">
-        {nodes.map((n) => (
-          <button
-            key={n.id}
-            type="button"
-            className="text-right rounded-xl border border-[hsl(var(--border))] p-3 hover:bg-[hsl(var(--muted))]"
-            onClick={() => {
-              const ids = nodeIds.trim() ? nodeIds.split(",").map((x) => x.trim()).filter(Boolean) : [];
-              if (!ids.includes(String(n.id))) ids.push(String(n.id));
-              setNodeIds(ids.join(","));
-            }}
-          >
-            <div className="font-medium">{n.name}</div>
-            <div className="text-xs text-[hsl(var(--fg))]/70">#{n.id} • {n.panel_type}</div>
-          </button>
-        ))}
-      </div>
-    </CardContent>
-  </Card>
-) : null}
 
           {quote ? (
             <Card>
