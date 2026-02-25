@@ -1,14 +1,28 @@
 "use client";
+
 import * as React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
+import { useAuth } from "@/components/auth-context";
 
-type ResellerMini = { id: number; username: string; };
+type ResellerMini = { id: number; username: string };
+type OrderRow = {
+  id: number;
+  reseller_id: number;
+  user_id: number | null;
+  type: string;
+  status: string;
+  purchased_gb: number | null;
+  price_per_gb_snapshot: number | null;
+  created_at: string | null;
+};
+
 const ADMIN_FETCH_LIMIT = 200;
 
 async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]> {
@@ -26,121 +40,203 @@ async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]>
   return all;
 }
 
+function orderTypeMeta(type: string): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+  const m: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
+    create: { label: "ساخت کاربر", variant: "danger" },
+    add_traffic: { label: "افزایش حجم", variant: "danger" },
+    extend: { label: "تمدید", variant: "warning" },
+    change_nodes: { label: "تغییر نود", variant: "warning" },
+    refund: { label: "بازگشت وجه", variant: "success" },
+    delete: { label: "حذف کاربر", variant: "muted" },
+  };
+  return m[(type || "").toLowerCase()] || { label: type || "نامشخص", variant: "muted" };
+}
+
+function orderStatusMeta(status: string): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+  const m: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
+    completed: { label: "تکمیل‌شده", variant: "success" },
+    pending: { label: "در انتظار", variant: "warning" },
+    failed: { label: "ناموفق", variant: "danger" },
+    rolled_back: { label: "برگشت‌خورده", variant: "muted" },
+  };
+  return m[(status || "").toLowerCase()] || { label: status || "نامشخص", variant: "muted" };
+}
+
 export default function OrdersPage() {
   const { push } = useToast();
+  const { me } = useAuth();
+  const isAdmin = me?.role === "admin";
+
   const [resellerId, setResellerId] = React.useState<string>("");
   const [resellerQuery, setResellerQuery] = React.useState("");
   const [resellers, setResellers] = React.useState<ResellerMini[]>([]);
-  const [items, setItems] = React.useState<any[]>([]);
+  const [items, setItems] = React.useState<OrderRow[]>([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(200);
+  const [pageSize, setPageSize] = React.useState(100);
+  const [loading, setLoading] = React.useState(false);
 
   async function load() {
+    setLoading(true);
     try {
       const offset = (page - 1) * pageSize;
       const q = new URLSearchParams();
-      if (resellerId) q.set("reseller_id", resellerId);
       q.set("offset", String(offset));
       q.set("limit", String(pageSize));
-      const qs = q.toString() ? `?${q.toString()}` : "";
-      const res = await apiFetch<any>(`/api/v1/admin/reports/orders${qs}`);
-      setItems(res.items || []);
+      if (isAdmin && resellerId) q.set("reseller_id", resellerId);
+
+      const endpoint = isAdmin ? "/api/v1/admin/reports/orders" : "/api/v1/reseller/reports/orders";
+      const res = await apiFetch<any>(`${endpoint}?${q.toString()}`);
+      setItems((res.items || []) as OrderRow[]);
       setTotal(res.total || 0);
-      push({ title: "Loaded", type: "success" });
-    } catch (e:any) {
-      push({ title: "Error", desc: String(e.message||e), type: "error" });
+    } catch (e: any) {
+      push({ title: "خطا", desc: String(e.message || e), type: "error" });
+    } finally {
+      setLoading(false);
     }
   }
 
   React.useEffect(() => {
+    if (!isAdmin) return;
     (async () => {
       try {
         setResellers(await fetchAllResellersForAdmin());
       } catch (e: any) {
-        push({ title: "Error", desc: String(e.message || e), type: "error" });
+        push({ title: "خطا", desc: String(e.message || e), type: "error" });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAdmin]);
 
   React.useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, resellerId]);
+  }, [page, pageSize, resellerId, isAdmin]);
 
   React.useEffect(() => {
     setPage(1);
   }, [resellerId]);
 
+  const resellerMap = React.useMemo(() => {
+    const m: Record<number, string> = {};
+    for (const r of resellers) m[r.id] = r.username;
+    return m;
+  }, [resellers]);
 
-const resellerMap = React.useMemo(() => {
-  const m: Record<number, string> = {};
-  for (const r of resellers) m[r.id] = r.username;
-  return m;
-}, [resellers]);
-
-const filteredResellers = React.useMemo(() => {
-  const q = resellerQuery.toLowerCase();
-  return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
-}, [resellers, resellerQuery]);
+  const filteredResellers = React.useMemo(() => {
+    const q = resellerQuery.toLowerCase();
+    return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
+  }, [resellers, resellerQuery]);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="text-xl font-semibold">Orders</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">آخرین ۵۰۰ سفارش</div>
+          <div className="text-xl font-semibold">سفارشات</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">
+            {isAdmin ? "تاریخچه سفارشات تمام رسیلرها" : "تاریخچه سفارشات حساب شما"}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-2 md:grid-cols-3">
-  <Input
-    placeholder="جستجو ریسیلر (نام یا ID)"
-    value={resellerQuery}
-    onChange={(e) => setResellerQuery(e.target.value)}
-  />
-  <select
-    className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-    value={resellerId}
-    onChange={(e) => setResellerId(e.target.value)}
-  >
-    <option value="">همه ریسیلرها</option>
-    {filteredResellers.map((r) => (
-      <option key={r.id} value={String(r.id)}>
-        {r.username} (#{r.id})
-      </option>
-    ))}
-  </select>
-  <Button type="button" variant="outline" onClick={load}>بارگذاری</Button>
-</div>
-          <div className="overflow-x-auto">
+          {isAdmin ? (
+            <div className="grid gap-2 md:grid-cols-3">
+              <Input
+                placeholder="جستجوی رسیلر (نام یا ID)"
+                value={resellerQuery}
+                onChange={(e) => setResellerQuery(e.target.value)}
+              />
+              <select
+                className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                value={resellerId}
+                onChange={(e) => setResellerId(e.target.value)}
+              >
+                <option value="">همه رسیلرها</option>
+                {filteredResellers.map((r) => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.username} (#{r.id})
+                  </option>
+                ))}
+              </select>
+              <Button type="button" variant="outline" onClick={load} disabled={loading}>
+                {loading ? "..." : "بارگذاری"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+              <span>سفارشات شخصی شما</span>
+              <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
+                {loading ? "..." : "به‌روزرسانی"}
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-2 md:hidden">
+            {items.map((o) => {
+              const tm = orderTypeMeta(o.type);
+              const sm = orderStatusMeta(o.status);
+              return (
+                <div key={o.id} className="rounded-xl border border-[hsl(var(--border))] p-3 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold">#{o.id}</div>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={tm.variant}>{tm.label}</Badge>
+                      <Badge variant={sm.variant}>{sm.label}</Badge>
+                    </div>
+                  </div>
+                  <div>ریسیلر: {isAdmin ? resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : `#${o.reseller_id}` : `#${o.reseller_id}`}</div>
+                  <div>کاربر: {o.user_id ? `#${o.user_id}` : "-"}</div>
+                  <div>حجم سفارش: {o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</div>
+                  <div className="text-[hsl(var(--fg))]/65">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</div>
+                </div>
+              );
+            })}
+            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">موردی یافت نشد.</div> : null}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))]">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">Reseller</th>
-                  <th className="text-right py-2">User</th>
-                  <th className="text-right py-2">Type</th>
-                  <th className="text-right py-2">Status</th>
-                  <th className="text-right py-2">GB</th>
-                  <th className="text-right py-2">At</th>
+                  <th className="text-right py-2">شناسه</th>
+                  <th className="text-right py-2">ریسیلر</th>
+                  <th className="text-right py-2">کاربر</th>
+                  <th className="text-right py-2">نوع سفارش</th>
+                  <th className="text-right py-2">وضعیت</th>
+                  <th className="text-right py-2">حجم</th>
+                  <th className="text-right py-2">زمان</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((o) => (
-                  <tr key={o.id} className="border-b border-[hsl(var(--border))]">
-                    <td className="py-2">{o.id}</td>
-                    <td className="py-2">{resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : o.reseller_id}</td>
-                    <td className="py-2">{o.user_id ? <a className="underline" href={`/app/users/${o.user_id}`}>{o.user_id}</a> : "-"}</td>
-                    <td className="py-2">{o.type}</td>
-                    <td className="py-2">{o.status}</td>
-                    <td className="py-2">{o.purchased_gb != null ? fmtNumber(o.purchased_gb) : "-"}</td>
-                    <td className="py-2">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
+                {items.map((o) => {
+                  const tm = orderTypeMeta(o.type);
+                  const sm = orderStatusMeta(o.status);
+                  return (
+                    <tr key={o.id} className="border-b border-[hsl(var(--border))]">
+                      <td className="py-2">{o.id}</td>
+                      <td className="py-2">{isAdmin ? resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : o.reseller_id : o.reseller_id}</td>
+                      <td className="py-2">
+                        {o.user_id ? (
+                          <a className="underline" href={`/app/users/${o.user_id}`}>#{o.user_id}</a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="py-2"><Badge variant={tm.variant}>{tm.label}</Badge></td>
+                      <td className="py-2"><Badge variant={sm.variant}>{sm.label}</Badge></td>
+                      <td className="py-2">{o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</td>
+                      <td className="py-2">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
+                    </tr>
+                  );
+                })}
+                {!items.length ? (
+                  <tr>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={7}>موردی یافت نشد.</td>
                   </tr>
-                ))}
+                ) : null}
               </tbody>
             </table>
           </div>
+
           <Pagination
             page={page}
             pageSize={pageSize}
@@ -150,7 +246,7 @@ const filteredResellers = React.useMemo(() => {
               setPageSize(s);
               setPage(1);
             }}
-            pageSizeOptions={[100, 200, 500]}
+            pageSizeOptions={[20, 50, 100, 200]}
           />
         </CardContent>
       </Card>
