@@ -25,20 +25,7 @@ type LinksResp = {
   node_links: Array<{ node_id: number; direct_url?: string; status: string; detail?: string }>;
 };
 
-type NodeInfo = { id: number; name: string; base_url?: string };
-
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
-
-function normalizeDirectUrl(directUrl: string, baseUrl?: string) {
-  const u = (directUrl || "").trim();
-  if (!u) return u;
-  if (u.startsWith("http://") || u.startsWith("https://")) return u;
-  const b = (baseUrl || "").trim();
-  if (!b) return u;
-  const b2 = b.replace(/\/+$/, "");
-  if (u.startsWith("/")) return b2 + u;
-  return b2 + "/" + u;
-}
 
 function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
@@ -55,6 +42,19 @@ function statusBadge(status: string) {
   return { v: "default" as const, label: status || "—" };
 }
 
+type NodeLite = { id: number; name: string; base_url: string };
+
+function normalizeUrl(maybeUrl: string, baseUrl?: string) {
+  const u = (maybeUrl || "").trim();
+  if (!u) return u;
+  if (/^https?:\/\//i.test(u)) return u;
+  const b = (baseUrl || "").trim();
+  if (!b) return u;
+  const bb = b.replace(/\/+$/, "");
+  const uu = u.startsWith("/") ? u : `/${u}`;
+  return `${bb}${uu}`;
+}
+
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const userId = Number(id);
@@ -66,7 +66,7 @@ export default function UserDetailPage() {
 
   const [user, setUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
-  const [nodesById, setNodesById] = React.useState<Record<number, NodeInfo>>({});
+  const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -82,6 +82,16 @@ export default function UserDetailPage() {
     setErr(null);
     setLoading(true);
     try {
+      // Load nodes meta for nicer labels + URL normalization.
+      // Not critical; if it fails, the page still works.
+      try {
+        const nodesRes: any = me?.role === "admin" ? await apiFetch<any[]>("/api/v1/admin/nodes") : await apiFetch<any>("/api/v1/reseller/nodes");
+        const arr = Array.isArray(nodesRes) ? nodesRes : (nodesRes?.items || []);
+        setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, base_url: n.base_url })));
+      } catch {
+        // ignore
+      }
+
       const up = await apiFetch<UsersPage>("/api/v1/reseller/users");
       const u = up.items.find((x) => x.id === userId) || null;
       setUser(u);
@@ -93,6 +103,12 @@ export default function UserDetailPage() {
       setLoading(false);
     }
   }
+
+  const nodeMap = React.useMemo(() => {
+    const m = new Map<number, NodeLite>();
+    for (const n of nodes) m.set(n.id, n);
+    return m;
+  }, [nodes]);
 
   React.useEffect(() => {
     refresh();
@@ -129,28 +145,7 @@ export default function UserDetailPage() {
   const percent = Math.round(pct * 100);
   const usedGb = bytesToGb(user?.used_bytes || 0);
 
-    React.useEffect(() => {
-    (async () => {
-      if (!me) return;
-      try {
-        if (me.role === "admin") {
-          const list = await apiFetch<Array<{ id: number; name: string; base_url: string }>>("/api/v1/admin/nodes");
-          const map: Record<number, NodeInfo> = {};
-          for (const n of list) map[n.id] = { id: n.id, name: n.name, base_url: n.base_url };
-          setNodesById(map);
-        } else {
-          const r = await apiFetch<{ items: Array<{ id: number; name: string; base_url: string }> }>("/api/v1/reseller/nodes");
-          const map: Record<number, NodeInfo> = {};
-          for (const n of r.items) map[n.id] = { id: n.id, name: n.name, base_url: n.base_url };
-          setNodesById(map);
-        }
-      } catch {
-        // non-fatal
-      }
-    })();
-  }, [me]);
-
-return (
+  return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -268,8 +263,9 @@ return (
                         variant="outline"
                         className="gap-2"
                         onClick={() => {
-                          copyText(links.master_link);
-                          push({ title: t("common.copied"), type: "success" });
+                          copyText(links.master_link).then((ok) => {
+                            push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+                          });
                         }}
                       >
                         <Copy size={16} /> {t("common.copy")}
@@ -283,25 +279,23 @@ return (
                       {links.node_links.map((n) => (
                         <div key={n.node_id} className="rounded-2xl border border-[hsl(var(--border))] p-3">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-[hsl(var(--fg))]/70">{nodesById[n.node_id]?.name ? `${nodesById[n.node_id]!.name} (#${n.node_id})` : `Node #${n.node_id}`}</div>
+                            <div className="text-xs text-[hsl(var(--fg))]/70">
+                              {nodeMap.get(n.node_id)?.name ? `${nodeMap.get(n.node_id)!.name} (#${n.node_id})` : `Node #${n.node_id}`}
+                            </div>
                             <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
                           </div>
                           {n.direct_url ? (
                             <div className="mt-2 flex flex-col gap-2">
-                              {(() => {
-                                const info = nodesById[n.node_id];
-                                const full = normalizeDirectUrl(n.direct_url!, info?.base_url);
-                                return <Input value={full} readOnly />;
-                              })()}
+                              <Input value={normalizeUrl(n.direct_url, nodeMap.get(n.node_id)?.base_url)} readOnly />
                               <div>
                                 <Button
                                   type="button"
                                   variant="outline"
                                   onClick={() => {
-                                    const info = nodesById[n.node_id];
-                                    const full = normalizeDirectUrl(n.direct_url!, info?.base_url);
-                                    copyText(full);
-                                    push({ title: t("common.copied"), type: "success" });
+                                    const u = normalizeUrl(n.direct_url!, nodeMap.get(n.node_id)?.base_url);
+                                    copyText(u).then((ok) => {
+                                      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+                                    });
                                   }}
                                 >
                                   {t("common.copy")}

@@ -26,6 +26,14 @@ type ResellerOut = {
   can_create_subreseller?: boolean;
 };
 
+type NodeOut = {
+  id: number;
+  name: string;
+  panel_type: string;
+  base_url: string;
+  is_enabled: boolean;
+};
+
 function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warning" {
   if (s === "active") return "success";
   if (s === "disabled") return "danger";
@@ -48,8 +56,10 @@ export default function AdminResellersPage() {
   const [bundleGb, setBundleGb] = React.useState<number>(0);
   const [priceDay, setPriceDay] = React.useState<number>(0);
   const [canCreateSub, setCanCreateSub] = React.useState(true);
+  const [assignAllNodes, setAssignAllNodes] = React.useState(true);
 
   const [creditId, setCreditId] = React.useState<number | "">("");
+  const [creditQuery, setCreditQuery] = React.useState("");
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
 
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
@@ -64,6 +74,7 @@ export default function AdminResellersPage() {
     setBundleGb(0);
     setPriceDay(0);
     setCanCreateSub(true);
+    setAssignAllNodes(true);
   }
 
   async function load() {
@@ -74,6 +85,27 @@ export default function AdminResellersPage() {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
   }
+
+
+async function assignAllNodesForReseller(resellerId: number) {
+  // Best-effort: allocate all enabled nodes to this reseller for immediate usability.
+  const nodes = await apiFetch<NodeOut[]>("/api/v1/admin/nodes");
+  const enabled = (nodes || []).filter((n) => n.is_enabled);
+  await Promise.all(
+    enabled.map((n) =>
+      apiFetch("/api/v1/admin/allocations", {
+        method: "POST",
+        body: JSON.stringify({
+          reseller_id: resellerId,
+          node_id: n.id,
+          enabled: true,
+          default_for_reseller: true,
+          price_per_gb_override: null,
+        }),
+      }).catch(() => null)
+    )
+  );
+}
 
   async function createOrSave() {
     try {
@@ -93,6 +125,14 @@ export default function AdminResellersPage() {
           }),
         });
         push({ title: t("adminResellers.created"), desc: `ID: ${res.id}`, type: "success" });
+        if (assignAllNodes) {
+          try {
+            await assignAllNodesForReseller(res.id);
+            push({ title: t("adminResellers.assignedAllNodes"), desc: t("adminResellers.assignedAllNodesDesc"), type: "success" });
+          } catch {
+            push({ title: t("common.warn"), desc: t("adminResellers.assignAllNodesWarn"), type: "warning" });
+          }
+        }
         setItems((p) => [res, ...p]);
         resetForm();
       } else {
@@ -213,15 +253,43 @@ export default function AdminResellersPage() {
               </div>
             </div>
 
-            <div className="space-y-2 md:col-span-2">
+{editingId == null && (
+  <div className="space-y-2">
+    <label className="text-sm flex items-center gap-2">
+      {t("adminResellers.assignAllNodes")} <HelpTip text={t("adminResellers.help.assignAllNodes")} />
+    </label>
+    <div className="flex items-center gap-2">
+      <Switch checked={assignAllNodes} onCheckedChange={setAssignAllNodes} />
+      <span className="text-sm text-[hsl(var(--fg))]/75">{assignAllNodes ? t("common.yes") : t("common.no")}</span>
+    </div>
+  </div>
+)}
+
+<div className="space-y-2 md:col-span-2">
               <label className="text-sm flex items-center gap-2">
                 {t("adminResellers.pricing")} <HelpTip text={t("adminResellers.help.pricing")} />
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                <Input placeholder={t("adminResellers.pricePerGb")} type="number" value={priceGb} onChange={(e) => setPriceGb(Number(e.target.value))} />
-                <Input placeholder={t("adminResellers.bundlePerGb")} type="number" value={bundleGb} onChange={(e) => setBundleGb(Number(e.target.value))} />
-                <Input placeholder={t("adminResellers.pricePerDay")} type="number" value={priceDay} onChange={(e) => setPriceDay(Number(e.target.value))} />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  <div className="space-y-1">
+    <div className="text-xs text-[hsl(var(--fg))]/70 flex items-center gap-2">
+      {t("adminResellers.pricePerGb")} <HelpTip text={t("adminResellers.help.pricePerGb")} />
+    </div>
+    <Input type="number" value={priceGb} onChange={(e) => setPriceGb(Number(e.target.value))} />
+  </div>
+  <div className="space-y-1">
+    <div className="text-xs text-[hsl(var(--fg))]/70 flex items-center gap-2">
+      {t("adminResellers.bundlePerGb")} <HelpTip text={t("adminResellers.help.bundlePerGb")} />
+    </div>
+    <Input type="number" value={bundleGb} onChange={(e) => setBundleGb(Number(e.target.value))} />
+  </div>
+  <div className="space-y-1">
+    <div className="text-xs text-[hsl(var(--fg))]/70 flex items-center gap-2">
+      {t("adminResellers.pricePerDay")} <HelpTip text={t("adminResellers.help.pricePerDay")} />
+    </div>
+    <Input type="number" value={priceDay} onChange={(e) => setPriceDay(Number(e.target.value))} />
+  </div>
+</div>
+<div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.pricingNote")}</div>
             </div>
           </div>
 
@@ -244,18 +312,39 @@ export default function AdminResellersPage() {
               <div className="text-sm font-medium">{t("adminResellers.creditTitle")}</div>
               <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.creditSubtitle")}</div>
             </CardHeader>
-            <CardContent className="grid gap-2 md:grid-cols-3">
-              <Input
-                placeholder={t("adminResellers.resellerId")}
-                type="number"
-                value={creditId}
-                onChange={(e) => setCreditId(e.target.value === "" ? "" : Number(e.target.value))}
-              />
-              <Input placeholder={t("adminResellers.amount")} type="number" value={creditAmount} onChange={(e) => setCreditAmount(Number(e.target.value))} />
-              <Button type="button" variant="outline" onClick={credit}>
-                {t("adminResellers.credit")}
-              </Button>
-            </CardContent>
+            <CardContent className="grid gap-2 md:grid-cols-4">
+  <div className="md:col-span-2 grid gap-2 sm:grid-cols-2">
+    <Input
+      placeholder={t("common.search")}
+      value={creditQuery}
+      onChange={(e) => setCreditQuery(e.target.value)}
+    />
+    <select
+      className="h-10 rounded-xl border border-[hsl(var(--border))] bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+      value={creditId}
+      onChange={(e) => setCreditId(e.target.value === "" ? "" : Number(e.target.value))}
+    >
+      <option value="">{t("adminResellers.selectReseller")}</option>
+      {items
+        .filter((r) => `${r.id} ${r.username}`.toLowerCase().includes(creditQuery.toLowerCase()))
+        .slice(0, 200)
+        .map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.username} (#{r.id}) — {new Intl.NumberFormat().format(r.balance)}
+          </option>
+        ))}
+    </select>
+  </div>
+  <Input
+    placeholder={t("adminResellers.amount")}
+    type="number"
+    value={creditAmount}
+    onChange={(e) => setCreditAmount(Number(e.target.value))}
+  />
+  <Button type="button" variant="outline" onClick={credit}>
+    {t("adminResellers.credit")}
+  </Button>
+</CardContent>
           </Card>
 
           <div className="flex items-center gap-2">

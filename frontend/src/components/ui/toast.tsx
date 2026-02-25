@@ -1,32 +1,40 @@
 "use client";
+
 import * as React from "react";
 
-type ToastType = "success" | "warning" | "error";
-type Toast = { id: string; title: string; desc?: string; type?: ToastType };
+type ToastType = "success" | "error" | "warning";
 
-const ToastCtx = React.createContext<{ push: (t: Omit<Toast, "id">) => void } | null>(null);
+export type ToastInput = {
+  title: string;
+  desc?: string;
+  type?: ToastType;
+};
+
+type Toast = ToastInput & { id: string };
+
+const ToastCtx = React.createContext<{ push: (t: ToastInput) => void } | null>(null);
 
 function tone(type?: ToastType) {
   switch (type) {
     case "success":
-      return "border-emerald-400/40";
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-100";
     case "warning":
-      return "border-amber-400/40";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-100";
     case "error":
     default:
-      return "border-rose-400/40";
+      return "border-rose-500/30 bg-rose-500/10 text-rose-100";
   }
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = React.useState<Toast[]>([]);
 
-  const push = (t: Omit<Toast, "id">) => {
+  const push = React.useCallback((t: ToastInput) => {
     const id = Math.random().toString(36).slice(2);
     const toast: Toast = { id, ...t };
     setItems((p) => [toast, ...p].slice(0, 4));
     window.setTimeout(() => setItems((p) => p.filter((x) => x.id !== id)), 3500);
-  };
+  }, []);
 
   return (
     <ToastCtx.Provider value={{ push }}>
@@ -37,10 +45,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             role="status"
             aria-live="polite"
-            className={`rounded-2xl border bg-slate-950/90 p-3 text-white shadow-lg backdrop-blur ${tone(t.type)}`}
+            className={`rounded-xl border p-3 shadow-lg backdrop-blur ${tone(t.type)}`}
           >
             <div className="text-sm font-semibold">{t.title}</div>
-            {t.desc ? <div className="mt-1 text-xs text-white/80">{t.desc}</div> : null}
+            {t.desc ? (
+              <div className="mt-1 whitespace-pre-wrap text-xs opacity-90">{t.desc}</div>
+            ) : null}
           </div>
         ))}
       </div>

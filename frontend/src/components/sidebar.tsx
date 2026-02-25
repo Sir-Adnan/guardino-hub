@@ -21,14 +21,14 @@ const items = [
   { href: "/app/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ className, onNavigate }: { className?: string; onNavigate?: () => void } = {}) {
   const { me } = useAuth();
   const isAdmin = me?.role === "admin";
   const p = usePathname();
   const { lang, setLang, t } = useI18n();
   return (
-    <aside className="w-64 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] flex min-h-screen flex-col">
-      <div className="p-4 text-lg font-semibold">{t("app.title")}</div>
+    <aside className={cn("w-64 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--card))] flex min-h-screen flex-col", className)}>
+      <div className="p-4 text-lg font-semibold tracking-tight">{t("app.title")}</div>
       <nav className="px-2 flex-1">
         {items.filter(it => isAdmin ? true : !it.href.startsWith('/app/admin')).map((it) => {
           const active = p === it.href || (it.href !== "/app" && p.startsWith(it.href));
@@ -37,6 +37,7 @@ export function Sidebar() {
             <Link
               key={it.href}
               href={it.href}
+              onClick={() => onNavigate?.()}
               className={cn(
                 "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
                 active ? "bg-[hsl(var(--muted))]" : "hover:bg-[hsl(var(--muted))]"
