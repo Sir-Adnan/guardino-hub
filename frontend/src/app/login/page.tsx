@@ -9,6 +9,15 @@ import { apiFetch } from "@/lib/api";
 
 type TokenResponse = { access_token: string; token_type: string };
 
+function localizeLoginError(raw: string): string {
+  const s = (raw || "").trim();
+  const lower = s.toLowerCase();
+  if (lower.includes("invalid credentials")) return "نام کاربری یا رمز عبور اشتباه است.";
+  if (lower.includes("account disabled")) return "حساب کاربری شما غیرفعال است.";
+  if (lower.includes("invalid token")) return "نشست شما معتبر نیست. دوباره وارد شوید.";
+  return s || "خطا در ورود.";
+}
+
 export default function LoginPage() {
   const r = useRouter();
   const [username, setUsername] = React.useState("");
@@ -28,7 +37,7 @@ export default function LoginPage() {
       storage.set("token", res.access_token);
       r.push("/app");
     } catch (e: any) {
-      setErr(String(e.message || e));
+      setErr(localizeLoginError(String(e.message || e)));
     } finally {
       setLoading(false);
     }
