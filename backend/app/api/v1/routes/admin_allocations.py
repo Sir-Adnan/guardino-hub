@@ -1,21 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.node_allocation import NodeAllocation
 from app.models.reseller import Reseller
 from app.models.node import Node
-from app.schemas.admin import CreateAllocationRequest, UpdateAllocationRequest, AllocationOut
+from app.schemas.admin import CreateAllocationRequest, UpdateAllocationRequest, AllocationOut, AllocationList
 
 router = APIRouter()
 
-@router.get("", response_model=list[AllocationOut])
-async def list_allocations(db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(NodeAllocation).order_by(desc(NodeAllocation.id)))
+@router.get("", response_model=AllocationList)
+async def list_allocations(
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+):
+    base = select(NodeAllocation).order_by(desc(NodeAllocation.id))
+    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = int(total_q.scalar_one())
+    q = await db.execute(base.limit(limit).offset(offset))
     items = q.scalars().all()
-    return [
+    out = [
         AllocationOut(
             id=a.id,
             reseller_id=a.reseller_id,
@@ -26,6 +34,7 @@ async def list_allocations(db: AsyncSession = Depends(get_db), admin=Depends(req
         )
         for a in items
     ]
+    return AllocationList(items=out, total=total)
 
 @router.post("", response_model=AllocationOut)
 async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
