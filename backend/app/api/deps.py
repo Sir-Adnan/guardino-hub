@@ -16,12 +16,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 async def get_current_principal(
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
-) -> tuple[Reseller, Role]:
+) -> tuple[Reseller, str]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         sub: str | None = payload.get("sub")
-        token_role: str | None = payload.get("role")
-        if not sub or not token_role:
+        role: str | None = payload.get("role")
+        if not sub or not role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -34,18 +34,7 @@ async def get_current_principal(
     if reseller.status in (ResellerStatus.disabled, ResellerStatus.deleted):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    # IMPORTANT: role is authoritative in the database.
-    # The JWT role claim is treated as a cache only.
-    try:
-        db_role = Role((reseller.role or "reseller").strip().lower())
-    except Exception:
-        db_role = Role.reseller
-
-    # If role was changed in the DB, old tokens should stop working.
-    if token_role != db_role.value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    return reseller, db_role
+    return reseller, role
 
 
 async def require_admin(principal=Depends(get_current_principal)) -> Reseller:

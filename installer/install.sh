@@ -119,9 +119,7 @@ ensure_kv "SECRET_KEY" "${SECRET_KEY}"
 ensure_kv "REDIS_URL" "redis://redis:6379/0"
 ensure_kv "HTTP_TIMEOUT_SECONDS" "20"
 ensure_kv "PANEL_TLS_VERIFY" "true"
-# Frontend client code calls absolute paths like "/api/v1/..." behind nginx.
-# Keep this empty in production unless you intentionally want a different base.
-ensure_kv "NEXT_PUBLIC_API_BASE" ""
+ensure_kv "NEXT_PUBLIC_API_BASE" "/api"
 
 # For same-origin requests, CORS can be empty. If you want to call API directly, uncomment.
 if [ -n "${DOMAIN}" ]; then
@@ -153,19 +151,28 @@ server {
     proxy_set_header Host \$host;
   }
 
-  # FastAPI routes are mounted under /api/v1
-  location /api/v1/ {
-    proxy_pass http://api:8000;
+  location = /api/docs {
+    proxy_pass http://api:8000/docs;
+    proxy_set_header Host \$host;
+  }
+
+  location = /api/openapi.json {
+    proxy_pass http://api:8000/openapi.json;
+    proxy_set_header Host \$host;
+  }
+
+  location = /api/redoc {
+    proxy_pass http://api:8000/redoc;
+    proxy_set_header Host \$host;
+  }
+
+  location /api/ {
+    proxy_pass http://api:8000/api/;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
   }
-
-  # Expose docs under /api/docs (and friends)
-  location = /api/docs { proxy_pass http://api:8000/docs; proxy_set_header Host \$host; }
-  location = /api/redoc { proxy_pass http://api:8000/redoc; proxy_set_header Host \$host; }
-  location = /api/openapi.json { proxy_pass http://api:8000/openapi.json; proxy_set_header Host \$host; }
 
   location / {
     proxy_pass http://web:3000;
@@ -178,6 +185,7 @@ server {
 CONF
 }
 
+
 write_nginx_https() {
   local domain="$1"
   cat > deploy/nginx.conf <<CONF
@@ -189,23 +197,19 @@ server {
     root /var/www/certbot;
   }
 
-  # Keep health reachable over HTTP (installer uses it) and keep ACME working.
   location /health {
     proxy_pass http://api:8000/health;
     proxy_set_header Host \$host;
   }
 
-  location /api/v1/ {
-    proxy_pass http://api:8000;
+  # keep API reachable on HTTP too (helps install health checks)
+  location /api/ {
+    proxy_pass http://api:8000/api/;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
   }
-
-  location = /api/docs { proxy_pass http://api:8000/docs; proxy_set_header Host \$host; }
-  location = /api/redoc { proxy_pass http://api:8000/redoc; proxy_set_header Host \$host; }
-  location = /api/openapi.json { proxy_pass http://api:8000/openapi.json; proxy_set_header Host \$host; }
 
   location / {
     return 301 https://\$host\$request_uri;
@@ -232,17 +236,28 @@ server {
     proxy_set_header Host \$host;
   }
 
-  location /api/v1/ {
-    proxy_pass http://api:8000;
+  location = /api/docs {
+    proxy_pass http://api:8000/docs;
+    proxy_set_header Host \$host;
+  }
+
+  location = /api/openapi.json {
+    proxy_pass http://api:8000/openapi.json;
+    proxy_set_header Host \$host;
+  }
+
+  location = /api/redoc {
+    proxy_pass http://api:8000/redoc;
+    proxy_set_header Host \$host;
+  }
+
+  location /api/ {
+    proxy_pass http://api:8000/api/;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
   }
-
-  location = /api/docs { proxy_pass http://api:8000/docs; proxy_set_header Host \$host; }
-  location = /api/redoc { proxy_pass http://api:8000/redoc; proxy_set_header Host \$host; }
-  location = /api/openapi.json { proxy_pass http://api:8000/openapi.json; proxy_set_header Host \$host; }
 
   location / {
     proxy_pass http://web:3000;
@@ -254,6 +269,7 @@ server {
 }
 CONF
 }
+
 
 if [ -n "${DOMAIN}" ]; then
   write_nginx_http "${DOMAIN}"
@@ -330,16 +346,7 @@ log "[11/12] Running migrations..."
 
 log "[12/12] Creating superadmin (if not exists)..."
 ADMIN_USER="${ADMIN_USER:-admin}"
-ADMIN_PASS="${ADMIN_PASS:-}"
-
-# Never ship an installer with a known default password.
-# If the operator doesn't provide ADMIN_PASS, generate a strong one and store it locally.
-if [ -z "${ADMIN_PASS}" ]; then
-  ADMIN_PASS="$(openssl rand -base64 24 | tr -d '\n' | tr '/+' '_-' | cut -c1-24)"
-  warn "ADMIN_PASS was not provided; generated a strong password."
-  echo "${ADMIN_PASS}" > "${INSTALL_DIR}/.guardino_admin_password"
-  chmod 600 "${INSTALL_DIR}/.guardino_admin_password" || true
-fi
+ADMIN_PASS="${ADMIN_PASS:-ChangeMe_123!}"
 "${COMPOSE[@]}" run --rm api python -m app.cli create-superadmin --username "${ADMIN_USER}" --password "${ADMIN_PASS}" || true
 
 BASE_URL="http://$(curl -fsS ifconfig.me 2>/dev/null || echo "<server-ip>")"
@@ -355,7 +362,4 @@ echo "URL:        ${BASE_URL}/"
 echo "API docs:   ${BASE_URL}/api/docs"
 echo "Health:     ${BASE_URL}/health"
 echo "Superadmin: ${ADMIN_USER} / ${ADMIN_PASS}"
-if [ -f "${INSTALL_DIR}/.guardino_admin_password" ]; then
-  echo "Saved to:   ${INSTALL_DIR}/.guardino_admin_password"
-fi
 echo "----------------------------------------"
