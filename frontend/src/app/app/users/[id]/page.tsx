@@ -66,7 +66,7 @@ export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const userId = Number(id);
   const r = useRouter();
-  const { me } = useAuth();
+  const { me, refresh: refreshMe } = useAuth();
   const { t } = useI18n();
   const { push } = useToast();
   const locked = (me?.balance ?? 1) <= 0;
@@ -146,6 +146,7 @@ export default function UserDetailPage() {
       const res = await apiFetch<OpResult>(path, { method: "POST", body: JSON.stringify(body) });
       push({ title: "OK", desc: `${t("users.balance")}: ${fmtNumber(res.new_balance)}`, type: "success" });
       await refresh();
+      await refreshMe().catch(() => undefined);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
@@ -274,6 +275,7 @@ export default function UserDetailPage() {
                 </div>
               </div>
               <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.links")} — {t("user.links.master")} / {t("user.links.panel")}</div>
+              <div className="text-xs text-[hsl(var(--fg))]/60">پیشنهاد: برای مصرف روزمره، لینک مستقیم پنل را استفاده کنید.</div>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               {loading ? (

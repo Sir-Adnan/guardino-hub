@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
@@ -17,7 +18,7 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
-import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users } from "lucide-react";
+import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
@@ -83,7 +84,8 @@ function computePriority(u: UserOut) {
 }
 
 export default function UsersPage() {
-  const { me } = useAuth();
+  const router = useRouter();
+  const { me, refresh: refreshMe } = useAuth();
   const { t } = useI18n();
   const { push } = useToast();
   const locked = (me?.balance ?? 1) <= 0;
@@ -109,6 +111,11 @@ export default function UsersPage() {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [editUser, setEditUser] = React.useState<UserOut | null>(null);
+  const [editDays, setEditDays] = React.useState(30);
+  const [editAddGb, setEditAddGb] = React.useState(10);
+  const [editDecGb, setEditDecGb] = React.useState(5);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(50);
 
@@ -210,26 +217,67 @@ export default function UsersPage() {
     return { total, active, expiringSoon, highUsage };
   }, [rawItems, data?.total]);
 
-  async function openLinks(u: UserOut) {
+  async function fetchUserLinks(u: UserOut, refresh = false) {
     await loadNodes();
+    return await apiFetch<LinksResp>(`/api/v1/reseller/users/${u.id}/links?refresh=${refresh ? "true" : "false"}`);
+  }
+
+  function extractDirectLinks(res: LinksResp) {
+    return (res.node_links || [])
+      .map((nl) => {
+        const node = nodeMap.get(nl.node_id);
+        if (nl.full_url) return nl.full_url;
+        if (nl.direct_url) return normalizeUrl(nl.direct_url, node?.base_url);
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  async function openLinks(u: UserOut) {
     setLinksUser(u);
     setLinksOpen(true);
     setLinks(null);
     setLinksErr(null);
     try {
-      const res = await apiFetch<LinksResp>(`/api/v1/reseller/users/${u.id}/links?refresh=true`);
+      const res = await fetchUserLinks(u, true);
       setLinks(res);
     } catch (e: any) {
       setLinksErr(String(e.message || e));
     }
   }
 
-
   async function copyMaster(u: UserOut) {
     try {
-      await loadNodes();
-      const res = await apiFetch<LinksResp>(`/api/v1/reseller/users/${u.id}/links?refresh=false`);
+      const res = await fetchUserLinks(u, false);
       const ok = await copyText(res.master_link);
+      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function copyDirectRecommended(u: UserOut) {
+    try {
+      const res = await fetchUserLinks(u, false);
+      const direct = extractDirectLinks(res);
+      const target = direct[0] || res.master_link;
+      const ok = await copyText(target);
+      push({
+        title: ok ? t("common.copied") : t("common.failed"),
+        desc: direct[0] ? "لینک مستقیم پنل کپی شد." : "لینک مستقیم موجود نبود؛ لینک Guardino کپی شد.",
+        type: ok ? "success" : "error",
+      });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function copyAllLinksForUser(u: UserOut) {
+    try {
+      const res = await fetchUserLinks(u, false);
+      const direct = extractDirectLinks(res);
+      const lines = [...direct, res.master_link].filter(Boolean).join("\n");
+      const ok = await copyText(lines);
       push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -241,9 +289,12 @@ export default function UsersPage() {
     try {
       await apiFetch<OpResult>(path, { method: "POST", body: JSON.stringify(body) });
       await load();
+      await refreshMe().catch(() => undefined);
       push({ title: "OK", type: "success" });
+      return true;
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -277,6 +328,14 @@ export default function UsersPage() {
     if (confirmKind === "reset") await resetUsage(u);
     if (confirmKind === "revoke") await revoke(u);
     if (confirmKind === "delete") await op(u.id, `/api/v1/reseller/users/${u.id}/refund`, { action: "delete" });
+  }
+
+  function openQuickEdit(u: UserOut) {
+    setEditUser(u);
+    setEditDays(30);
+    setEditAddGb(10);
+    setEditDecGb(5);
+    setEditOpen(true);
   }
 
   function FilterButton({ value, label }: { value: StatusFilter; label: string }) {
@@ -426,10 +485,10 @@ export default function UsersPage() {
 
             const priorityBadge =
               pr.level === "high"
-                ? { v: "danger" as const, label: t("users.priorityHigh") }
+                ? { v: "danger" as const, label: "اقدام فوری" }
                 : pr.level === "med"
-                ? { v: "warning" as const, label: t("users.priorityMed") }
-                : { v: "muted" as const, label: t("users.priorityLow") };
+                ? { v: "warning" as const, label: "نیاز بررسی" }
+                : { v: "muted" as const, label: "عادی" };
 
             return (
               <Card key={u.id} className="overflow-hidden">
@@ -452,8 +511,8 @@ export default function UsersPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={sb.v}>{sb.label}</Badge>
-                      <Badge variant={priorityBadge.v} title={t("users.priorityLabel")}> 
-                        {t("users.priorityLabel")}: {priorityBadge.label}
+                      <Badge variant={priorityBadge.v} title="اولویت بر اساس مصرف و زمان انقضا محاسبه می‌شود.">
+                        ریسک: {priorityBadge.label}
                       </Badge>
                       <Switch checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
                     </div>
@@ -470,8 +529,11 @@ export default function UsersPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" disabled={busy} onClick={() => openLinks(u)}>
-                      {t("users.links")}
+                    <Button variant="outline" className="gap-2" disabled={busy} onClick={() => copyDirectRecommended(u)}>
+                      <Link2 size={16} /> کپی لینک مستقیم
+                    </Button>
+                    <Button variant="outline" className="gap-2" disabled={busy} onClick={() => openLinks(u)}>
+                      <Layers size={16} /> {t("users.links")}
                     </Button>
 
                     <Menu
@@ -484,14 +546,22 @@ export default function UsersPage() {
                         {
                           label: t("users.details"),
                           icon: <Pencil size={16} />,
-                          onClick: () => {
-                            window.location.href = `/app/users/${u.id}`;
-                          },
+                          onClick: () => router.push(`/app/users/${u.id}`),
                         },
                         {
-                          label: t("users.copySub"),
+                          label: "ویرایش سریع",
+                          icon: <SquarePen size={16} />,
+                          onClick: () => openQuickEdit(u),
+                        },
+                        {
+                          label: "کپی لینک Guardino",
                           icon: <Copy size={16} />,
                           onClick: () => copyMaster(u),
+                        },
+                        {
+                          label: "کپی همه لینک‌ها",
+                          icon: <Copy size={16} />,
+                          onClick: () => copyAllLinksForUser(u),
                         },
                         {
                           label: isActive ? t("common.disable") : t("common.enable"),
@@ -559,12 +629,88 @@ export default function UsersPage() {
         </div>
       </Modal>
 
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={editUser ? `ویرایش سریع: ${editUser.label}` : "ویرایش سریع"}
+      >
+        {editUser ? (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+              این بخش برای ویرایش سریع حجم/زمان طراحی شده است. برای تغییرات کامل از صفحه جزئیات استفاده کنید.
+            </div>
+
+            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="font-medium">تمدید زمانی</div>
+              <div className="flex gap-2">
+                <Input type="number" value={editDays} onChange={(e) => setEditDays(Number(e.target.value) || 0)} />
+                <Button
+                  disabled={busyId === editUser.id || locked}
+                  onClick={async () => {
+                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/extend`, { days: editDays });
+                    if (ok) setEditOpen(false);
+                  }}
+                >
+                  تمدید
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="font-medium">افزایش حجم</div>
+              <div className="flex gap-2">
+                <Input type="number" value={editAddGb} onChange={(e) => setEditAddGb(Number(e.target.value) || 0)} />
+                <Button
+                  disabled={busyId === editUser.id || locked}
+                  onClick={async () => {
+                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/add-traffic`, { add_gb: editAddGb });
+                    if (ok) setEditOpen(false);
+                  }}
+                >
+                  افزایش
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="font-medium">کاهش حجم (ریفاند)</div>
+              <div className="flex gap-2">
+                <Input type="number" value={editDecGb} onChange={(e) => setEditDecGb(Number(e.target.value) || 0)} />
+                <Button
+                  variant="outline"
+                  disabled={busyId === editUser.id || locked}
+                  onClick={async () => {
+                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/refund`, {
+                      action: "decrease",
+                      decrease_gb: editDecGb,
+                    });
+                    if (ok) setEditOpen(false);
+                  }}
+                >
+                  کاهش + ریفاند
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>{t("common.cancel")}</Button>
+              <Button variant="outline" className="gap-2" onClick={() => router.push(`/app/users/${editUser.id}`)}>
+                <SquarePen size={16} /> رفتن به جزئیات
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
       <Modal open={linksOpen} onClose={() => setLinksOpen(false)} title={t("users.linksTitle").replace("{label}", linksUser?.label || "")}>
         {linksErr ? <div className="text-sm text-red-500">{linksErr}</div> : null}
         {!links && !linksErr ? <div className="text-sm text-[hsl(var(--fg))]/70">{t("common.loading")}</div> : null}
 
         {links ? (
           <div className="space-y-4 text-sm">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+              پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک Guardino برای حالت چندنودی مناسب‌تر است.
+            </div>
             <div className="space-y-2">
               <div className="font-semibold">{t("users.masterSub")}</div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 break-all">{links.master_link}</div>
@@ -576,6 +722,32 @@ export default function UsersPage() {
                   }}
                 >
                   {t("common.copy")}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    const directList = extractDirectLinks(links);
+                    if (!directList.length) {
+                      push({ title: "لینک مستقیم موجود نیست", type: "warning" });
+                      return;
+                    }
+                    const direct = directList.join("\n");
+                    copyText(direct).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                  }}
+                >
+                  <Link2 size={15} /> کپی لینک‌های مستقیم
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    const direct = extractDirectLinks(links);
+                    const all = [...direct, links.master_link].filter(Boolean).join("\n");
+                    copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                  }}
+                >
+                  <Copy size={15} /> کپی همه لینک‌ها
                 </Button>
               </div>
             </div>

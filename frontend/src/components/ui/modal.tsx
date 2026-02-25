@@ -28,14 +28,14 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className={cn("relative w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-soft", className)}>
+      <div className={cn("relative w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-soft max-h-[88vh] overflow-hidden", className)}>
         <div className="flex items-center justify-between gap-3 border-b border-[hsl(var(--border))] px-5 py-4">
           <div className="text-base font-semibold">{title}</div>
           <button className="rounded-xl px-2 py-1 text-sm hover:bg-[hsl(var(--muted))]" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="max-h-[calc(88vh-72px)] overflow-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );

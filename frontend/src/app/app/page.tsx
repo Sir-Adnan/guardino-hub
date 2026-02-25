@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { AlertTriangle, BarChart3, Boxes, Coins, Database, Network, ShoppingCart, UsersRound, Wallet } from "lucide-react";
 
 type AdminStats = {
   resellers_total: number;
@@ -39,11 +40,14 @@ type ResellerStats = {
 type NodeLite = { id: number; name: string; panel_type?: string; is_enabled?: boolean; is_visible_in_sub?: boolean };
 type UserLite = { id: number; label: string; status: string };
 
-function StatCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+function StatCard({ title, value, hint, icon }: { title: string; value: string; hint?: string; icon?: React.ReactNode }) {
   return (
     <Card>
       <CardHeader>
-        <div className="text-xs text-[hsl(var(--fg))]/70">{title}</div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs text-[hsl(var(--fg))]/70">{title}</div>
+          {icon ? <span className="text-[hsl(var(--fg))]/55">{icon}</span> : null}
+        </div>
         <div className="text-2xl font-semibold">{value}</div>
         {hint ? <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">{hint}</div> : null}
       </CardHeader>
@@ -106,6 +110,24 @@ export default function Dashboard() {
     };
   }, [me]);
 
+  const lowBalanceWarn = me && me.role !== "admin" && resellerStats
+    ? (() => {
+    const balance = Number(resellerStats.balance || 0);
+    const priceCandidates = [Number(resellerStats.bundle_price_per_gb || 0), Number(resellerStats.price_per_gb || 0)].filter((x) => x > 0);
+    const bestGbPrice = priceCandidates.length ? Math.min(...priceCandidates) : null;
+    const affordableGb = bestGbPrice ? balance / bestGbPrice : null;
+    const lowByCash = balance <= 300_000;
+    const lowByTraffic = affordableGb != null && affordableGb < 100;
+    if (!lowByCash && !lowByTraffic) return null;
+    return {
+      balance,
+      affordableGb,
+      lowByCash,
+      lowByTraffic,
+    };
+    })()
+    : null;
+
   if (!me) return null;
 
   return (
@@ -142,18 +164,19 @@ export default function Dashboard() {
       {!loading && me.role === "admin" && adminStats ? (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="تعداد رسیلرها" value={fmtNumber(adminStats.resellers_total)} />
-            <StatCard title="تعداد کاربران" value={fmtNumber(adminStats.users_total)} />
-            <StatCard title="تعداد نودها" value={fmtNumber(adminStats.nodes_total)} />
-            <StatCard title="تعداد سفارش‌ها" value={fmtNumber(adminStats.orders_total)} />
+            <StatCard title="تعداد رسیلرها" value={fmtNumber(adminStats.resellers_total)} icon={<UsersRound size={16} />} />
+            <StatCard title="تعداد کاربران" value={fmtNumber(adminStats.users_total)} icon={<UsersRound size={16} />} />
+            <StatCard title="تعداد نودها" value={fmtNumber(adminStats.nodes_total)} icon={<Network size={16} />} />
+            <StatCard title="تعداد سفارش‌ها" value={fmtNumber(adminStats.orders_total)} icon={<ShoppingCart size={16} />} />
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <StatCard title="تراکنش‌های دفتر کل" value={fmtNumber(adminStats.ledger_entries_total)} />
-            <StatCard title="خالص تراکنش ۳۰ روز" value={fmtNumber(adminStats.ledger_net_30d)} hint="(+ شارژ، - مصرف)" />
+            <StatCard title="تراکنش‌های دفتر کل" value={fmtNumber(adminStats.ledger_entries_total)} icon={<Database size={16} />} />
+            <StatCard title="خالص تراکنش ۳۰ روز" value={fmtNumber(adminStats.ledger_net_30d)} hint="(+ شارژ، - مصرف)" icon={<BarChart3 size={16} />} />
             <StatCard
               title="میانگین قیمت/GB رسیلرها"
               value={adminStats.price_per_gb_avg == null ? "—" : fmtNumber(adminStats.price_per_gb_avg)}
+              icon={<Coins size={16} />}
             />
           </div>
 
@@ -185,17 +208,36 @@ export default function Dashboard() {
 
       {!loading && me.role !== "admin" && resellerStats ? (
         <>
+          {lowBalanceWarn ? (
+            <Card>
+              <CardContent className="py-4">
+                <div className="rounded-xl border border-amber-400/40 bg-amber-100/40 px-4 py-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <AlertTriangle size={16} />
+                    هشدار موجودی پایین
+                  </div>
+                  <div className="mt-1 text-xs">
+                    موجودی شما {fmtNumber(lowBalanceWarn.balance)} تومان است.
+                    {lowBalanceWarn.affordableGb != null
+                      ? ` با قیمت فعلی تقریباً ${Math.max(0, Math.floor(lowBalanceWarn.affordableGb))}GB قابل خرید است.`
+                      : ""}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="موجودی" value={fmtNumber(resellerStats.balance)} />
-            <StatCard title="کاربران" value={fmtNumber(resellerStats.users_total)} hint={`فعال: ${fmtNumber(resellerStats.users_active)} • غیرفعال: ${fmtNumber(resellerStats.users_disabled)}`} />
-            <StatCard title="نودهای مجاز" value={fmtNumber(resellerStats.nodes_allowed)} />
-            <StatCard title="سفارش‌ها (۳۰ روز)" value={fmtNumber(resellerStats.orders_30d)} />
+            <StatCard title="موجودی" value={fmtNumber(resellerStats.balance)} icon={<Wallet size={16} />} />
+            <StatCard title="کاربران" value={fmtNumber(resellerStats.users_total)} hint={`فعال: ${fmtNumber(resellerStats.users_active)} • غیرفعال: ${fmtNumber(resellerStats.users_disabled)}`} icon={<UsersRound size={16} />} />
+            <StatCard title="نودهای مجاز" value={fmtNumber(resellerStats.nodes_allowed)} icon={<Network size={16} />} />
+            <StatCard title="سفارش‌ها (۳۰ روز)" value={fmtNumber(resellerStats.orders_30d)} icon={<ShoppingCart size={16} />} />
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <StatCard title="قیمت/GB" value={fmtNumber(resellerStats.price_per_gb)} hint="مدل per-node" />
-            <StatCard title="باندل/GB" value={fmtNumber(resellerStats.bundle_price_per_gb)} hint="مدل bundle" />
-            <StatCard title="قیمت/روز" value={fmtNumber(resellerStats.price_per_day)} hint="هزینه تمدید" />
+            <StatCard title="قیمت/GB" value={fmtNumber(resellerStats.price_per_gb)} hint="مدل per-node" icon={<Coins size={16} />} />
+            <StatCard title="باندل/GB" value={fmtNumber(resellerStats.bundle_price_per_gb)} hint="مدل bundle" icon={<Boxes size={16} />} />
+            <StatCard title="قیمت/روز" value={fmtNumber(resellerStats.price_per_day)} hint="هزینه تمدید" icon={<Coins size={16} />} />
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -247,8 +289,8 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <StatCard title="مصرف شما (۳۰ روز)" value={fmtNumber(resellerStats.spent_30d)} hint="جمع کسر شده از کیف پول" />
-            <StatCard title="کل سفارش‌ها" value={fmtNumber(resellerStats.orders_total)} />
+            <StatCard title="مصرف شما (۳۰ روز)" value={fmtNumber(resellerStats.spent_30d)} hint="جمع کسر شده از کیف پول" icon={<BarChart3 size={16} />} />
+            <StatCard title="کل سفارش‌ها" value={fmtNumber(resellerStats.orders_total)} icon={<ShoppingCart size={16} />} />
           </div>
         </>
       ) : null}

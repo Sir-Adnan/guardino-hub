@@ -13,7 +13,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
-  const res = await fetch(`${base}${path}`, { ...init, headers });
+  const method = String(init?.method || "GET").toUpperCase();
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers,
+    // Avoid stale lists/pagination in browser/proxy caches.
+    cache: method === "GET" ? "no-store" : init?.cache,
+  });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(txt || `HTTP ${res.status}`);
