@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.node import Node, PanelType
-from app.schemas.admin import CreateNodeRequest, UpdateNodeRequest, NodeOut
+from app.schemas.admin import CreateNodeRequest, UpdateNodeRequest, NodeOut, NodeList
 
 router = APIRouter()
 
@@ -40,11 +40,19 @@ async def create_node(payload: CreateNodeRequest, db: AsyncSession = Depends(get
         is_visible_in_sub=n.is_visible_in_sub,
     )
 
-@router.get("", response_model=list[NodeOut])
-async def list_nodes(db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(Node).order_by(Node.id.desc()))
+@router.get("", response_model=NodeList)
+async def list_nodes(
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+):
+    base = select(Node).order_by(Node.id.desc())
+    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = int(total_q.scalar_one())
+    q = await db.execute(base.limit(limit).offset(offset))
     nodes = q.scalars().all()
-    return [
+    items = [
         NodeOut(
             id=n.id,
             name=n.name,
@@ -57,6 +65,7 @@ async def list_nodes(db: AsyncSession = Depends(get_db), admin=Depends(require_a
         )
         for n in nodes
     ]
+    return NodeList(items=items, total=total)
 
 @router.patch("/{node_id}", response_model=NodeOut)
 async def update_node(node_id: int, payload: UpdateNodeRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
