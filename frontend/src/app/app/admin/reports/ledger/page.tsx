@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
+import { fmtNumber } from "@/lib/format";
 
 type ResellerMini = { id: number; username: string; };
 
@@ -46,7 +47,7 @@ const filteredResellers = React.useMemo(() => {
   return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
 }, [resellers, resellerQuery]);
 
-const nf = React.useMemo(() => new Intl.NumberFormat(), []);
+// Use en-US separators for consistent readability
   return (
     <div className="space-y-6">
       <Card>
@@ -92,9 +93,9 @@ const nf = React.useMemo(() => new Intl.NumberFormat(), []);
                   <tr key={t.id} className="border-b border-[hsl(var(--border))]">
                     <td className="py-2">{t.id}</td>
                     <td className="py-2">{resellerMap[t.reseller_id] ? `${resellerMap[t.reseller_id]} (#${t.reseller_id})` : t.reseller_id}</td>
-                    <td className="py-2">{nf.format(t.amount)}</td>
+                    <td className="py-2">{fmtNumber(t.amount)}</td>
                     <td className="py-2">{t.reason}</td>
-                    <td className="py-2">{nf.format(t.balance_after)}</td>
+                    <td className="py-2">{fmtNumber(t.balance_after)}</td>
                     <td className="py-2">{t.occurred_at ? new Date(t.occurred_at).toLocaleString() : "-"}</td>
                   </tr>
                 ))}

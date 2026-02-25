@@ -9,6 +9,7 @@ import { Menu } from "@/components/ui/menu";
 import { ConfirmModal } from "@/components/ui/confirm";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
+import { fmtNumber } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
@@ -202,7 +203,7 @@ async function assignAllNodesForReseller(resellerId: number) {
         method: "POST",
         body: JSON.stringify({ amount: Number(creditAmount) || 0, reason: "manual_credit" }),
       });
-      push({ title: t("adminResellers.credited"), desc: `balance=${res.balance}`, type: "success" });
+      push({ title: t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
       await load();
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -335,7 +336,7 @@ async function assignAllNodesForReseller(resellerId: number) {
         .slice(0, 200)
         .map((r) => (
           <option key={r.id} value={r.id}>
-            {r.username} (#{r.id}) — {new Intl.NumberFormat().format(r.balance)}
+        {r.username} (#{r.id}) — {fmtNumber(r.balance)}
           </option>
         ))}
     </select>
@@ -388,7 +389,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                         />
                       </div>
                     </td>
-                    <td className="py-2">{x.balance}</td>
+                    <td className="py-2">{fmtNumber(x.balance)}</td>
                     <td className="py-2">{x.price_per_gb}</td>
                     <td className="py-2">{x.bundle_price_per_gb ?? 0}</td>
                     <td className="py-2">{x.price_per_day ?? 0}</td>

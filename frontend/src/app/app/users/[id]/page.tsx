@@ -4,6 +4,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
+import { fmtNumber } from "@/lib/format";
 import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
 import { useToast } from "@/components/ui/toast";
@@ -104,6 +105,21 @@ export default function UserDetailPage() {
     }
   }
 
+  async function copyAll() {
+    if (!links) return;
+    const lines: string[] = [];
+    if (links.master_link) lines.push(`MASTER: ${links.master_link}`);
+    for (const nl of links.node_links || []) {
+      if (!nl.direct_url) continue;
+      const meta = nodeMap.get(nl.node_id);
+      const title = meta?.name ? `${meta.name} (#${nl.node_id})` : `Node #${nl.node_id}`;
+      const full = normalizeUrl(nl.direct_url, meta?.base_url);
+      lines.push(`${title}: ${full}`);
+    }
+    const ok = await copyText(lines.join("\n"));
+    push({ title: ok ? t("common.copied") : t("common.failed"), desc: ok ? t("user.links.copiedAll") : undefined, type: ok ? "success" : "error" });
+  }
+
   const nodeMap = React.useMemo(() => {
     const m = new Map<number, NodeLite>();
     for (const n of nodes) m.set(n.id, n);
@@ -119,7 +135,7 @@ export default function UserDetailPage() {
     setBusy(true);
     try {
       const res = await apiFetch<OpResult>(path, { method: "POST", body: JSON.stringify(body) });
-      push({ title: "OK", desc: `${t("users.balance")}: ${res.new_balance}`, type: "success" });
+      push({ title: "OK", desc: `${t("users.balance")}: ${fmtNumber(res.new_balance)}`, type: "success" });
       await refresh();
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -160,7 +176,7 @@ export default function UserDetailPage() {
         </div>
 
         <div className="text-xs text-[hsl(var(--fg))]/70">
-          {t("users.balance")}: <span className="font-semibold">{me?.balance ?? "—"}</span>
+          {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
         </div>
       </div>
 
@@ -208,11 +224,11 @@ export default function UserDetailPage() {
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">{t("user.total")}</div>
-                      <div className="mt-1 text-base font-semibold">{user.total_gb} GB</div>
+                      <div className="mt-1 text-base font-semibold">{fmtNumber(user.total_gb)} GB</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">{t("user.used")}</div>
-                      <div className="mt-1 text-base font-semibold">{usedGb.toFixed(1)} GB</div>
+                      <div className="mt-1 text-base font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)} GB</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">{t("user.expiresAt")}</div>
@@ -224,7 +240,7 @@ export default function UserDetailPage() {
                     <div className="flex items-center justify-between text-xs text-[hsl(var(--fg))]/70">
                       <div>{t("users.usage")}</div>
                       <div>
-                        <span className="font-semibold">{usedGb.toFixed(1)}</span> / {user.total_gb} GB ({percent}%)
+                        <span className="font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)}</span> / {fmtNumber(user.total_gb)} GB ({percent}%)
                       </div>
                     </div>
                     <Progress value={percent} />
@@ -238,8 +254,15 @@ export default function UserDetailPage() {
 
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="text-xl font-semibold">{t("user.links")}</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="text-xl font-semibold">{t("user.links")}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" className="gap-2" disabled={!links} onClick={copyAll}>
+                    <Copy size={16} /> {t("user.links.copyAll")}
+                  </Button>
+                </div>
               </div>
               <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.links")} — {t("user.links.master")} / {t("user.links.panel")}</div>
             </CardHeader>
@@ -253,15 +276,13 @@ export default function UserDetailPage() {
               ) : links ? (
                 <>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 font-semibold">
-                      {t("user.links.master")}
-                    </div>
-                    <div className="flex gap-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{t("user.links.master")}</div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <Input value={links.master_link} readOnly />
                       <Button
                         type="button"
                         variant="outline"
-                        className="gap-2"
+                        className="gap-2 sm:w-[170px]"
                         onClick={() => {
                           copyText(links.master_link).then((ok) => {
                             push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
@@ -275,38 +296,56 @@ export default function UserDetailPage() {
 
                   <div className="space-y-2">
                     <div className="font-semibold">{t("user.links.panel")}</div>
-                    <div className="space-y-2">
-                      {links.node_links.map((n) => (
-                        <div key={n.node_id} className="rounded-2xl border border-[hsl(var(--border))] p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-[hsl(var(--fg))]/70">
-                              {nodeMap.get(n.node_id)?.name ? `${nodeMap.get(n.node_id)!.name} (#${n.node_id})` : `Node #${n.node_id}`}
-                            </div>
-                            <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
-                          </div>
-                          {n.direct_url ? (
-                            <div className="mt-2 flex flex-col gap-2">
-                              <Input value={normalizeUrl(n.direct_url, nodeMap.get(n.node_id)?.base_url)} readOnly />
-                              <div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => {
-                                    const u = normalizeUrl(n.direct_url!, nodeMap.get(n.node_id)?.base_url);
-                                    copyText(u).then((ok) => {
-                                      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
-                                    });
-                                  }}
-                                >
-                                  {t("common.copy")}
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
-                          )}
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto rounded-2xl border border-[hsl(var(--border))]">
+                      <table className="w-full text-sm">
+                        <thead className="text-[hsl(var(--fg))]/70">
+                          <tr className="border-b border-[hsl(var(--border))]">
+                            <th className="text-[start] py-2 px-3">{t("user.links.node")}</th>
+                            <th className="text-[start] py-2 px-3">{t("user.links.status")}</th>
+                            <th className="text-[start] py-2 px-3">{t("user.links.link")}</th>
+                            <th className="py-2 px-3"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {links.node_links.map((n) => {
+                            const meta = nodeMap.get(n.node_id);
+                            const nodeTitle = meta?.name ? `${meta.name} (#${n.node_id})` : `Node #${n.node_id}`;
+                            const full = n.direct_url ? normalizeUrl(n.direct_url, meta?.base_url) : "";
+                            return (
+                              <tr key={n.node_id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                                <td className="py-2 px-3 whitespace-nowrap">{nodeTitle}</td>
+                                <td className="py-2 px-3">
+                                  <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
+                                </td>
+                                <td className="py-2 px-3 min-w-[260px]">
+                                  {n.direct_url ? (
+                                    <div className="truncate" title={full}>{full}</div>
+                                  ) : (
+                                    <div className="text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-end">
+                                  {n.direct_url ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="gap-2"
+                                      onClick={() => {
+                                        copyText(full).then((ok) => {
+                                          push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+                                        });
+                                      }}
+                                    >
+                                      <Copy size={16} /> {t("common.copy")}
+                                    </Button>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </>

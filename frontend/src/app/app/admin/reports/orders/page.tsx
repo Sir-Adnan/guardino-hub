@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
+import { fmtNumber } from "@/lib/format";
 
 type ResellerMini = { id: number; username: string; };
 
@@ -46,7 +47,6 @@ const filteredResellers = React.useMemo(() => {
   return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
 }, [resellers, resellerQuery]);
 
-const nf = React.useMemo(() => new Intl.NumberFormat(), []);
   return (
     <div className="space-y-6">
       <Card>
@@ -96,7 +96,7 @@ const nf = React.useMemo(() => new Intl.NumberFormat(), []);
                     <td className="py-2">{o.user_id ? <a className="underline" href={`/app/users/${o.user_id}`}>{o.user_id}</a> : "-"}</td>
                     <td className="py-2">{o.type}</td>
                     <td className="py-2">{o.status}</td>
-                    <td className="py-2">{o.purchased_gb != null ? nf.format(o.purchased_gb) : "-"}</td>
+                    <td className="py-2">{o.purchased_gb != null ? fmtNumber(o.purchased_gb) : "-"}</td>
                     <td className="py-2">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
                   </tr>
                 ))}

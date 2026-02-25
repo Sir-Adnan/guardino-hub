@@ -3,6 +3,7 @@
 import * as React from "react";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
+import { fmtNumber } from "@/lib/format";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth-context";
@@ -342,7 +343,7 @@ export default function UsersPage() {
               className="max-w-md"
             />
             <div className="text-xs text-[hsl(var(--fg))]/70">
-              {t("users.balance")}: <span className="font-semibold">{me?.balance ?? "—"}</span>
+              {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
             </div>
           </div>
 
@@ -451,7 +452,7 @@ export default function UsersPage() {
                     <div className="flex items-center justify-between text-xs text-[hsl(var(--fg))]/70">
                       <div>{t("users.usage")}</div>
                       <div>
-                        <span className="font-semibold">{usedGb.toFixed(1)}</span> / {u.total_gb} GB ({percent}%)
+                        <span className="font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)}</span> / {fmtNumber(u.total_gb)} GB ({percent}%)
                       </div>
                     </div>
                     <Progress value={percent} />
