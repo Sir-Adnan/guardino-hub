@@ -485,10 +485,10 @@ export default function UsersPage() {
 
             const priorityBadge =
               pr.level === "high"
-                ? { v: "danger" as const, label: "اقدام فوری" }
+                ? { v: "danger" as const, label: "نیاز اقدام" }
                 : pr.level === "med"
-                ? { v: "warning" as const, label: "نیاز بررسی" }
-                : { v: "muted" as const, label: "عادی" };
+                ? { v: "warning" as const, label: "نزدیک محدودیت" }
+                : { v: "muted" as const, label: "پایدار" };
 
             return (
               <Card key={u.id} className="overflow-hidden">
@@ -511,8 +511,11 @@ export default function UsersPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={sb.v}>{sb.label}</Badge>
-                      <Badge variant={priorityBadge.v} title="اولویت بر اساس مصرف و زمان انقضا محاسبه می‌شود.">
-                        ریسک: {priorityBadge.label}
+                      <Badge
+                        variant={priorityBadge.v}
+                        title={`بر اساس مصرف (${percent}٪) و زمان باقی‌مانده (${pr.days ?? "نامشخص"} روز) محاسبه می‌شود.`}
+                      >
+                        وضعیت: {priorityBadge.label}
                       </Badge>
                       <Switch checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
                     </div>
