@@ -32,18 +32,31 @@ export function Menu({
     const el = wrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const top = r.bottom + 8;
-    const left = align === "right" ? r.right : r.left;
+    const viewportPad = 8;
+    const menuWidth = Math.max(180, menuRef.current?.offsetWidth || 220);
+    const menuHeight = menuRef.current?.offsetHeight || 220;
+
+    let left = align === "right" ? r.right - menuWidth : r.left;
+    left = Math.max(viewportPad, Math.min(left, window.innerWidth - menuWidth - viewportPad));
+
+    let top = r.bottom + 8;
+    if (top + menuHeight > window.innerHeight - viewportPad && r.top - menuHeight - 8 > viewportPad) {
+      top = r.top - menuHeight - 8;
+    }
+    top = Math.max(viewportPad, top);
+
     setPos({ top, left });
   }, [align]);
 
   React.useEffect(() => {
     if (!open) return;
     updatePos();
+    const raf = window.requestAnimationFrame(updatePos);
     const onResize = () => updatePos();
     window.addEventListener("scroll", onResize, true);
     window.addEventListener("resize", onResize);
     return () => {
+      window.cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onResize, true);
       window.removeEventListener("resize", onResize);
     };
@@ -89,7 +102,7 @@ export function Menu({
           )}
           style={{
             top: pos.top,
-            left: align === "right" ? pos.left - 180 : pos.left,
+            left: pos.left,
           }}
           role="menu"
         >
