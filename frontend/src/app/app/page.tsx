@@ -76,8 +76,9 @@ export default function Dashboard() {
           const st = await apiFetch<AdminStats>("/api/v1/admin/stats");
           if (!cancelled) setAdminStats(st);
 
-          const ns = await apiFetch<any[]>("/api/v1/admin/nodes");
-          if (!cancelled) setNodes((ns || []).map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled, is_visible_in_sub: n.is_visible_in_sub })));
+          const ns = await apiFetch<any>("/api/v1/admin/nodes?offset=0&limit=100");
+          const arr = Array.isArray(ns) ? ns : ns?.items || [];
+          if (!cancelled) setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled, is_visible_in_sub: n.is_visible_in_sub })));
 
           // show a few latest users (admin view doesn't have a dedicated endpoint; keep it simple)
           setRecentUsers([]);
@@ -89,7 +90,7 @@ export default function Dashboard() {
           const arr = Array.isArray(ns) ? ns : ns?.items || [];
           if (!cancelled) setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_visible_in_sub: n.is_visible_in_sub })));
 
-          const up = await apiFetch<any>("/api/v1/reseller/users");
+          const up = await apiFetch<any>("/api/v1/reseller/users?offset=0&limit=6");
           if (!cancelled) setRecentUsers((up?.items || []).slice(0, 6).map((u: any) => ({ id: u.id, label: u.label, status: u.status })));
         }
       } catch (e: any) {

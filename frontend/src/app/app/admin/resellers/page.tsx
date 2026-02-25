@@ -13,6 +13,7 @@ import { fmtNumber } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { Pagination } from "@/components/ui/pagination";
 import { MoreHorizontal, Pencil, Trash2, Wallet, Power } from "lucide-react";
 
 type ResellerOut = {
@@ -26,6 +27,7 @@ type ResellerOut = {
   price_per_day?: number | null;
   can_create_subreseller?: boolean;
 };
+type ResellerList = { items: ResellerOut[]; total: number };
 
 type NodeOut = {
   id: number;
@@ -34,6 +36,7 @@ type NodeOut = {
   base_url: string;
   is_enabled: boolean;
 };
+type NodeList = { items: NodeOut[]; total: number };
 
 function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warning" {
   if (s === "active") return "success";
@@ -47,6 +50,10 @@ export default function AdminResellersPage() {
   const { t } = useI18n();
 
   const [items, setItems] = React.useState<ResellerOut[]>([]);
+  const [creditOptions, setCreditOptions] = React.useState<ResellerOut[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(50);
   const [q, setQ] = React.useState("");
 
   const [editingId, setEditingId] = React.useState<number | null>(null);
@@ -81,18 +88,29 @@ export default function AdminResellersPage() {
 
   async function load() {
     try {
-      const res = await apiFetch<ResellerOut[]>("/api/v1/admin/resellers");
-      setItems(res || []);
+      const offset = (page - 1) * pageSize;
+      const res = await apiFetch<ResellerList>(`/api/v1/admin/resellers?offset=${offset}&limit=${pageSize}`);
+      setItems(res.items || []);
+      setTotal(res.total || 0);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function loadCreditOptions() {
+    try {
+      const res = await apiFetch<ResellerList>("/api/v1/admin/resellers?offset=0&limit=500");
+      setCreditOptions(res.items || []);
+    } catch {
+      // ignore
     }
   }
 
 
 async function assignAllNodesForReseller(resellerId: number) {
   // Best-effort: allocate all enabled nodes to this reseller for immediate usability.
-  const nodes = await apiFetch<NodeOut[]>("/api/v1/admin/nodes");
-  const enabled = (nodes || []).filter((n) => n.is_enabled);
+  const nodes = await apiFetch<NodeList>("/api/v1/admin/nodes?offset=0&limit=500");
+  const enabled = (nodes.items || []).filter((n) => n.is_enabled);
   await Promise.all(
     enabled.map((n) =>
       apiFetch("/api/v1/admin/allocations", {
@@ -218,6 +236,11 @@ async function assignAllNodesForReseller(resellerId: number) {
   React.useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize]);
+
+  React.useEffect(() => {
+    loadCreditOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -331,7 +354,7 @@ async function assignAllNodesForReseller(resellerId: number) {
       onChange={(e) => setCreditId(e.target.value === "" ? "" : Number(e.target.value))}
     >
       <option value="">{t("adminResellers.selectReseller")}</option>
-      {items
+      {creditOptions
         .filter((r) => `${r.id} ${r.username}`.toLowerCase().includes(creditQuery.toLowerCase()))
         .slice(0, 200)
         .map((r) => (
@@ -384,15 +407,15 @@ async function assignAllNodesForReseller(resellerId: number) {
                         <Badge variant={statusBadgeVariant(x.status)}>{x.status}</Badge>
                         <Switch
                           checked={x.status === "active"}
-                          onCheckedChange={() => toggleStatus(x)}
+                          onCheckedChange={() => toggleStatus(x, x.status === "active" ? "disabled" : "active")}
                           disabled={x.status === "deleted"}
                         />
                       </div>
                     </td>
                     <td className="py-2">{fmtNumber(x.balance)}</td>
-                    <td className="py-2">{x.price_per_gb}</td>
-                    <td className="py-2">{x.bundle_price_per_gb ?? 0}</td>
-                    <td className="py-2">{x.price_per_day ?? 0}</td>
+                    <td className="py-2">{fmtNumber(x.price_per_gb)}</td>
+                    <td className="py-2">{fmtNumber(x.bundle_price_per_gb ?? 0)}</td>
+                    <td className="py-2">{fmtNumber(x.price_per_day ?? 0)}</td>
                     <td className="py-2 text-[end]">
                       <Menu
                         trigger={
@@ -435,6 +458,16 @@ async function assignAllNodesForReseller(resellerId: number) {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
 

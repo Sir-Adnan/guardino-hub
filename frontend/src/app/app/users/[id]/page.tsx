@@ -19,11 +19,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Copy, RefreshCcw } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
-type UsersPage = { items: UserOut[]; total: number };
 type LinksResp = {
   user_id: number;
   master_link: string;
-  node_links: Array<{ node_id: number; direct_url?: string; status: string; detail?: string }>;
+  node_links: Array<{ node_id: number; direct_url?: string; full_url?: string; status: string; detail?: string }>;
 };
 
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
@@ -48,12 +47,19 @@ type NodeLite = { id: number; name: string; base_url: string };
 function normalizeUrl(maybeUrl: string, baseUrl?: string) {
   const u = (maybeUrl || "").trim();
   if (!u) return u;
-  if (/^https?:\/\//i.test(u)) return u;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) return u;
   const b = (baseUrl || "").trim();
   if (!b) return u;
-  const bb = b.replace(/\/+$/, "");
+  let origin = b;
+  try {
+    const parsed = new URL(b);
+    origin = parsed.origin;
+  } catch {
+    const m = b.match(/^(https?:\/\/[^/]+)/i);
+    if (m) origin = m[1];
+  }
   const uu = u.startsWith("/") ? u : `/${u}`;
-  return `${bb}${uu}`;
+  return `${origin.replace(/\/+$/, "")}${uu}`;
 }
 
 export default function UserDetailPage() {
@@ -93,9 +99,8 @@ export default function UserDetailPage() {
         // ignore
       }
 
-      const up = await apiFetch<UsersPage>("/api/v1/reseller/users");
-      const u = up.items.find((x) => x.id === userId) || null;
-      setUser(u);
+      const u = await apiFetch<UserOut>(`/api/v1/reseller/users/${userId}`);
+      setUser(u || null);
       const lr = await apiFetch<LinksResp>(`/api/v1/reseller/users/${userId}/links?refresh=true`);
       setLinks(lr);
     } catch (e: any) {
@@ -110,10 +115,14 @@ export default function UserDetailPage() {
     const lines: string[] = [];
     if (links.master_link) lines.push(`MASTER: ${links.master_link}`);
     for (const nl of links.node_links || []) {
-      if (!nl.direct_url) continue;
       const meta = nodeMap.get(nl.node_id);
       const title = meta?.name ? `${meta.name} (#${nl.node_id})` : `Node #${nl.node_id}`;
-      const full = normalizeUrl(nl.direct_url, meta?.base_url);
+      const full = nl.full_url
+        ? nl.full_url
+        : nl.direct_url
+        ? normalizeUrl(nl.direct_url, meta?.base_url)
+        : "";
+      if (!full) continue;
       lines.push(`${title}: ${full}`);
     }
     const ok = await copyText(lines.join("\n"));
@@ -310,7 +319,11 @@ export default function UserDetailPage() {
                           {links.node_links.map((n) => {
                             const meta = nodeMap.get(n.node_id);
                             const nodeTitle = meta?.name ? `${meta.name} (#${n.node_id})` : `Node #${n.node_id}`;
-                            const full = n.direct_url ? normalizeUrl(n.direct_url, meta?.base_url) : "";
+                            const full = n.full_url
+                              ? n.full_url
+                              : n.direct_url
+                              ? normalizeUrl(n.direct_url, meta?.base_url)
+                              : "";
                             return (
                               <tr key={n.node_id} className="border-b border-[hsl(var(--border))] last:border-b-0">
                                 <td className="py-2 px-3 whitespace-nowrap">{nodeTitle}</td>
@@ -318,14 +331,14 @@ export default function UserDetailPage() {
                                   <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
                                 </td>
                                 <td className="py-2 px-3 min-w-[260px]">
-                                  {n.direct_url ? (
+                                  {full ? (
                                     <div className="truncate" title={full}>{full}</div>
                                   ) : (
                                     <div className="text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
                                   )}
                                 </td>
                                 <td className="py-2 px-3 text-end">
-                                  {n.direct_url ? (
+                                  {full ? (
                                     <Button
                                       type="button"
                                       variant="outline"

@@ -11,6 +11,8 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { Pagination } from "@/components/ui/pagination";
+import { fmtNumber } from "@/lib/format";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 type AllocationOut = {
@@ -21,10 +23,13 @@ type AllocationOut = {
   default_for_reseller: boolean;
   price_per_gb_override?: number | null;
 };
+type AllocationList = { items: AllocationOut[]; total: number };
 
 type NodeOut = { id: number; name: string; panel_type: string; is_enabled: boolean };
+type NodeList = { items: NodeOut[]; total: number };
 
 type ResellerOut = { id: number; username: string; status: string };
+type ResellerList = { items: ResellerOut[]; total: number };
 
 export default function AllocationsPage() {
   const { push } = useToast();
@@ -33,6 +38,9 @@ export default function AllocationsPage() {
   const [nodes, setNodes] = React.useState<NodeOut[]>([]);
   const [resellers, setResellers] = React.useState<ResellerOut[]>([]);
   const [items, setItems] = React.useState<AllocationOut[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(50);
 
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [resellerId, setResellerId] = React.useState<number | "">("");
@@ -73,14 +81,15 @@ export default function AllocationsPage() {
   async function load() {
     try {
       const [nodesRes, resellersRes, allocationsRes] = await Promise.all([
-        apiFetch<any[]>("/api/v1/admin/nodes"),
-        apiFetch<any[]>("/api/v1/admin/resellers"),
-        apiFetch<AllocationOut[]>("/api/v1/admin/allocations"),
+        apiFetch<NodeList>("/api/v1/admin/nodes?offset=0&limit=500"),
+        apiFetch<ResellerList>("/api/v1/admin/resellers?offset=0&limit=500"),
+        apiFetch<AllocationList>(`/api/v1/admin/allocations?offset=${(page - 1) * pageSize}&limit=${pageSize}`),
       ]);
 
-      setNodes((nodesRes || []).map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled })));
-      setResellers((resellersRes || []).map((r) => ({ id: r.id, username: r.username, status: r.status })));
-      setItems(allocationsRes || []);
+      setNodes((nodesRes.items || []).map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled })));
+      setResellers((resellersRes.items || []).map((r) => ({ id: r.id, username: r.username, status: r.status })));
+      setItems(allocationsRes.items || []);
+      setTotal(allocationsRes.total || 0);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -192,7 +201,7 @@ export default function AllocationsPage() {
   React.useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -380,7 +389,7 @@ export default function AllocationsPage() {
                           }}
                         />
                       </td>
-                      <td className="py-2">{a.price_per_gb_override ?? "-"}</td>
+                      <td className="py-2">{a.price_per_gb_override == null ? "-" : fmtNumber(a.price_per_gb_override)}</td>
                       <td className="py-2 text-[end]">
                         <Menu
                           trigger={
@@ -408,6 +417,16 @@ export default function AllocationsPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
 

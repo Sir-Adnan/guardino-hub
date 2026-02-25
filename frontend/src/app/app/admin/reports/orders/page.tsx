@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { fmtNumber } from "@/lib/format";
+import { Pagination } from "@/components/ui/pagination";
 
 type ResellerMini = { id: number; username: string; };
 
@@ -15,12 +16,21 @@ export default function OrdersPage() {
   const [resellerQuery, setResellerQuery] = React.useState("");
   const [resellers, setResellers] = React.useState<ResellerMini[]>([]);
   const [items, setItems] = React.useState<any[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(200);
 
   async function load() {
     try {
-      const q = resellerId ? `?reseller_id=${encodeURIComponent(resellerId)}` : "";
-      const res = await apiFetch<any>(`/api/v1/admin/reports/orders${q}`);
+      const offset = (page - 1) * pageSize;
+      const q = new URLSearchParams();
+      if (resellerId) q.set("reseller_id", resellerId);
+      q.set("offset", String(offset));
+      q.set("limit", String(pageSize));
+      const qs = q.toString() ? `?${q.toString()}` : "";
+      const res = await apiFetch<any>(`/api/v1/admin/reports/orders${qs}`);
       setItems(res.items || []);
+      setTotal(res.total || 0);
       push({ title: "Loaded", type: "success" });
     } catch (e:any) {
       push({ title: "Error", desc: String(e.message||e), type: "error" });
@@ -29,11 +39,20 @@ export default function OrdersPage() {
 
   React.useEffect(() => { (async () => {
     try {
-      const r = await apiFetch<any>("/api/v1/admin/resellers");
-      setResellers((r || []).map((x: any) => ({ id: x.id, username: x.username })));
+      const r = await apiFetch<any>("/api/v1/admin/resellers?offset=0&limit=500");
+      setResellers((r.items || []).map((x: any) => ({ id: x.id, username: x.username })));
     } catch {}
     await load();
   })(); /* eslint-disable-next-line */ }, []);
+
+  React.useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, resellerId]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [resellerId]);
 
 
 const resellerMap = React.useMemo(() => {
@@ -62,7 +81,7 @@ const filteredResellers = React.useMemo(() => {
     onChange={(e) => setResellerQuery(e.target.value)}
   />
   <select
-    className="h-10 rounded-xl border border-[hsl(var(--border))] bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+    className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
     value={resellerId}
     onChange={(e) => setResellerId(e.target.value)}
   >
@@ -103,6 +122,17 @@ const filteredResellers = React.useMemo(() => {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            pageSizeOptions={[100, 200, 500]}
+          />
         </CardContent>
       </Card>
     </div>

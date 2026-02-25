@@ -23,7 +23,7 @@ export function Switch({ checked, onCheckedChange, disabled, className }: { chec
           // RTL-safe switch thumb. In RTL we anchor on the right and translate left when checked.
           "absolute top-0.5 h-5 w-5 rounded-full bg-[hsl(var(--card))] shadow-soft transition-transform",
           isRTL ? "right-0.5" : "left-0.5",
-          checked ? (isRTL ? "-translate-x-[19px]" : "translate-x-[19px]") : "translate-x-0"
+          checked ? (isRTL ? "-translate-x-[20px]" : "translate-x-[20px]") : "translate-x-0"
         )}
       />
     </button>

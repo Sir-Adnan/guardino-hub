@@ -16,22 +16,30 @@ import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Pagination } from "@/components/ui/pagination";
 import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
-type LinksResp = { user_id: number; master_link: string; node_links: Array<{ node_id: number; direct_url?: string; status: string; detail?: string }> };
+type LinksResp = { user_id: number; master_link: string; node_links: Array<{ node_id: number; direct_url?: string; full_url?: string; status: string; detail?: string }> };
 type NodeLite = { id: number; name: string; base_url: string };
 
 function normalizeUrl(maybeUrl: string, baseUrl?: string) {
   const u = (maybeUrl || "").trim();
   if (!u) return u;
-  if (/^https?:\/\//i.test(u)) return u;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) return u;
   const b = (baseUrl || "").trim();
   if (!b) return u;
-  const bb = b.replace(/\/+$/, "");
+  let origin = b;
+  try {
+    const parsed = new URL(b);
+    origin = parsed.origin;
+  } catch {
+    const m = b.match(/^(https?:\/\/[^/]+)/i);
+    if (m) origin = m[1];
+  }
   const uu = u.startsWith("/") ? u : `/${u}`;
-  return `${bb}${uu}`;
+  return `${origin.replace(/\/+$/, "")}${uu}`;
 }
 
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
@@ -101,11 +109,14 @@ export default function UsersPage() {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(50);
 
   async function load() {
     setErr(null);
     try {
-      const res = await apiFetch<UsersPage>("/api/v1/reseller/users");
+      const offset = (page - 1) * pageSize;
+      const res = await apiFetch<UsersPage>(`/api/v1/reseller/users?offset=${offset}&limit=${pageSize}`);
       setData(res);
     } catch (e: any) {
       setErr(String(e.message || e));
@@ -126,7 +137,7 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     load();
-  }, []);
+  }, [page, pageSize]);
 
   function applyFilter(items: UserOut[]) {
     const qq = q.trim().toLowerCase();
@@ -188,7 +199,7 @@ export default function UsersPage() {
   const items = applySort(filtered);
 
   const stats = React.useMemo(() => {
-    const total = rawItems.length;
+    const total = data?.total ?? rawItems.length;
     const active = rawItems.filter((u) => (u.status || "").toLowerCase() === "active").length;
     const expiringSoon = rawItems.filter((u) => {
       const d = safeDaysLeft(u.expire_at);
@@ -197,7 +208,7 @@ export default function UsersPage() {
     }).length;
     const highUsage = rawItems.filter((u) => computePriority(u).percent >= 80 && (u.status || "").toLowerCase() === "active").length;
     return { total, active, expiringSoon, highUsage };
-  }, [rawItems]);
+  }, [rawItems, data?.total]);
 
   async function openLinks(u: UserOut) {
     await loadNodes();
@@ -265,7 +276,7 @@ export default function UsersPage() {
     setConfirmOpen(false);
     if (confirmKind === "reset") await resetUsage(u);
     if (confirmKind === "revoke") await revoke(u);
-    if (confirmKind === "delete") await op(u.id, `/api/v1/reseller/users/${u.id}/set-status`, { status: "deleted" });
+    if (confirmKind === "delete") await op(u.id, `/api/v1/reseller/users/${u.id}/refund`, { action: "delete" });
   }
 
   function FilterButton({ value, label }: { value: StatusFilter; label: string }) {
@@ -310,28 +321,28 @@ export default function UsersPage() {
                 <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsTotal")}</div>
                 <Users size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.total}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.total)}</div>
             </div>
             <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsActive")}</div>
                 <div className="h-2 w-2 rounded-full bg-emerald-500/70" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.active}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.active)}</div>
             </div>
             <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsExpiringSoon")}</div>
                 <Clock3 size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.expiringSoon}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.expiringSoon)}</div>
             </div>
             <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsHighUsage")}</div>
                 <Flame size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.highUsage}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.highUsage)}</div>
             </div>
           </div>
 
@@ -517,6 +528,19 @@ export default function UsersPage() {
         </div>
       )}
 
+      {data ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={data.total || 0}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => {
+            setPageSize(s);
+            setPage(1);
+          }}
+        />
+      ) : null}
+
       <Modal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
@@ -561,7 +585,11 @@ export default function UsersPage() {
               <div className="space-y-2">
                 {links.node_links.map((nl) => {
                   const node = nodeMap.get(nl.node_id);
-                  const full = nl.direct_url ? normalizeUrl(nl.direct_url, node?.base_url) : "";
+                  const full = nl.full_url
+                    ? nl.full_url
+                    : nl.direct_url
+                    ? normalizeUrl(nl.direct_url, node?.base_url)
+                    : "";
                   return (
                   <div key={nl.node_id} className="rounded-xl border border-[hsl(var(--border))] p-3">
                     <div className="flex items-center justify-between gap-2">

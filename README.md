@@ -231,10 +231,10 @@ docker compose exec api bash -lc "alembic upgrade head"
 docker compose exec api bash -lc "python -m app.cli create-superadmin"
 ```
 
-### Option B — Installer (recommended for fresh Ubuntu)
+### Option B — Remote installer (recommended for fresh Ubuntu)
 
 ```bash
-sudo bash installer/install.sh
+bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
 ```
 
 What it does (high level):
@@ -243,6 +243,19 @@ What it does (high level):
 - starts the stack,
 - runs migrations,
 - creates superadmin and prints credentials.
+
+Optional overrides:
+
+```bash
+INSTALL_DIR=/opt/guardino-hub BRANCH=main \
+bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
+```
+
+### Option C — Local installer (from a checked-out source tree)
+
+```bash
+sudo bash installer/install.sh
+```
 
 ---
 
@@ -487,4 +500,3 @@ Guardino یک لینک می‌سازد:
 - Master subscription merge
 - انتخاب پیش‌فرض همه inbounds/proxies در Marzban/PasarGuard
 - Revoke در WGDashboard: delete & recreate peer
-

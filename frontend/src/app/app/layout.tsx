@@ -10,6 +10,7 @@ import { AppHeader } from "@/components/app-header";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const r = useRouter();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   React.useEffect(() => {
     const t = storage.get("token");
     if (!t) r.push("/login");
@@ -20,7 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex bg-[hsl(var(--bg))]">
         {/* Desktop sidebar */}
         <div className="hidden md:block">
-          <Sidebar />
+          <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} />
         </div>
 
         {/* Mobile sidebar drawer */}
@@ -34,7 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ) : null}
 
         <div className="flex-1 min-w-0 flex flex-col">
-          <AppHeader onMenuClick={() => setSidebarOpen(true)} />
+          <AppHeader onMenuClick={() => setSidebarOpen(true)} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} sidebarCollapsed={sidebarCollapsed} />
           <main className="flex-1 p-3 sm:p-4 lg:p-6">
             {children}
           </main>

@@ -8,7 +8,8 @@ import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Menu as MenuIcon, Moon, Plus, Sun } from "lucide-react";
+import { fmtNumber } from "@/lib/format";
+import { Menu as MenuIcon, Moon, Plus, Sun, ChevronLeft, ChevronRight } from "lucide-react";
 
 function titleKey(pathname: string): string {
   if (pathname === "/app") return "nav.dashboard";
@@ -23,7 +24,11 @@ function titleKey(pathname: string): string {
   return "app.title";
 }
 
-export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
+export function AppHeader({
+  onMenuClick,
+  onToggleCollapse,
+  sidebarCollapsed,
+}: { onMenuClick?: () => void; onToggleCollapse?: () => void; sidebarCollapsed?: boolean } = {}) {
   const p = usePathname();
   const { me } = useAuth();
   const { t } = useI18n();
@@ -58,6 +63,18 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
             <MenuIcon size={20} />
           </Button>
 
+          {onToggleCollapse ? (
+            <Button
+              variant="ghost"
+              className="px-3 hidden md:inline-flex"
+              onClick={() => onToggleCollapse()}
+              title={sidebarCollapsed ? t("sidebar.open") : t("sidebar.close")}
+              aria-label={sidebarCollapsed ? t("sidebar.open") : t("sidebar.close")}
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </Button>
+          ) : null}
+
           {showCreateUser ? (
             <Link href="/app/users/new">
               <Button className="gap-2">
@@ -69,7 +86,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
 
           <div className="hidden sm:flex items-center gap-2">
             <Badge variant={locked ? "danger" : "default"}>
-              {t("users.balance")}: {me?.balance ?? "—"}
+              {t("users.balance")}: {fmtNumber(me?.balance ?? null)}
             </Badge>
             <Badge variant="muted">{me?.role ?? "—"}</Badge>
           </div>

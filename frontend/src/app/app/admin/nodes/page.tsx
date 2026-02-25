@@ -12,6 +12,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
+import { Pagination } from "@/components/ui/pagination";
 import { MoreHorizontal, Pencil, PlugZap, Power } from "lucide-react";
 
 type NodeOut = {
@@ -24,11 +25,15 @@ type NodeOut = {
   is_enabled: boolean;
   is_visible_in_sub: boolean;
 };
+type NodeList = { items: NodeOut[]; total: number };
 
 export default function AdminNodesPage() {
   const { push } = useToast();
   const { t } = useI18n();
   const [nodes, setNodes] = React.useState<NodeOut[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(50);
 
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [name, setName] = React.useState("");
@@ -98,8 +103,10 @@ export default function AdminNodesPage() {
 
   async function load() {
     try {
-      const res = await apiFetch<NodeOut[]>("/api/v1/admin/nodes");
-      setNodes(res);
+      const offset = (page - 1) * pageSize;
+      const res = await apiFetch<NodeList>(`/api/v1/admin/nodes?offset=${offset}&limit=${pageSize}`);
+      setNodes(res.items || []);
+      setTotal(res.total || 0);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -155,7 +162,7 @@ export default function AdminNodesPage() {
   React.useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -311,6 +318,16 @@ export default function AdminNodesPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
 

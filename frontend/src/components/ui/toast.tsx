@@ -17,12 +17,12 @@ const ToastCtx = React.createContext<{ push: (t: ToastInput) => void } | null>(n
 function tone(type?: ToastType) {
   switch (type) {
     case "success":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-100";
+      return "border-emerald-600/30 bg-emerald-50 text-emerald-900";
     case "warning":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-100";
+      return "border-amber-600/30 bg-amber-50 text-amber-900";
     case "error":
     default:
-      return "border-rose-500/30 bg-rose-500/10 text-rose-100";
+      return "border-rose-600/30 bg-rose-50 text-rose-900";
   }
 }
 

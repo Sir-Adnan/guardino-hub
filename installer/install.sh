@@ -8,12 +8,25 @@ set -euo pipefail
 # - Runs migrations & creates superadmin
 
 REPO_URL="${REPO_URL:-https://github.com/Sir-Adnan/guardino-hub.git}"
-INSTALL_DIR="${INSTALL_DIR:-/opt/guardino-hub}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEFAULT_INSTALL_DIR="/opt/guardino-hub"
+if [ -n "${INSTALL_DIR:-}" ]; then
+  INSTALL_DIR="${INSTALL_DIR}"
+elif [ -f "${LOCAL_ROOT}/docker-compose.yml" ] && [ -f "${LOCAL_ROOT}/installer/install.sh" ]; then
+  INSTALL_DIR="${LOCAL_ROOT}"
+else
+  INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
+fi
 BRANCH="${BRANCH:-}"
 RESET_DATA="${RESET_DATA:-0}"   # set to 1 to wipe docker volumes
 
 # run as root
 if [ "$(id -u)" -ne 0 ]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "ERROR: This installer needs root privileges. Run as root or install sudo." 1>&2
+    exit 1
+  fi
   exec sudo -E bash "$0" "$@"
 fi
 
@@ -62,7 +75,12 @@ fi
 
 log "[4/12] Preparing install dir: ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
-if [ ! -d "${INSTALL_DIR}/.git" ]; then
+if [ -d "${INSTALL_DIR}/.git" ]; then
+  log "Repo already exists, pulling latest..."
+  (cd "${INSTALL_DIR}" && git pull)
+elif [ -f "${INSTALL_DIR}/docker-compose.yml" ] && [ -f "${INSTALL_DIR}/installer/install.sh" ]; then
+  log "Using local source at ${INSTALL_DIR} (no .git metadata)."
+elif [ -z "$(ls -A "${INSTALL_DIR}" 2>/dev/null)" ]; then
   log "Cloning repo..."
   if [ -n "${BRANCH}" ]; then
     git clone --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
@@ -70,8 +88,9 @@ if [ ! -d "${INSTALL_DIR}/.git" ]; then
     git clone "${REPO_URL}" "${INSTALL_DIR}"
   fi
 else
-  log "Repo already exists, pulling latest..."
-  (cd "${INSTALL_DIR}" && git pull)
+  err "INSTALL_DIR=${INSTALL_DIR} exists and is not empty, but is not a Guardino source directory."
+  err "Use an empty INSTALL_DIR or point INSTALL_DIR to a valid Guardino source path."
+  exit 1
 fi
 cd "${INSTALL_DIR}"
 
@@ -275,6 +294,15 @@ if [ -n "${DOMAIN}" ]; then
   write_nginx_http "${DOMAIN}"
 else
   write_nginx_http "_"
+fi
+
+# Some ZIP/edit workflows may accidentally join this line:
+#   ./deploy/certbot/www:/var/www/certbot:rovolumes:
+# which breaks compose parsing. Auto-fix before validation.
+if grep -q 'certbot/www:/var/www/certbot:rovolumes:' docker-compose.yml; then
+  warn "Detected malformed nginx certbot volume entry in docker-compose.yml; auto-fixing..."
+  sed -i 's#certbot/www:/var/www/certbot:rovolumes:#certbot/www:/var/www/certbot:ro\
+volumes:#' docker-compose.yml
 fi
 
 log "[7/12] Validating docker compose config..."
