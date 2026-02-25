@@ -9,6 +9,8 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/components/i18n-context";
 import { HelpTip } from "@/components/ui/help-tip";
+import { Modal } from "@/components/ui/modal";
+import { copyText } from "@/lib/copy";
 
 type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
 type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
@@ -42,6 +44,14 @@ export default function NewUserPage() {
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  const [bulkMode, setBulkMode] = React.useState(false);
+  const [bulkCount, setBulkCount] = React.useState<number>(5);
+  const bulkPresets = [5, 10, 15, 20, 30, 40, 50];
+
+  const [bulkResultOpen, setBulkResultOpen] = React.useState(false);
+  const [bulkResults, setBulkResults] = React.useState<Array<{ label: string; user_id: number; master_url: string }>>([]);
+  const [bulkErrors, setBulkErrors] = React.useState<Array<{ label: string; error: string }>>([]);
 
   function randomName() {
     const v = `u_${Math.random().toString(16).slice(2, 10)}`;
@@ -124,19 +134,62 @@ export default function NewUserPage() {
         push({ title: "حداقل یک نود انتخاب کن", type: "error" });
         return;
       }
-      const payload: any = {
-        label,
-        username: username || undefined,
+
+      const makePayload = (lbl: string, usr?: string) => ({
+        label: lbl,
+        username: usr || undefined,
         randomize_username: randomize,
         total_gb: totalGb,
         days,
         duration_preset: preset || undefined,
         pricing_mode: pricingMode,
         node_ids,
-      };
-      const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", { method: "POST", body: JSON.stringify(payload) });
-      push({ title: "کاربر ساخته شد", desc: `ID: ${res.user_id}`, type: "success" });
-      r.push(`/app/users/${res.user_id}`);
+      });
+
+      // Single create (default)
+      if (!bulkMode) {
+        const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", { method: "POST", body: JSON.stringify(makePayload(label, username || undefined)) });
+        push({ title: "کاربر ساخته شد", desc: `ID: ${res.user_id}`, type: "success" });
+        r.push(`/app/users/${res.user_id}`);
+        return;
+      }
+
+      // Bulk create (max 50)
+      const count = Math.max(1, Math.min(50, Number(bulkCount) || 1));
+
+      const baseLabel = (label || "").trim() || `customer_${Math.random().toString(16).slice(2, 8)}`;
+      const baseUser = (username || "").trim() || "";
+
+      const results: Array<{ label: string; user_id: number; master_url: string }> = [];
+      const errors: Array<{ label: string; error: string }> = [];
+
+      for (let i = 1; i <= count; i++) {
+        const lbl = `${baseLabel}-${String(i).padStart(2, "0")}`;
+        const usr = baseUser ? `${baseUser}-${String(i).padStart(2, "0")}` : undefined;
+
+        try {
+          const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", {
+            method: "POST",
+            body: JSON.stringify(makePayload(lbl, usr)),
+          });
+          const master_url = `${window.location.origin}/api/v1/sub/${res.master_sub_token}`;
+          results.push({ label: lbl, user_id: res.user_id, master_url });
+        } catch (e: any) {
+          errors.push({ label: lbl, error: String(e?.message || e) });
+        }
+      }
+
+      setBulkResults(results);
+      setBulkErrors(errors);
+      setBulkResultOpen(true);
+
+      if (errors.length && results.length) {
+        push({ title: "ساخت گروهی: انجام شد با خطا", desc: `${results.length} موفق، ${errors.length} ناموفق`, type: "warning" });
+      } else if (errors.length) {
+        push({ title: "ساخت گروهی ناموفق", desc: `${errors.length} مورد`, type: "error" });
+      } else {
+        push({ title: "ساخت گروهی انجام شد", desc: `${results.length} کاربر`, type: "success" });
+      }
     } catch (e: any) {
       push({ title: "خطا در ساخت کاربر", desc: String(e.message || e), type: "error" });
     } finally {
@@ -173,6 +226,42 @@ export default function NewUserPage() {
                 {t("newUser.serverRandom")}
               </label>
             </div>
+
+<div className="space-y-2">
+  <label className="text-sm flex items-center gap-2">
+    ساخت گروهی <HelpTip text="برای ساخت چند کاربر مشابه (حداکثر ۵۰ عدد)" />
+  </label>
+  <label className="flex items-center gap-2 text-sm">
+    <input type="checkbox" checked={bulkMode} onChange={(e) => setBulkMode(e.target.checked)} />
+    فعال
+  </label>
+
+  {bulkMode ? (
+    <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]">
+      <div className="text-xs text-[hsl(var(--fg))]/70">تعداد ساخت (حداکثر ۵۰)</div>
+      <div className="flex flex-wrap gap-2">
+        {bulkPresets.map((n) => (
+          <Button key={n} type="button" variant={bulkCount === n ? "primary" : "outline"} onClick={() => setBulkCount(n)}>
+            {n}
+          </Button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={50}
+          value={bulkCount}
+          onChange={(e) => setBulkCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+        />
+        <div className="text-xs text-[hsl(var(--fg))]/70">عدد دلخواه</div>
+      </div>
+      <div className="text-xs text-[hsl(var(--fg))]/70">
+        نکته: اگر Label را خالی بگذاری، سیستم خودش یک پایه می‌سازد. در حالت گروهی، به انتهای Label شماره اضافه می‌شود.
+      </div>
+    </div>
+  ) : null}
+</div>
 
             <div className="space-y-2">
               <label className="text-sm">حجم (GB)</label>
@@ -319,10 +408,13 @@ export default function NewUserPage() {
             <Card>
               <CardHeader>
                 <div className="text-sm text-[hsl(var(--fg))]/70">پیش‌فاکتور</div>
-                <div className="text-xl font-semibold">{quote.total_amount.toLocaleString()} تومان</div>
+                <div className="text-xl font-semibold">{(bulkMode ? quote.total_amount * Math.max(1, Math.min(50, Number(bulkCount) || 1)) : quote.total_amount).toLocaleString()} تومان</div>
+                {bulkMode ? (
+                  <div className="text-xs text-[hsl(var(--fg))]/70">در حالت ساخت گروهی، مبلغ نمایش داده‌شده برای {Math.max(1, Math.min(50, Number(bulkCount) || 1))} کاربر است.</div>
+                ) : null}
               </CardHeader>
               <CardContent className="text-sm space-y-1">
-                <div>هزینه زمان: {quote.time_amount.toLocaleString()}</div>
+                <div>هزینه زمان: {(bulkMode ? quote.time_amount * Math.max(1, Math.min(50, Number(bulkCount) || 1)) : quote.time_amount).toLocaleString()}</div>
                 <div className="text-[hsl(var(--fg))]/70">جزئیات per-node (اگر per_node باشد):</div>
                 <pre className="text-xs bg-[hsl(var(--muted))] rounded-xl p-3 overflow-auto">{JSON.stringify(quote.per_node_amount, null, 2)}</pre>
               </CardContent>
@@ -330,6 +422,92 @@ export default function NewUserPage() {
           ) : null}
         </CardContent>
       </Card>
+
+<Modal
+  open={bulkResultOpen}
+  onClose={() => setBulkResultOpen(false)}
+  title="نتیجه ساخت گروهی"
+  className="max-w-3xl"
+>
+  <div className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="text-sm text-[hsl(var(--fg))]/70">
+        {bulkResults.length} موفق {bulkErrors.length ? `• ${bulkErrors.length} ناموفق` : ""}
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={async () => {
+            const txt = bulkResults.map((x) => x.master_url).join("\n");
+            const ok = await copyText(txt);
+            push({ title: ok ? "کپی شد" : "خطا در کپی", type: ok ? "success" : "error" });
+          }}
+          disabled={!bulkResults.length}
+        >
+          کپی همه لینک‌ها
+        </Button>
+        <Button type="button" onClick={() => setBulkResultOpen(false)}>
+          بستن
+        </Button>
+      </div>
+    </div>
+
+    {bulkResults.length ? (
+      <div className="max-h-[50vh] overflow-auto rounded-2xl border border-[hsl(var(--border))]">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-[hsl(var(--card))]">
+            <tr className="text-right">
+              <th className="p-3">Label</th>
+              <th className="p-3">User ID</th>
+              <th className="p-3">Master Sub</th>
+              <th className="p-3">کپی</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bulkResults.map((x) => (
+              <tr key={x.user_id} className="border-t border-[hsl(var(--border))]">
+                <td className="p-3 font-medium">{x.label}</td>
+                <td className="p-3">{x.user_id}</td>
+                <td className="p-3">
+                  <a className="text-[hsl(var(--primary))] underline" href={x.master_url} target="_blank" rel="noreferrer">
+                    {x.master_url}
+                  </a>
+                </td>
+                <td className="p-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      const ok = await copyText(x.master_url);
+                      push({ title: ok ? "کپی شد" : "خطا در کپی", type: ok ? "success" : "error" });
+                    }}
+                  >
+                    کپی
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : null}
+
+    {bulkErrors.length ? (
+      <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+        <div className="text-sm font-semibold text-amber-500">موارد ناموفق</div>
+        <div className="mt-2 space-y-1 text-xs text-[hsl(var(--fg))]/80">
+          {bulkErrors.map((e, idx) => (
+            <div key={idx}>
+              <span className="font-medium">{e.label}:</span> {e.error}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null}
+  </div>
+</Modal>
+
     </div>
   );
 }
