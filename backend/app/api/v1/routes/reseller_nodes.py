@@ -27,9 +27,9 @@ async def list_allowed_nodes(request: Request, db: AsyncSession = Depends(get_db
         items.append({
             "id": node.id,
             "name": node.name,
+            "base_url": node.base_url,
             "panel_type": node.panel_type.value,
             "tags": node.tags,
-            "base_url": node.base_url,
             "is_visible_in_sub": node.is_visible_in_sub,
             "default_for_reseller": bool(alloc.default_for_reseller),
             "price_per_gb_override": alloc.price_per_gb_override,
