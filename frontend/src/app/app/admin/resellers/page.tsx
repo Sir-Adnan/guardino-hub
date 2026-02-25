@@ -217,7 +217,7 @@ export default function AdminResellersPage() {
               <label className="text-sm flex items-center gap-2">
                 {t("adminResellers.pricing")} <HelpTip text={t("adminResellers.help.pricing")} />
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Input placeholder={t("adminResellers.pricePerGb")} type="number" value={priceGb} onChange={(e) => setPriceGb(Number(e.target.value))} />
                 <Input placeholder={t("adminResellers.bundlePerGb")} type="number" value={bundleGb} onChange={(e) => setBundleGb(Number(e.target.value))} />
                 <Input placeholder={t("adminResellers.pricePerDay")} type="number" value={priceDay} onChange={(e) => setPriceDay(Number(e.target.value))} />
