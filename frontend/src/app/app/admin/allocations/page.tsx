@@ -31,6 +31,38 @@ type NodeList = { items: NodeOut[]; total: number };
 type ResellerOut = { id: number; username: string; status: string };
 type ResellerList = { items: ResellerOut[]; total: number };
 
+const ADMIN_FETCH_LIMIT = 200;
+
+async function fetchAllNodesForAdmin(maxPages = 50): Promise<NodeOut[]> {
+  const all: NodeOut[] = [];
+  let offset = 0;
+  let total = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const res = await apiFetch<NodeList>(`/api/v1/admin/nodes?offset=${offset}&limit=${ADMIN_FETCH_LIMIT}`);
+    const chunk = res.items || [];
+    all.push(...chunk);
+    total = res.total || all.length;
+    if (!chunk.length || all.length >= total) break;
+    offset += chunk.length;
+  }
+  return all;
+}
+
+async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerOut[]> {
+  const all: ResellerOut[] = [];
+  let offset = 0;
+  let total = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const res = await apiFetch<ResellerList>(`/api/v1/admin/resellers?offset=${offset}&limit=${ADMIN_FETCH_LIMIT}`);
+    const chunk = res.items || [];
+    all.push(...chunk);
+    total = res.total || all.length;
+    if (!chunk.length || all.length >= total) break;
+    offset += chunk.length;
+  }
+  return all;
+}
+
 export default function AllocationsPage() {
   const { push } = useToast();
   const { t } = useI18n();
@@ -78,18 +110,24 @@ export default function AllocationsPage() {
     setDef(false);
   }
 
-  async function load() {
+  async function load(nextPage: number = page, nextPageSize: number = pageSize) {
     try {
+      const offset = (nextPage - 1) * nextPageSize;
       const [nodesRes, resellersRes, allocationsRes] = await Promise.all([
-        apiFetch<NodeList>("/api/v1/admin/nodes?offset=0&limit=500"),
-        apiFetch<ResellerList>("/api/v1/admin/resellers?offset=0&limit=500"),
-        apiFetch<AllocationList>(`/api/v1/admin/allocations?offset=${(page - 1) * pageSize}&limit=${pageSize}`),
+        fetchAllNodesForAdmin(),
+        fetchAllResellersForAdmin(),
+        apiFetch<AllocationList>(`/api/v1/admin/allocations?offset=${offset}&limit=${nextPageSize}`),
       ]);
 
-      setNodes((nodesRes.items || []).map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled })));
-      setResellers((resellersRes.items || []).map((r) => ({ id: r.id, username: r.username, status: r.status })));
+      setNodes((nodesRes || []).map((n) => ({ id: n.id, name: n.name, panel_type: n.panel_type, is_enabled: n.is_enabled })));
+      setResellers((resellersRes || []).map((r) => ({ id: r.id, username: r.username, status: r.status })));
       setItems(allocationsRes.items || []);
       setTotal(allocationsRes.total || 0);
+      const safeTotal = allocationsRes.total || 0;
+      if ((allocationsRes.items || []).length === 0 && safeTotal > 0 && offset >= safeTotal) {
+        const lastPage = Math.max(1, Math.ceil(safeTotal / nextPageSize));
+        if (lastPage !== nextPage) setPage(lastPage);
+      }
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -141,7 +179,7 @@ export default function AllocationsPage() {
         push({ title: t("adminAllocations.saved"), desc: `ID: ${res.id}`, type: "success" });
       }
 
-      await load();
+      await load(page, pageSize);
       resetForm();
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -185,7 +223,7 @@ export default function AllocationsPage() {
     try {
       await apiFetch<any>(`/api/v1/admin/allocations/${a.id}`, { method: "DELETE" });
       push({ title: t("adminAllocations.deleted"), desc: `ID: ${a.id}`, type: "success" });
-      await load();
+      await load(page, pageSize);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -199,7 +237,7 @@ export default function AllocationsPage() {
   });
 
   React.useEffect(() => {
-    load();
+    load(page, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
@@ -327,7 +365,7 @@ export default function AllocationsPage() {
             <Button type="button" onClick={createOrSave} disabled={busy}>
               {editingId == null ? t("adminAllocations.create") : t("adminAllocations.save")}
             </Button>
-            <Button type="button" variant="outline" onClick={load}>
+            <Button type="button" variant="outline" onClick={() => load(page, pageSize)}>
               {t("common.reload")}
             </Button>
             {editingId != null ? (
@@ -369,7 +407,7 @@ export default function AllocationsPage() {
                           onCheckedChange={async (v) => {
                             try {
                               await patchAllocation(a.id, { enabled: v });
-                              await load();
+                              await load(page, pageSize);
                             } catch (e: any) {
                               push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
                             }
@@ -382,7 +420,7 @@ export default function AllocationsPage() {
                           onCheckedChange={async (v) => {
                             try {
                               await patchAllocation(a.id, { default_for_reseller: v } as any);
-                              await load();
+                              await load(page, pageSize);
                             } catch (e: any) {
                               push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
                             }
