@@ -6,13 +6,9 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 
-type ResellerMini = { id: number; username: string; };
-
 export default function LedgerPage() {
   const { push } = useToast();
   const [resellerId, setResellerId] = React.useState<string>("");
-  const [resellerQuery, setResellerQuery] = React.useState("");
-  const [resellers, setResellers] = React.useState<ResellerMini[]>([]);
   const [items, setItems] = React.useState<any[]>([]);
 
   async function load() {
@@ -26,27 +22,8 @@ export default function LedgerPage() {
     }
   }
 
-  React.useEffect(() => { (async () => {
-    try {
-      const r = await apiFetch<any>("/api/v1/admin/resellers");
-      setResellers((r || []).map((x: any) => ({ id: x.id, username: x.username })));
-    } catch {}
-    await load();
-  })(); /* eslint-disable-next-line */ }, []);
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
-
-const resellerMap = React.useMemo(() => {
-  const m: Record<number, string> = {};
-  for (const r of resellers) m[r.id] = r.username;
-  return m;
-}, [resellers]);
-
-const filteredResellers = React.useMemo(() => {
-  const q = resellerQuery.toLowerCase();
-  return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
-}, [resellers, resellerQuery]);
-
-const nf = React.useMemo(() => new Intl.NumberFormat(), []);
   return (
     <div className="space-y-6">
       <Card>
@@ -55,26 +32,10 @@ const nf = React.useMemo(() => new Intl.NumberFormat(), []);
           <div className="text-sm text-[hsl(var(--fg))]/70">آخرین ۵۰۰ تراکنش</div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-2 md:grid-cols-3">
-  <Input
-    placeholder="جستجو ریسیلر (نام یا ID)"
-    value={resellerQuery}
-    onChange={(e) => setResellerQuery(e.target.value)}
-  />
-  <select
-    className="h-10 rounded-xl border border-[hsl(var(--border))] bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-    value={resellerId}
-    onChange={(e) => setResellerId(e.target.value)}
-  >
-    <option value="">همه ریسیلرها</option>
-    {filteredResellers.map((r) => (
-      <option key={r.id} value={String(r.id)}>
-        {r.username} (#{r.id})
-      </option>
-    ))}
-  </select>
-  <Button type="button" variant="outline" onClick={load}>بارگذاری</Button>
-</div>
+          <div className="flex gap-2">
+            <Input placeholder="filter reseller_id (optional)" value={resellerId} onChange={(e) => setResellerId(e.target.value)} />
+            <Button type="button" variant="outline" onClick={load}>Load</Button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
@@ -91,10 +52,10 @@ const nf = React.useMemo(() => new Intl.NumberFormat(), []);
                 {items.map((t) => (
                   <tr key={t.id} className="border-b border-[hsl(var(--border))]">
                     <td className="py-2">{t.id}</td>
-                    <td className="py-2">{resellerMap[t.reseller_id] ? `${resellerMap[t.reseller_id]} (#${t.reseller_id})` : t.reseller_id}</td>
-                    <td className="py-2">{nf.format(t.amount)}</td>
+                    <td className="py-2">{t.reseller_id}</td>
+                    <td className="py-2">{t.amount}</td>
                     <td className="py-2">{t.reason}</td>
-                    <td className="py-2">{nf.format(t.balance_after)}</td>
+                    <td className="py-2">{t.balance_after}</td>
                     <td className="py-2">{t.occurred_at ? new Date(t.occurred_at).toLocaleString() : "-"}</td>
                   </tr>
                 ))}

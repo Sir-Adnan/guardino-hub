@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Menu as MenuIcon, Moon, Plus, Sun } from "lucide-react";
+import { Moon, Plus, Sun } from "lucide-react";
 
 function titleKey(pathname: string): string {
   if (pathname === "/app") return "nav.dashboard";
@@ -23,7 +23,7 @@ function titleKey(pathname: string): string {
   return "app.title";
 }
 
-export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
+export function AppHeader() {
   const p = usePathname();
   const { me } = useAuth();
   const { t } = useI18n();
@@ -37,7 +37,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/85 backdrop-blur">
-      <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+      <div className="px-6 py-4 flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="text-lg font-semibold truncate">{t(key)}</div>
           {locked ? (
@@ -48,16 +48,6 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void } = {}) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            className="px-3 md:hidden"
-            onClick={() => onMenuClick?.()}
-            title={t("sidebar.open")}
-            aria-label={t("sidebar.open")}
-          >
-            <MenuIcon size={20} />
-          </Button>
-
           {showCreateUser ? (
             <Link href="/app/users/new">
               <Button className="gap-2">
