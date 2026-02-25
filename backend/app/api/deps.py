@@ -22,17 +22,17 @@ async def get_current_principal(
         sub: str | None = payload.get("sub")
         token_role: str | None = payload.get("role")
         if not sub or not token_role:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
 
     q = await db.execute(select(Reseller).where(Reseller.username == sub))
     reseller = q.scalar_one_or_none()
     if not reseller:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="کاربر یافت نشد.")
 
     if reseller.status in (ResellerStatus.disabled, ResellerStatus.deleted):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="حساب کاربری شما غیرفعال است.")
 
     # IMPORTANT: role is authoritative in the database.
     # The JWT role claim is treated as a cache only.
@@ -43,7 +43,7 @@ async def get_current_principal(
 
     # If role was changed in the DB, old tokens should stop working.
     if token_role != db_role.value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
 
     return reseller, db_role
 
@@ -51,14 +51,14 @@ async def get_current_principal(
 async def require_admin(principal=Depends(get_current_principal)) -> Reseller:
     reseller, role = principal
     if role != Role.admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط ادمین مجاز است.")
     return reseller
 
 
 async def require_reseller(principal=Depends(get_current_principal)) -> Reseller:
     reseller, role = principal
     if role not in (Role.reseller, Role.admin):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی غیرمجاز.")
     return reseller
 
 
@@ -70,7 +70,7 @@ def enforce_balance_or_readonly_users(reseller: Reseller, request_path: str, req
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Balance is zero: read-only (users list only)",
+            detail="بالانس شما صفر است و فقط مشاهده لیست کاربران مجاز است.",
         )
 
 
