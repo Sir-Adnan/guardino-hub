@@ -44,6 +44,8 @@ export default function NewUserPage() {
 
   function randomName() {
     const v = `u_${Math.random().toString(16).slice(2, 10)}`;
+    // Label is required by backend. If it's empty, fill it too.
+    if (!label.trim()) setLabel(v);
     setUsername(v);
   }
 
