@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.db import get_db
 from app.api.deps import require_admin
@@ -10,6 +10,7 @@ from app.models.ledger import LedgerTransaction
 from app.schemas.admin import (
     CreateResellerRequest,
     ResellerOut,
+    ResellerList,
     CreditRequest,
     UpdateResellerRequest,
     SetResellerStatusRequest,
@@ -23,6 +24,7 @@ def _to_out(r: Reseller) -> ResellerOut:
         id=r.id,
         parent_id=r.parent_id,
         username=r.username,
+        role=(r.role or "reseller"),
         status=r.status.value,
         balance=r.balance,
         price_per_gb=r.price_per_gb,
@@ -32,11 +34,19 @@ def _to_out(r: Reseller) -> ResellerOut:
     )
 
 
-@router.get("", response_model=list[ResellerOut])
-async def list_resellers(db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(Reseller).order_by(Reseller.id.desc()))
+@router.get("", response_model=ResellerList)
+async def list_resellers(
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+):
+    base = select(Reseller).order_by(Reseller.id.desc())
+    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = int(total_q.scalar_one())
+    q = await db.execute(base.limit(limit).offset(offset))
     rows = q.scalars().all()
-    return [_to_out(r) for r in rows]
+    return ResellerList(items=[_to_out(r) for r in rows], total=total)
 
 
 @router.get("/{reseller_id}", response_model=ResellerOut)
