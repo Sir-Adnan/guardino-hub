@@ -21,6 +21,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "topbar.themeLight": "حالت روشن",
     "topbar.themeDark": "حالت تیره",
     "sidebar.signedInAs": "ورود به عنوان",
+    "sidebar.open": "باز کردن منو",
 
     "users.title": "کاربران",
     "users.subtitle": "لیست کاربران شما",
@@ -138,6 +139,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "common.cancel": "انصراف",
     "common.search": "جستجو...",
     "common.edit": "ویرایش",
+    "common.all": "همه",
 
     "adminNodes.title": "مدیریت نودها",
     "adminNodes.subtitle": "ایجاد/ویرایش نود، تست اتصال، فعال/غیرفعال، و نمایش در ساب",
@@ -241,6 +243,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "topbar.themeLight": "Switch to light",
     "topbar.themeDark": "Switch to dark",
     "sidebar.signedInAs": "Signed in as",
+    "sidebar.open": "Open menu",
 
     "users.title": "Users",
     "users.subtitle": "Your users list",
@@ -306,6 +309,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "common.cancel": "Cancel",
     "common.search": "Search...",
     "common.edit": "Edit",
+    "common.all": "All",
 
     "adminNodes.title": "Manage nodes",
     "adminNodes.subtitle": "Create/edit nodes, test connectivity, enable/disable, and subscription visibility",
