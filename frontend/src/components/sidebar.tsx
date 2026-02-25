@@ -56,7 +56,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "sticky top-0 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--sidebar-bg))] flex h-screen max-h-screen flex-col overflow-hidden transition-all",
+        "sticky top-0 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--sidebar-bg))] flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden transition-all",
         collapsed ? "w-16" : "w-72",
         className
       )}
@@ -79,9 +79,9 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-3">
         {items
-          .filter((it) => (isAdmin ? true : !it.href.startsWith("/app/admin")))
+          .filter((it) => (isAdmin ? true : (!it.href.startsWith("/app/admin") || it.href.startsWith("/app/admin/reports"))))
           .map((it) => {
             const active = pathname === it.href || (it.href !== "/app" && pathname.startsWith(it.href));
             const Icon = it.icon;
@@ -105,7 +105,7 @@ export function Sidebar({
           })}
       </nav>
 
-      <div className="border-t border-[hsl(var(--border))] p-3">
+      <div className="mt-auto border-t border-[hsl(var(--border))] p-3">
         <div className="mb-3">
           {!collapsed ? (
             <>
@@ -115,11 +115,15 @@ export function Sidebar({
                   <div className="truncate text-sm font-medium">{me?.username ?? "—"}</div>
                   <div className="truncate text-xs text-[hsl(var(--fg))]/60">{me?.role ?? "—"}</div>
                 </div>
-                <Badge variant={(me?.balance ?? 1) <= 0 ? "danger" : "default"}>{fmtNumber(me?.balance ?? null)}</Badge>
+                <div className="text-end">
+                  <div className="text-[10px] text-[hsl(var(--fg))]/60">{t("users.balance")}</div>
+                  <Badge variant={(me?.balance ?? 1) <= 0 ? "danger" : "default"}>{fmtNumber(me?.balance ?? null)}</Badge>
+                </div>
               </div>
             </>
           ) : (
             <div className="flex flex-col items-center gap-2">
+              <div className="text-[10px] text-[hsl(var(--fg))]/60">{t("users.balance")}</div>
               <Badge variant={(me?.balance ?? 1) <= 0 ? "danger" : "default"}>{fmtNumber(me?.balance ?? null)}</Badge>
             </div>
           )}
