@@ -28,8 +28,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {sidebarOpen ? (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-            <div className="absolute inset-y-0 right-0 w-[80vw] max-w-[320px]">
-              <Sidebar className="h-full min-h-0" onNavigate={() => setSidebarOpen(false)} />
+            <div className="absolute inset-y-0 right-0 w-[86vw] max-w-[300px]">
+              <Sidebar className="!static !w-full h-full min-h-0 max-h-[100dvh]" onNavigate={() => setSidebarOpen(false)} />
             </div>
           </div>
         ) : null}
