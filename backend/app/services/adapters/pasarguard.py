@@ -106,44 +106,68 @@ class PasarguardAdapter:
         Guardino default: enable all inbounds by default. In Pasarguard, inbounds are
         controlled via groups (group_ids on user).
         """
-        inbound_tags = await self._get_inbound_tags()
-        if not inbound_tags:
-            return None
+        inbound_tags: list[str] = []
+        try:
+            inbound_tags = await self._get_inbound_tags()
+        except Exception:
+            inbound_tags = []
 
         group_name = "guardino_all_inbounds"
 
-        # Find existing group
+        if inbound_tags:
+            # Find existing group with same name and keep it synced with all inbounds
+            try:
+                js = await self._get_json("/api/groups?offset=0&limit=500")
+                groups = js.get("groups") if isinstance(js, dict) else None
+                if isinstance(groups, list):
+                    for g in groups:
+                        if not isinstance(g, dict):
+                            continue
+                        if str(g.get("name") or "") != group_name:
+                            continue
+                        gid = g.get("id")
+                        if not isinstance(gid, int):
+                            continue
+                        existing = g.get("inbound_tags")
+                        existing_set = set(existing) if isinstance(existing, list) else set()
+                        target_set = set(inbound_tags)
+                        if existing_set != target_set or bool(g.get("is_disabled")):
+                            await self._put_json(
+                                f"/api/group/{gid}",
+                                {"name": group_name, "inbound_tags": inbound_tags, "is_disabled": False},
+                            )
+                        return int(gid)
+            except Exception:
+                pass
+
+            # Create if not found
+            try:
+                created = await self._post_json("/api/group", {"name": group_name, "inbound_tags": inbound_tags})
+                if isinstance(created, dict) and isinstance(created.get("id"), int):
+                    return int(created["id"])
+            except Exception:
+                pass
+
+        # Fallback: use an existing group (usually ALL) when creating/syncing a dedicated
+        # "all inbounds" group is not possible due panel permissions/version differences.
         try:
-            js = await self._get_json("/api/groups?offset=0&limit=500")
-            groups = js.get("groups") if isinstance(js, dict) else None
-            if isinstance(groups, list):
-                for g in groups:
-                    if not isinstance(g, dict):
-                        continue
-                    if str(g.get("name") or "") != group_name:
-                        continue
-                    gid = g.get("id")
-                    if not isinstance(gid, int):
-                        continue
-                    existing = g.get("inbound_tags")
-                    existing_set = set(existing) if isinstance(existing, list) else set()
-                    target_set = set(inbound_tags)
-                    if existing_set != target_set or bool(g.get("is_disabled")):
-                        await self._put_json(
-                            f"/api/group/{gid}",
-                            {"name": group_name, "inbound_tags": inbound_tags, "is_disabled": False},
-                        )
-                    return int(gid)
+            simple = await self._get_json("/api/groups/simple?offset=0&limit=500&all=true")
+            groups = simple.get("groups") if isinstance(simple, dict) else None
+            if isinstance(groups, list) and groups:
+                preferred: list[str] = ["all", "guardino_all_inbounds"]
+                for name in preferred:
+                    for g in groups:
+                        if not isinstance(g, dict):
+                            continue
+                        gid = g.get("id")
+                        gname = str(g.get("name") or "").strip().lower()
+                        if isinstance(gid, int) and gname == name:
+                            return int(gid)
+                first = groups[0]
+                if isinstance(first, dict) and isinstance(first.get("id"), int):
+                    return int(first["id"])
         except Exception:
             pass
-
-        # Create if not found
-        try:
-            created = await self._post_json("/api/group", {"name": group_name, "inbound_tags": inbound_tags})
-            if isinstance(created, dict) and isinstance(created.get("id"), int):
-                return int(created["id"])
-        except Exception:
-            return None
         return None
 
     async def test_connection(self) -> TestConnectionResult:
@@ -179,6 +203,78 @@ class PasarguardAdapter:
             "trojan": {},
             "shadowsocks": {"method": "chacha20-ietf-poly1305"},
         }
+
+    def _has_proxy_settings(self, proxy_settings: Any) -> bool:
+        if not isinstance(proxy_settings, dict):
+            return False
+        for key in ("vmess", "vless", "trojan", "shadowsocks"):
+            val = proxy_settings.get(key)
+            if isinstance(val, dict) and len(val) > 0:
+                return True
+        return False
+
+    async def _get_user_state(self, remote_identifier: str) -> tuple[int | None, bool, list[int]]:
+        js = await self._get_json(f"/api/user/{remote_identifier}")
+        if not isinstance(js, dict):
+            return None, False, []
+        uid = js.get("id")
+        proxy_ok = self._has_proxy_settings(js.get("proxy_settings"))
+        raw_group_ids = js.get("group_ids")
+        group_ids: list[int] = []
+        if isinstance(raw_group_ids, list):
+            group_ids = [gid for gid in raw_group_ids if isinstance(gid, int)]
+        return (int(uid) if isinstance(uid, int) else None), proxy_ok, group_ids
+
+    async def _repair_user_connectivity(self, remote_identifier: str, group_id: int | None) -> None:
+        # 1) Try direct PUT (common path for newer versions)
+        update_payload: dict[str, Any] = {"proxy_settings": self._all_proxy_settings()}
+        if group_id:
+            update_payload["group_ids"] = [group_id]
+        try:
+            await self._put_json(f"/api/user/{remote_identifier}", update_payload)
+        except Exception:
+            pass
+
+        user_id, proxy_ok, group_ids = await self._get_user_state(remote_identifier)
+        group_ok = (group_id is None) or (group_id in group_ids)
+        if proxy_ok and (group_ok or group_id is None):
+            return
+
+        # 2) Try modify with empty proxy_settings (some versions auto-generate defaults)
+        try:
+            payload: dict[str, Any] = {"proxy_settings": {}}
+            if group_id:
+                payload["group_ids"] = [group_id]
+            await self._put_json(f"/api/user/{remote_identifier}", payload)
+        except Exception:
+            pass
+
+        user_id, proxy_ok, group_ids = await self._get_user_state(remote_identifier)
+        group_ok = (group_id is None) or (group_id in group_ids)
+        if proxy_ok and (group_ok or group_id is None):
+            return
+
+        # 3) Final fallback: dedicated bulk proxy API
+        if user_id is not None:
+            bulk_payload: dict[str, Any] = {"users": [user_id], "method": "chacha20-ietf-poly1305"}
+            if group_id:
+                bulk_payload["group_ids"] = [group_id]
+            try:
+                await self._post_json("/api/users/bulk/proxy_settings", bulk_payload)
+            except Exception:
+                pass
+
+        user_id, proxy_ok, group_ids = await self._get_user_state(remote_identifier)
+        group_ok = (group_id is None) or (group_id in group_ids)
+        missing: list[str] = []
+        if not proxy_ok:
+            missing.append("proxy_settings")
+        if group_id is not None and not group_ok:
+            missing.append("group_ids")
+        if missing:
+            raise AdapterError(
+                f"Pasarguard user '{remote_identifier}' created but missing required config: {', '.join(missing)}"
+            )
 
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
         data_limit = int(total_gb) * 1024 * 1024 * 1024
@@ -231,11 +327,12 @@ class PasarguardAdapter:
 
         remote_identifier = (js or {}).get("username") or label
         if created_without_proxy_settings:
-            try:
-                await self._put_json(f"/api/user/{remote_identifier}", {"proxy_settings": self._all_proxy_settings()})
-            except Exception:
-                # Keep the user created even if proxy post-config fails.
-                pass
+            await self._repair_user_connectivity(remote_identifier, group_id)
+        else:
+            _user_id, proxy_ok, group_ids = await self._get_user_state(remote_identifier)
+            group_ok = (group_id is None) or (group_id in group_ids)
+            if not proxy_ok or (group_id is not None and not group_ok):
+                await self._repair_user_connectivity(remote_identifier, group_id)
 
         sub_url = (js or {}).get("subscription_url") or (js or {}).get("subscriptionUrl")
         if not sub_url:
