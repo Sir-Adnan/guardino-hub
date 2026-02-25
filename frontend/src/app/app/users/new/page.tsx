@@ -37,10 +37,17 @@ export default function NewUserPage() {
   const [days, setDays] = React.useState<number>(30);
 
   const [nodeIds, setNodeIds] = React.useState<string>("");
-  const [nodes, setNodes] = React.useState<Array<{id:number; name:string; panel_type:string}> | null>(null); // comma-separated for now
+  const [nodeGroup, setNodeGroup] = React.useState<string>("");
+  const [nodes, setNodes] = React.useState<Array<{id:number; name:string; panel_type:string; tags?: string[]}> | null>(null); // allowed nodes
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  const tagOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    (nodes || []).forEach((n) => (n.tags || []).forEach((tg) => set.add(String(tg))));
+    return Array.from(set).sort();
+  }, [nodes]);
 
   function randomName() {
     const v = `u_${Math.random().toString(16).slice(2, 10)}`;
@@ -53,7 +60,7 @@ export default function NewUserPage() {
     try {
       const res = await apiFetch<any>("/api/v1/reseller/nodes");
       const arr = res.items || [];
-      setNodes(arr.map((n:any) => ({ id: n.id, name: n.name, panel_type: n.panel_type })));
+      setNodes(arr.map((n:any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, tags: n.tags || [] })));
       push({ title: "Nodes loaded", type: "success" });
     } catch (e:any) {
       push({ title: "Cannot load nodes", desc: String(e.message||e), type: "error" });
@@ -63,7 +70,7 @@ export default function NewUserPage() {
   async function doQuote() {
     setLoading(true);
     try {
-      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const node_ids = !nodeGroup && nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
       const payload: any = {
         label,
         username: username || undefined,
@@ -73,6 +80,7 @@ export default function NewUserPage() {
         duration_preset: preset || undefined,
         pricing_mode: pricingMode,
         node_ids,
+        node_group: nodeGroup || undefined,
       };
       const res = await apiFetch<QuoteResp>("/api/v1/reseller/user-ops/quote", { method: "POST", body: JSON.stringify(payload) });
       setQuote(res);
@@ -87,7 +95,7 @@ export default function NewUserPage() {
   async function doCreate() {
     setLoading(true);
     try {
-      const node_ids = nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
+      const node_ids = !nodeGroup && nodeIds.trim() ? nodeIds.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : undefined;
       const payload: any = {
         label,
         username: username || undefined,
@@ -97,6 +105,7 @@ export default function NewUserPage() {
         duration_preset: preset || undefined,
         pricing_mode: pricingMode,
         node_ids,
+        node_group: nodeGroup || undefined,
       };
       const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", { method: "POST", body: JSON.stringify(payload) });
       push({ title: "کاربر ساخته شد", desc: `ID: ${res.user_id}`, type: "success" });
@@ -118,6 +127,38 @@ export default function NewUserPage() {
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
+            <label className="text-sm flex items-center gap-2">
+              {t("newUser.nodeGroup")} <HelpTip text={t("help.nodeGroup")} />
+            </label>
+            <select
+              className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+              value={nodeGroup}
+              onChange={(e) => {
+                const v = e.target.value;
+                setNodeGroup(v);
+                if (v) setNodeIds("");
+              }}
+            >
+              <option value="">{t("newUser.nodeGroupNone")}</option>
+              {tagOptions.map((tg) => (
+                <option key={tg} value={tg}>
+                  {tg}
+                </option>
+              ))}
+            </select>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.nodeGroupHint")}</div>
+            {tagOptions.length ? (
+              <div className="flex flex-wrap gap-1">
+                {tagOptions.slice(0, 14).map((tg) => (
+                  <span key={tg} className="text-[10px] rounded-lg px-2 py-0.5 border border-[hsl(var(--border))] text-[hsl(var(--fg))]/70">
+                    {tg}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.label")} <HelpTip text={t("help.label")} />
               </label>
@@ -191,8 +232,8 @@ export default function NewUserPage() {
             <label className="text-sm flex items-center gap-2">
               {t("newUser.nodeIds")} <HelpTip text={t("help.nodeIds")} />
             </label>
-            <Input value={nodeIds} onChange={(e) => setNodeIds(e.target.value)} placeholder="مثلاً 1,2,3 (اگر خالی باشد default nodes)" />
-            <div className="text-xs text-[hsl(var(--fg))]/70">در نسخه بعد، این بخش به انتخاب گرافیکی نودها تبدیل می‌شود.</div>
+            <Input value={nodeIds} onChange={(e) => { setNodeIds(e.target.value); if (e.target.value.trim()) setNodeGroup(""); }} placeholder="مثلاً 1,2,3 (اگر خالی باشد default nodes)" />
+            <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.nodeIdsHint")}</div>
           </div>
 
           <div className="flex flex-wrap gap-2">
