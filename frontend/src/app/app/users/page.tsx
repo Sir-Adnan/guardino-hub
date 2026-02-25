@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { apiFetch } from "@/lib/api";
+import { copyText } from "@/lib/copy";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth-context";
@@ -14,11 +15,24 @@ import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowDownUp, Clock3, Flame, Users } from "lucide-react";
+import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
 type LinksResp = { user_id: number; master_link: string; node_links: Array<{ node_id: number; direct_url?: string; status: string; detail?: string }> };
+type NodeLite = { id: number; name: string; base_url: string };
+
+function normalizeUrl(maybeUrl: string, baseUrl?: string) {
+  const u = (maybeUrl || "").trim();
+  if (!u) return u;
+  if (/^https?:\/\//i.test(u)) return u;
+  const b = (baseUrl || "").trim();
+  if (!b) return u;
+  const bb = b.replace(/\/+$/, "");
+  const uu = u.startsWith("/") ? u : `/${u}`;
+  return `${bb}${uu}`;
+}
+
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 
 type StatusFilter = "all" | "active" | "disabled" | "expired";
@@ -71,13 +85,20 @@ export default function UsersPage() {
   const [filter, setFilter] = React.useState<StatusFilter>("all");
   const [sortMode, setSortMode] = React.useState<SortMode>("priority");
 
+  const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
+  const nodeMap = React.useMemo(() => {
+    const m = new Map<number, NodeLite>();
+    (nodes || []).forEach((n) => m.set(n.id, n));
+    return m;
+  }, [nodes]);
+
   const [linksOpen, setLinksOpen] = React.useState(false);
   const [linksUser, setLinksUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
   const [linksErr, setLinksErr] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
-  const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | null>(null);
+  const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
 
   async function load() {
@@ -87,6 +108,18 @@ export default function UsersPage() {
       setData(res);
     } catch (e: any) {
       setErr(String(e.message || e));
+    }
+  }
+
+
+  async function loadNodes() {
+    if (nodes) return;
+    try {
+      const res = await apiFetch<any>("/api/v1/reseller/nodes");
+      const arr = res?.items || res || [];
+      setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, base_url: n.base_url || "" })));
+    } catch {
+      // ignore
     }
   }
 
@@ -166,6 +199,7 @@ export default function UsersPage() {
   }, [rawItems]);
 
   async function openLinks(u: UserOut) {
+    await loadNodes();
     setLinksUser(u);
     setLinksOpen(true);
     setLinks(null);
@@ -175,6 +209,18 @@ export default function UsersPage() {
       setLinks(res);
     } catch (e: any) {
       setLinksErr(String(e.message || e));
+    }
+  }
+
+
+  async function copyMaster(u: UserOut) {
+    try {
+      await loadNodes();
+      const res = await apiFetch<LinksResp>(`/api/v1/reseller/users/${u.id}/links?refresh=false`);
+      const ok = await copyText(res.master_link);
+      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
   }
 
@@ -206,7 +252,7 @@ export default function UsersPage() {
     }
   }
 
-  function ask(kind: "reset" | "revoke", u: UserOut) {
+  function ask(kind: "reset" | "revoke" | "delete", u: UserOut) {
     setConfirmKind(kind);
     setConfirmUser(u);
     setConfirmOpen(true);
@@ -218,6 +264,7 @@ export default function UsersPage() {
     setConfirmOpen(false);
     if (confirmKind === "reset") await resetUsage(u);
     if (confirmKind === "revoke") await revoke(u);
+    if (confirmKind === "delete") await op(u.id, `/api/v1/reseller/users/${u.id}/set-status`, { status: "deleted" });
   }
 
   function FilterButton({ value, label }: { value: StatusFilter; label: string }) {
@@ -424,23 +471,43 @@ export default function UsersPage() {
                       items={[
                         {
                           label: t("users.details"),
+                          icon: <Pencil size={16} />,
                           onClick: () => {
                             window.location.href = `/app/users/${u.id}`;
                           },
                         },
                         {
+                          label: t("users.copySub"),
+                          icon: <Copy size={16} />,
+                          onClick: () => copyMaster(u),
+                        },
+                        {
+                          label: isActive ? t("common.disable") : t("common.enable"),
+                          icon: <Power size={16} />,
+                          disabled: locked || busy,
+                          onClick: () => setStatus(u, !isActive),
+                        },
+                        {
                           label: t("users.resetUsage"),
+                          icon: <Flame size={16} />,
                           disabled: locked || busy,
                           onClick: () => ask("reset", u),
                         },
                         {
                           label: t("users.revoke"),
+                          icon: <Trash2 size={16} />,
                           disabled: locked || busy,
                           danger: true,
                           onClick: () => ask("revoke", u),
                         },
-                      ]}
-                    />
+                        {
+                          label: t("users.delete"),
+                          icon: <Trash2 size={16} />,
+                          disabled: locked || busy,
+                          danger: true,
+                          onClick: () => ask("delete", u),
+                        },
+                      ]} />
                   </div>
                 </CardContent>
               </Card>
@@ -452,11 +519,11 @@ export default function UsersPage() {
       <Modal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={confirmKind === "reset" ? t("users.confirmResetTitle") : t("users.confirmRevokeTitle")}
+        title={confirmKind === "reset" ? t("users.confirmResetTitle") : confirmKind === "delete" ? t("users.confirmDeleteTitle") : t("users.confirmRevokeTitle")}
       >
         <div className="space-y-4">
           <div className="text-sm text-[hsl(var(--fg))]/80">
-            {confirmKind === "reset" ? t("users.confirmResetBody") : t("users.confirmRevokeBody")}
+            {confirmKind === "reset" ? t("users.confirmResetBody") : confirmKind === "delete" ? t("users.confirmDeleteBody") : t("users.confirmRevokeBody")}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
@@ -480,8 +547,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    navigator.clipboard.writeText(links.master_link);
-                    push({ title: t("common.copied"), type: "success" });
+                    copyText(links.master_link).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
                 >
                   {t("common.copy")}
@@ -492,21 +558,24 @@ export default function UsersPage() {
             <div className="space-y-2">
               <div className="font-semibold">{t("users.panelSubs")}</div>
               <div className="space-y-2">
-                {links.node_links.map((nl) => (
+                {links.node_links.map((nl) => {
+                  const node = nodeMap.get(nl.node_id);
+                  const full = nl.direct_url ? normalizeUrl(nl.direct_url, node?.base_url) : "";
+                  return (
                   <div key={nl.node_id} className="rounded-xl border border-[hsl(var(--border))] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">Node #{nl.node_id}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{node?.name ? `${node.name} (#${nl.node_id})` : `Node #${nl.node_id}`}</div>
                       <Badge variant={nl.status === "ok" ? "success" : nl.status === "missing" ? "warning" : "danger"}>{nl.status}</Badge>
                     </div>
-                    {nl.direct_url ? (
+                    {full ? (
                       <>
-                        <div className="mt-2 break-all text-xs">{nl.direct_url}</div>
+                        <div className="mt-2 break-all text-xs">{full}</div>
                         <div className="mt-2">
                           <Button
                             variant="outline"
                             onClick={() => {
-                              navigator.clipboard.writeText(nl.direct_url || "");
-                              push({ title: t("common.copied"), type: "success" });
+                              if (!full) return;
+                              copyText(full).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                             }}
                           >
                             {t("common.copy")}
@@ -517,7 +586,8 @@ export default function UsersPage() {
                       <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{nl.detail || t("users.noLink")}</div>
                     )}
                   </div>
-                ))}
+                );
+                })}
               </div>
             </div>
           </div>
