@@ -37,6 +37,8 @@ export default function AllocationsPage() {
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [resellerId, setResellerId] = React.useState<number | "">("");
   const [nodeId, setNodeId] = React.useState<number | "">("");
+  const [nodeIds, setNodeIds] = React.useState<number[]>([]);
+  const [nodePickQ, setNodePickQ] = React.useState("");
   const [priceOverride, setPriceOverride] = React.useState<number | "">("");
   const [enabled, setEnabled] = React.useState(true);
   const [def, setDef] = React.useState(false);
@@ -61,6 +63,8 @@ export default function AllocationsPage() {
     setEditingId(null);
     setResellerId("");
     setNodeId("");
+    setNodeIds([]);
+    setNodePickQ("");
     setPriceOverride("");
     setEnabled(true);
     setDef(false);
@@ -91,7 +95,7 @@ export default function AllocationsPage() {
 
   async function createOrSave() {
     try {
-      if (resellerId === "" || nodeId === "") throw new Error(t("adminAllocations.errSelect"));
+      if (resellerId === "") throw new Error(t("adminAllocations.errSelect"));
 
       const payload = {
         enabled,
@@ -100,11 +104,26 @@ export default function AllocationsPage() {
       };
 
       if (editingId == null) {
-        const res = await apiFetch<AllocationOut>("/api/v1/admin/allocations", {
-          method: "POST",
-          body: JSON.stringify({ reseller_id: Number(resellerId), node_id: Number(nodeId), ...payload }),
+        const targets = nodeIds.length ? nodeIds : (nodeId === "" ? [] : [Number(nodeId)]);
+        if (!targets.length) throw new Error(t("adminAllocations.errSelect"));
+
+        setBusy(true);
+        const results = await Promise.allSettled(
+          targets.map((nid) =>
+            apiFetch<AllocationOut>("/api/v1/admin/allocations", {
+              method: "POST",
+              body: JSON.stringify({ reseller_id: Number(resellerId), node_id: Number(nid), ...payload }),
+            })
+          )
+        );
+
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        const fail = results.length - ok;
+        push({
+          title: t("adminAllocations.created"),
+          desc: fail ? `${ok} OK, ${fail} failed` : `${ok} OK`,
+          type: fail ? "warning" : "success",
         });
-        push({ title: t("adminAllocations.created"), desc: `ID: ${res.id}`, type: "success" });
       } else {
         const res = await apiFetch<AllocationOut>(`/api/v1/admin/allocations/${editingId}`, {
           method: "PATCH",
@@ -117,6 +136,8 @@ export default function AllocationsPage() {
       resetForm();
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -124,9 +145,31 @@ export default function AllocationsPage() {
     setEditingId(a.id);
     setResellerId(a.reseller_id);
     setNodeId(a.node_id);
+    setNodeIds([]);
+    setNodePickQ("");
     setEnabled(a.enabled);
     setDef(a.default_for_reseller);
     setPriceOverride(a.price_per_gb_override == null ? "" : a.price_per_gb_override);
+  }
+
+  const filteredPickNodes = React.useMemo(() => {
+    const qq = nodePickQ.trim().toLowerCase();
+    if (!qq) return nodes;
+    return nodes.filter((n) => `${n.id} ${n.name} ${n.panel_type}`.toLowerCase().includes(qq));
+  }, [nodes, nodePickQ]);
+
+  const allSelected = nodes.length > 0 && nodeIds.length === nodes.length;
+  function toggleAll(v: boolean) {
+    setNodeIds(v ? nodes.map((n) => n.id) : []);
+  }
+
+  function toggleOne(id: number, v: boolean) {
+    setNodeIds((prev) => {
+      const s = new Set(prev);
+      if (v) s.add(id);
+      else s.delete(id);
+      return Array.from(s);
+    });
   }
 
   async function del(a: AllocationOut) {
@@ -182,19 +225,67 @@ export default function AllocationsPage() {
               <label className="text-sm flex items-center gap-2">
                 {t("adminAllocations.node")} <HelpTip text={t("adminAllocations.help.node")} />
               </label>
-              <select
-                className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
-                value={nodeId}
-                onChange={(e) => setNodeId(e.target.value === "" ? "" : Number(e.target.value))}
-              >
-                <option value="">--</option>
-                {nodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} ({n.panel_type}) (#{n.id})
-                  </option>
-                ))}
-              </select>
-              <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminAllocations.nodeHint")}</div>
+
+              {editingId != null ? (
+                // Edit mode: single allocation
+                <>
+                  <select
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                    value={nodeId}
+                    onChange={(e) => setNodeId(e.target.value === "" ? "" : Number(e.target.value))}
+                    disabled
+                  >
+                    <option value="">--</option>
+                    {nodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name} ({n.panel_type}) (#{n.id})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminAllocations.nodeHint")}</div>
+                </>
+              ) : (
+                // Create mode: multi-select nodes (+ all)
+                <div className="space-y-2">
+                  <Input value={nodePickQ} onChange={(e) => setNodePickQ(e.target.value)} placeholder={t("common.search")} />
+
+                  <div className="rounded-2xl border border-[hsl(var(--border))] p-2 max-h-[220px] overflow-auto">
+                    <label className="flex items-center justify-between gap-3 px-2 py-2 rounded-xl hover:bg-[hsl(var(--muted))]/40 cursor-pointer">
+                      <div className="text-sm font-medium">{t("common.all")}</div>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(e) => toggleAll(e.target.checked)}
+                      />
+                    </label>
+                    <div className="h-px bg-[hsl(var(--border))] my-1" />
+
+                    {filteredPickNodes.map((n) => {
+                      const checked = nodeIds.includes(n.id);
+                      return (
+                        <label
+                          key={n.id}
+                          className="flex items-center justify-between gap-3 px-2 py-2 rounded-xl hover:bg-[hsl(var(--muted))]/40 cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm truncate">{n.name}</div>
+                            <div className="text-xs text-[hsl(var(--fg))]/70 truncate">{n.panel_type} • #{n.id}</div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleOne(n.id, e.target.checked)}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="text-xs text-[hsl(var(--fg))]/70">
+                    {t("adminAllocations.nodeHint")} • {nodeIds.length ? `${nodeIds.length} selected` : "—"}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -218,7 +309,7 @@ export default function AllocationsPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button type="button" onClick={createOrSave}>
+            <Button type="button" onClick={createOrSave} disabled={busy}>
               {editingId == null ? t("adminAllocations.create") : t("adminAllocations.save")}
             </Button>
             <Button type="button" variant="outline" onClick={load}>
