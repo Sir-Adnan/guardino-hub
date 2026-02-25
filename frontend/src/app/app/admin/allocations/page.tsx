@@ -122,7 +122,7 @@ export default function AllocationsPage() {
         push({
           title: t("adminAllocations.created"),
           desc: fail ? `${ok} OK, ${fail} failed` : `${ok} OK`,
-          type: fail ? "warning" : "success",
+          type: fail ? "error" : "success",
         });
       } else {
         const res = await apiFetch<AllocationOut>(`/api/v1/admin/allocations/${editingId}`, {
