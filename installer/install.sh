@@ -80,12 +80,6 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-# Ensure core vars exist / are safe for production
-# - Strong DB password
-# - Strong SECRET_KEY
-# - Correct DATABASE_URL
-# - Frontend should call /api behind nginx
-
 ensure_kv() {
   local key="$1"; local val="$2"
   if grep -q "^${key}=" .env; then
@@ -121,7 +115,6 @@ ensure_kv "HTTP_TIMEOUT_SECONDS" "20"
 ensure_kv "PANEL_TLS_VERIFY" "true"
 ensure_kv "NEXT_PUBLIC_API_BASE" "/api"
 
-# For same-origin requests, CORS can be empty. If you want to call API directly, uncomment.
 if [ -n "${DOMAIN}" ]; then
   ensure_kv "CORS_ORIGINS" "http://${DOMAIN},https://${DOMAIN}"
 else
@@ -141,7 +134,6 @@ server {
   listen 80;
   server_name ${server_name};
 
-  # Let's Encrypt challenge (served from host dir: ./deploy/certbot/www)
   location /.well-known/acme-challenge/ {
     root /var/www/certbot;
   }
@@ -245,12 +237,10 @@ else
   "${COMPOSE_BASE[@]}" down --remove-orphans || true
 fi
 
-# Start without SSL first, so certbot can validate via HTTP
 "${COMPOSE_BASE[@]}" up -d --build
 
 if [ "${USE_SSL}" = "yes" ]; then
   log "[9/12] Requesting Let's Encrypt certificate for ${DOMAIN}..."
-  # certbot webroot: the token files are written to ./deploy/certbot/www
   certbot certonly \
     --webroot -w "${INSTALL_DIR}/deploy/certbot/www" \
     -d "${DOMAIN}" \
@@ -260,8 +250,6 @@ if [ "${USE_SSL}" = "yes" ]; then
 
   log "Certificate issued. Switching nginx to HTTPS..."
   write_nginx_https "${DOMAIN}"
-
-  # Bring up with SSL overlay (adds 443 + mounts /etc/letsencrypt)
   "${COMPOSE_SSL[@]}" up -d --no-build --force-recreate nginx
 
   log "Setting up cert renewal cron..."
@@ -274,7 +262,6 @@ CRON
   chmod 644 /etc/cron.d/guardino-hub-certbot
 fi
 
-# Use proper compose for post-setup commands
 if [ "${USE_SSL}" = "yes" ]; then
   COMPOSE=("${COMPOSE_SSL[@]}")
 else
@@ -290,7 +277,7 @@ for i in $(seq 1 90); do
 done
 
 if ! curl -fsS http://localhost/health >/dev/null 2>&1; then
-  err "API did not become healthy. Showing last logs:" 
+  err "API did not become healthy. Showing last logs:"
   "${COMPOSE[@]}" logs -n 200 --no-color api || true
   exit 1
 fi
@@ -302,8 +289,6 @@ log "[12/12] Creating superadmin (if not exists)..."
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 
-# Never ship an installer with a known default password.
-# If the operator doesn't provide ADMIN_PASS, generate a strong one and store it locally.
 if [ -z "${ADMIN_PASS}" ]; then
   ADMIN_PASS="$(openssl rand -base64 24 | tr -d '\n' | tr '/+' '_-' | cut -c1-24)"
   warn "ADMIN_PASS was not provided; generated a strong password."
