@@ -7,6 +7,7 @@ from app.api.v1.routes import (
     reseller_links,
     reseller_ops,
     reseller_nodes,
+    reseller_reports,
     reseller_settings,
     reseller_stats,
     admin_settings,
@@ -24,6 +25,7 @@ api_router.include_router(reseller_user_ops.router, prefix="/reseller/user-ops",
 api_router.include_router(reseller_links.router, prefix="/reseller/users", tags=["reseller-links"])
 api_router.include_router(reseller_ops.router, prefix="/reseller/users", tags=["reseller-ops"])
 api_router.include_router(reseller_nodes.router, prefix="/reseller/nodes", tags=["reseller-nodes"])
+api_router.include_router(reseller_reports.router, prefix="/reseller/reports", tags=["reseller-reports"])
 api_router.include_router(reseller_settings.router, prefix="/reseller/settings", tags=["reseller-settings"])
 api_router.include_router(reseller_stats.router, prefix="/reseller/stats", tags=["reseller-stats"])
 api_router.include_router(public_sub.router, tags=["subscription"])
