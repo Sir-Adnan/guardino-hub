@@ -4,6 +4,7 @@ import * as React from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmModal } from "@/components/ui/confirm";
@@ -11,7 +12,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Pencil, PlugZap, Power } from "lucide-react";
 
 type NodeOut = {
   id: number;
@@ -210,14 +211,14 @@ export default function AdminNodesPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm">{t("adminNodes.enabled")}</label>
+              <label className="text-sm flex items-center gap-2">{t("adminNodes.enabled")} <HelpTip text={t("adminNodes.help.enabled")} /></label>
               <div className="flex items-center gap-2">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
                 <span className="text-sm text-[hsl(var(--fg))]/75">{enabled ? t("common.yes") : t("common.no")}</span>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm">{t("adminNodes.visibleInSub")}</label>
+              <label className="text-sm flex items-center gap-2">{t("adminNodes.visibleInSub")} <HelpTip text={t("adminNodes.help.visibleInSub")} /></label>
               <div className="flex items-center gap-2">
                 <Switch checked={visibleInSub} onCheckedChange={setVisibleInSub} />
                 <span className="text-sm text-[hsl(var(--fg))]/75">{visibleInSub ? t("common.yes") : t("common.no")}</span>
@@ -250,6 +251,7 @@ export default function AdminNodesPage() {
                   <th className="text-[start] py-2">ID</th>
                   <th className="text-[start] py-2">{t("adminNodes.name")}</th>
                   <th className="text-[start] py-2">{t("adminNodes.panelType")}</th>
+                  <th className="text-[start] py-2">{t("adminNodes.tags")}</th>
                   <th className="text-[start] py-2">{t("adminNodes.enabled")}</th>
                   <th className="text-[start] py-2">{t("adminNodes.visibleInSub")}</th>
                   <th className="text-[end] py-2">{t("common.actions")}</th>
@@ -265,6 +267,16 @@ export default function AdminNodesPage() {
                     </td>
                     <td className="py-2">{n.panel_type}</td>
                     <td className="py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {(n.tags || []).slice(0, 3).map((tg) => (
+                          <Badge key={tg} variant="muted">{tg}</Badge>
+                        ))}
+                        {(n.tags || []).length > 3 ? (
+                          <Badge variant="muted">+{(n.tags || []).length - 3}</Badge>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-2">
                       <Switch checked={n.is_enabled} onCheckedChange={(v) => toggle(n.id, { is_enabled: v } as any)} />
                     </td>
                     <td className="py-2">
@@ -278,9 +290,11 @@ export default function AdminNodesPage() {
                           </Button>
                         }
                         items={[
-                          { label: t("adminNodes.test"), onClick: () => test(n.id) },
-                          { label: t("common.edit"), onClick: () => startEdit(n) },
-                          { label: t("adminNodes.disable"), onClick: () => setConfirmDisable(n), danger: true },
+                          { label: t("adminNodes.test"), icon: <PlugZap size={16} />, onClick: () => test(n.id) },
+                          { label: t("common.edit"), icon: <Pencil size={16} />, onClick: () => startEdit(n) },
+                          n.is_enabled
+                            ? { label: t("common.disable"), icon: <Power size={16} />, onClick: () => setConfirmDisable(n), danger: true }
+                            : { label: t("common.enable"), icon: <Power size={16} />, onClick: () => toggle(n.id, { is_enabled: true } as any) },
                         ]}
                       />
                     </td>
@@ -289,7 +303,7 @@ export default function AdminNodesPage() {
 
                 {!filtered.length ? (
                   <tr>
-                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={6}>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={7}>
                       {t("common.empty")}
                     </td>
                   </tr>

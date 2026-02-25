@@ -11,7 +11,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 type AllocationOut = {
   id: number;
@@ -298,11 +298,17 @@ export default function AllocationsPage() {
             <div className="space-y-2">
               <label className="text-sm">{t("adminAllocations.flags")}</label>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-[hsl(var(--fg))]/75">{t("adminAllocations.enabled")}</span>
+                <div className="flex items-center gap-2 text-sm text-[hsl(var(--fg))]/75">
+                  <span>{t("adminAllocations.enabled")}</span>
+                  <HelpTip text={t("adminAllocations.help.enabled")} />
+                </div>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-[hsl(var(--fg))]/75">{t("adminAllocations.default")}</span>
+                <div className="flex items-center gap-2 text-sm text-[hsl(var(--fg))]/75">
+                  <span>{t("adminAllocations.default")}</span>
+                  <HelpTip text={t("adminAllocations.help.default")} />
+                </div>
                 <Switch checked={def} onCheckedChange={setDef} />
               </div>
             </div>
@@ -383,8 +389,8 @@ export default function AllocationsPage() {
                             </Button>
                           }
                           items={[
-                            { label: t("common.edit"), onClick: () => startEdit(a) },
-                            { label: t("common.delete"), onClick: () => setConfirmDelete(a), danger: true },
+                            { label: t("common.edit"), icon: <Pencil size={16} />, onClick: () => startEdit(a) },
+                            { label: t("common.delete"), icon: <Trash2 size={16} />, onClick: () => setConfirmDelete(a), danger: true },
                           ]}
                         />
                       </td>

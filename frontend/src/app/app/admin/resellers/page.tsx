@@ -12,7 +12,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Wallet, Power } from "lucide-react";
 
 type ResellerOut = {
   id: number;
@@ -63,6 +63,7 @@ export default function AdminResellersPage() {
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
 
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
+  const [confirmToggleStatus, setConfirmToggleStatus] = React.useState<{ r: ResellerOut; to: "active" | "disabled" } | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   function resetForm() {
@@ -167,12 +168,16 @@ async function assignAllNodesForReseller(resellerId: number) {
     setCanCreateSub(x.can_create_subreseller ?? true);
   }
 
-  async function toggleStatus(x: ResellerOut) {
+  async function toggleStatus(x: ResellerOut, next: "active" | "disabled") {
     try {
-      const next = x.status === "active" ? "disabled" : "active";
       await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}/set-status`, {
         method: "POST",
         body: JSON.stringify({ status: next }),
+      });
+      push({
+        title: next === "active" ? t("adminResellers.enabledOk") : t("adminResellers.disabledOk"),
+        desc: `${x.username} (#${x.id})`,
+        type: next === "active" ? "success" : "warning",
       });
       await load();
     } catch (e: any) {
@@ -395,15 +400,24 @@ async function assignAllNodesForReseller(resellerId: number) {
                           </Button>
                         }
                         items={[
-                          { label: t("common.edit"), onClick: () => startEdit(x) },
+                          { label: t("common.edit"), icon: <Pencil size={16} />, onClick: () => startEdit(x) },
                           {
                             label: t("adminResellers.pickForCredit"),
+                            icon: <Wallet size={16} />,
                             onClick: () => {
                               setCreditId(x.id);
                               push({ title: t("adminResellers.creditHint"), desc: `${x.username} (#${x.id})`, type: "success" });
                             },
                           },
-                          { label: t("common.delete"), onClick: () => setConfirmDelete(x), danger: true },
+                          x.status !== "deleted"
+                            ? {
+                                label: x.status === "active" ? t("common.disable") : t("common.enable"),
+                                icon: <Power size={16} />,
+                                onClick: () =>
+                                  setConfirmToggleStatus({ r: x, to: x.status === "active" ? "disabled" : "active" }),
+                              }
+                            : { label: t("adminResellers.toggleStatus"), icon: <Power size={16} />, onClick: () => {} , disabled: true },
+                          { label: t("common.delete"), icon: <Trash2 size={16} />, onClick: () => setConfirmDelete(x), danger: true },
                         ]}
                       />
                     </td>
@@ -423,7 +437,28 @@ async function assignAllNodesForReseller(resellerId: number) {
         </CardContent>
       </Card>
 
+      
       <ConfirmModal
+        open={!!confirmToggleStatus}
+        onClose={() => (busy ? null : setConfirmToggleStatus(null))}
+        title={t("adminResellers.toggleStatus")}
+        body={t("adminResellers.toggleStatusDesc")}
+        confirmText={confirmToggleStatus?.to === "active" ? t("common.enable") : t("common.disable")}
+        cancelText={t("common.cancel")}
+        danger={confirmToggleStatus?.to === "disabled"}
+        busy={busy}
+        onConfirm={async () => {
+          if (!confirmToggleStatus) return;
+          setBusy(true);
+          try {
+            await toggleStatus(confirmToggleStatus.r, confirmToggleStatus.to);
+          } finally {
+            setBusy(false);
+            setConfirmToggleStatus(null);
+          }
+        }}
+      />
+<ConfirmModal
         open={!!confirmDelete}
         onClose={() => (busy ? null : setConfirmDelete(null))}
         title={t("common.areYouSure")}
