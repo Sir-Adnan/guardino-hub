@@ -64,7 +64,9 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const userId = Number(id);
+  const parsedUserId = Number(id);
+  const userId = Number.isFinite(parsedUserId) ? parsedUserId : 0;
+  const hasValidUserId = Number.isInteger(parsedUserId) && parsedUserId > 0;
   const r = useRouter();
   const { me, refresh: refreshMe } = useAuth();
   const { t } = useI18n();
@@ -86,6 +88,13 @@ export default function UserDetailPage() {
   const [decreaseGb, setDecreaseGb] = React.useState(5);
 
   async function refresh() {
+    if (!hasValidUserId) {
+      setErr("شناسه کاربر نامعتبر است.");
+      setUser(null);
+      setLinks(null);
+      setLoading(false);
+      return;
+    }
     setErr(null);
     setLoading(true);
     try {
@@ -136,9 +145,14 @@ export default function UserDetailPage() {
   }, [nodes]);
 
   React.useEffect(() => {
+    if (!hasValidUserId) {
+      setErr("شناسه کاربر نامعتبر است.");
+      setLoading(false);
+      return;
+    }
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, hasValidUserId]);
 
   async function op(path: string, body: any) {
     setBusy(true);
