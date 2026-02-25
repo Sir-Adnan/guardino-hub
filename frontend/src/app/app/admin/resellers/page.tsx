@@ -20,6 +20,7 @@ type ResellerOut = {
   id: number;
   parent_id?: number | null;
   username: string;
+  role?: string;
   status: string;
   balance: number;
   price_per_gb: number;
@@ -37,6 +38,38 @@ type NodeOut = {
   is_enabled: boolean;
 };
 type NodeList = { items: NodeOut[]; total: number };
+
+const ADMIN_FETCH_LIMIT = 200;
+
+async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerOut[]> {
+  const all: ResellerOut[] = [];
+  let offset = 0;
+  let total = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const res = await apiFetch<ResellerList>(`/api/v1/admin/resellers?offset=${offset}&limit=${ADMIN_FETCH_LIMIT}`);
+    const chunk = res.items || [];
+    all.push(...chunk);
+    total = res.total || all.length;
+    if (!chunk.length || all.length >= total) break;
+    offset += chunk.length;
+  }
+  return all;
+}
+
+async function fetchAllNodesForAdmin(maxPages = 50): Promise<NodeOut[]> {
+  const all: NodeOut[] = [];
+  let offset = 0;
+  let total = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const res = await apiFetch<NodeList>(`/api/v1/admin/nodes?offset=${offset}&limit=${ADMIN_FETCH_LIMIT}`);
+    const chunk = res.items || [];
+    all.push(...chunk);
+    total = res.total || all.length;
+    if (!chunk.length || all.length >= total) break;
+    offset += chunk.length;
+  }
+  return all;
+}
 
 function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warning" {
   if (s === "active") return "success";
@@ -86,12 +119,17 @@ export default function AdminResellersPage() {
     setAssignAllNodes(true);
   }
 
-  async function load() {
+  async function load(nextPage: number = page, nextPageSize: number = pageSize) {
     try {
-      const offset = (page - 1) * pageSize;
-      const res = await apiFetch<ResellerList>(`/api/v1/admin/resellers?offset=${offset}&limit=${pageSize}`);
+      const offset = (nextPage - 1) * nextPageSize;
+      const res = await apiFetch<ResellerList>(`/api/v1/admin/resellers?offset=${offset}&limit=${nextPageSize}`);
       setItems(res.items || []);
       setTotal(res.total || 0);
+      const safeTotal = res.total || 0;
+      if ((res.items || []).length === 0 && safeTotal > 0 && offset >= safeTotal) {
+        const lastPage = Math.max(1, Math.ceil(safeTotal / nextPageSize));
+        if (lastPage !== nextPage) setPage(lastPage);
+      }
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -99,18 +137,18 @@ export default function AdminResellersPage() {
 
   async function loadCreditOptions() {
     try {
-      const res = await apiFetch<ResellerList>("/api/v1/admin/resellers?offset=0&limit=500");
-      setCreditOptions(res.items || []);
-    } catch {
-      // ignore
+      const all = await fetchAllResellersForAdmin();
+      setCreditOptions(all.filter((x) => x.status !== "deleted"));
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
   }
 
 
 async function assignAllNodesForReseller(resellerId: number) {
   // Best-effort: allocate all enabled nodes to this reseller for immediate usability.
-  const nodes = await apiFetch<NodeList>("/api/v1/admin/nodes?offset=0&limit=500");
-  const enabled = (nodes.items || []).filter((n) => n.is_enabled);
+  const nodes = await fetchAllNodesForAdmin();
+  const enabled = nodes.filter((n) => n.is_enabled);
   await Promise.all(
     enabled.map((n) =>
       apiFetch("/api/v1/admin/allocations", {
@@ -153,8 +191,10 @@ async function assignAllNodesForReseller(resellerId: number) {
             push({ title: t("common.warn"), desc: t("adminResellers.assignAllNodesWarn"), type: "warning" });
           }
         }
-        setItems((p) => [res, ...p]);
         resetForm();
+        setQ("");
+        if (page !== 1) setPage(1);
+        await Promise.all([load(1, pageSize), loadCreditOptions()]);
       } else {
         const res = await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${editingId}`, {
           method: "PATCH",
@@ -168,7 +208,7 @@ async function assignAllNodesForReseller(resellerId: number) {
           }),
         });
         push({ title: t("adminResellers.saved"), desc: `ID: ${res.id}`, type: "success" });
-        await load();
+        await Promise.all([load(page, pageSize), loadCreditOptions()]);
         resetForm();
       }
     } catch (e: any) {
@@ -198,7 +238,7 @@ async function assignAllNodesForReseller(resellerId: number) {
         desc: `${x.username} (#${x.id})`,
         type: next === "active" ? "success" : "warning",
       });
-      await load();
+      await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -208,7 +248,7 @@ async function assignAllNodesForReseller(resellerId: number) {
     try {
       await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}`, { method: "DELETE" });
       push({ title: t("adminResellers.deleted"), desc: x.username, type: "success" });
-      await load();
+      await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -222,19 +262,19 @@ async function assignAllNodesForReseller(resellerId: number) {
         body: JSON.stringify({ amount: Number(creditAmount) || 0, reason: "manual_credit" }),
       });
       push({ title: t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
-      await load();
+      await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
   }
 
   const filtered = items.filter((x) => {
-    const s = `${x.id} ${x.username} ${x.status} ${x.balance}`.toLowerCase();
+    const s = `${x.id} ${x.username} ${x.role || ""} ${x.status} ${x.balance}`.toLowerCase();
     return s.includes(q.toLowerCase());
   });
 
   React.useEffect(() => {
-    load();
+    load(page, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
@@ -326,7 +366,7 @@ async function assignAllNodesForReseller(resellerId: number) {
             <Button type="button" onClick={createOrSave}>
               {editingId == null ? t("adminResellers.create") : t("adminResellers.save")}
             </Button>
-            <Button type="button" variant="outline" onClick={load}>
+            <Button type="button" variant="outline" onClick={() => load(page, pageSize)}>
               {t("common.reload")}
             </Button>
             {editingId != null ? (
@@ -355,11 +395,11 @@ async function assignAllNodesForReseller(resellerId: number) {
     >
       <option value="">{t("adminResellers.selectReseller")}</option>
       {creditOptions
-        .filter((r) => `${r.id} ${r.username}`.toLowerCase().includes(creditQuery.toLowerCase()))
+        .filter((r) => `${r.id} ${r.username} ${r.role || ""}`.toLowerCase().includes(creditQuery.toLowerCase()))
         .slice(0, 200)
         .map((r) => (
           <option key={r.id} value={r.id}>
-        {r.username} (#{r.id}) — {fmtNumber(r.balance)}
+        {r.username} (#{r.id}) [{r.role || "reseller"}] — {fmtNumber(r.balance)}
           </option>
         ))}
     </select>
@@ -400,6 +440,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                     <td className="py-2">{x.id}</td>
                     <td className="py-2">
                       <div className="font-medium">{x.username}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/60">role: {x.role || "reseller"}</div>
                       {x.parent_id ? <div className="text-xs text-[hsl(var(--fg))]/60">parent: #{x.parent_id}</div> : null}
                     </td>
                     <td className="py-2">
