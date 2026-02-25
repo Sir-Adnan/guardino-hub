@@ -41,6 +41,19 @@ function statusBadge(status: string) {
   return { v: "default" as const, label: status || "—" };
 }
 
+type NodeLite = { id: number; name: string; base_url: string };
+
+function normalizeUrl(maybeUrl: string, baseUrl?: string) {
+  const u = (maybeUrl || "").trim();
+  if (!u) return u;
+  if (/^https?:\/\//i.test(u)) return u;
+  const b = (baseUrl || "").trim();
+  if (!b) return u;
+  const bb = b.replace(/\/+$/, "");
+  const uu = u.startsWith("/") ? u : `/${u}`;
+  return `${bb}${uu}`;
+}
+
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const userId = Number(id);
@@ -52,6 +65,7 @@ export default function UserDetailPage() {
 
   const [user, setUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
+  const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -67,6 +81,16 @@ export default function UserDetailPage() {
     setErr(null);
     setLoading(true);
     try {
+      // Load nodes meta for nicer labels + URL normalization.
+      // Not critical; if it fails, the page still works.
+      try {
+        const nodesRes: any = me?.role === "admin" ? await apiFetch<any[]>("/api/v1/admin/nodes") : await apiFetch<any>("/api/v1/reseller/nodes");
+        const arr = Array.isArray(nodesRes) ? nodesRes : (nodesRes?.items || []);
+        setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, base_url: n.base_url })));
+      } catch {
+        // ignore
+      }
+
       const up = await apiFetch<UsersPage>("/api/v1/reseller/users");
       const u = up.items.find((x) => x.id === userId) || null;
       setUser(u);
@@ -78,6 +102,12 @@ export default function UserDetailPage() {
       setLoading(false);
     }
   }
+
+  const nodeMap = React.useMemo(() => {
+    const m = new Map<number, NodeLite>();
+    for (const n of nodes) m.set(n.id, n);
+    return m;
+  }, [nodes]);
 
   React.useEffect(() => {
     refresh();
@@ -247,18 +277,20 @@ export default function UserDetailPage() {
                       {links.node_links.map((n) => (
                         <div key={n.node_id} className="rounded-2xl border border-[hsl(var(--border))] p-3">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs text-[hsl(var(--fg))]/70">Node #{n.node_id}</div>
+                            <div className="text-xs text-[hsl(var(--fg))]/70">
+                              {nodeMap.get(n.node_id)?.name ? `${nodeMap.get(n.node_id)!.name} (#${n.node_id})` : `Node #${n.node_id}`}
+                            </div>
                             <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
                           </div>
                           {n.direct_url ? (
                             <div className="mt-2 flex flex-col gap-2">
-                              <Input value={n.direct_url} readOnly />
+                              <Input value={normalizeUrl(n.direct_url, nodeMap.get(n.node_id)?.base_url)} readOnly />
                               <div>
                                 <Button
                                   type="button"
                                   variant="outline"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(n.direct_url!);
+                                    navigator.clipboard.writeText(normalizeUrl(n.direct_url!, nodeMap.get(n.node_id)?.base_url));
                                     push({ title: t("common.copied"), type: "success" });
                                   }}
                                 >
