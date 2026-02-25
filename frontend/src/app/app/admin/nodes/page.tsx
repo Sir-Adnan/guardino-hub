@@ -85,15 +85,17 @@ export default function AdminNodesPage() {
           body: JSON.stringify(payload),
         });
         push({ title: t("adminNodes.created"), desc: `ID: ${res.id}`, type: "success" });
-        setNodes((p) => [res, ...p]);
         resetForm();
+        setQ("");
+        if (page !== 1) setPage(1);
+        await load(1, pageSize);
       } else {
         const res = await apiFetch<NodeOut>(`/api/v1/admin/nodes/${editingId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
         push({ title: t("adminNodes.saved"), desc: `ID: ${res.id}`, type: "success" });
-        await load();
+        await load(page, pageSize);
         resetForm();
       }
     } catch (e: any) {
@@ -101,12 +103,17 @@ export default function AdminNodesPage() {
     }
   }
 
-  async function load() {
+  async function load(nextPage: number = page, nextPageSize: number = pageSize) {
     try {
-      const offset = (page - 1) * pageSize;
-      const res = await apiFetch<NodeList>(`/api/v1/admin/nodes?offset=${offset}&limit=${pageSize}`);
+      const offset = (nextPage - 1) * nextPageSize;
+      const res = await apiFetch<NodeList>(`/api/v1/admin/nodes?offset=${offset}&limit=${nextPageSize}`);
       setNodes(res.items || []);
       setTotal(res.total || 0);
+      const safeTotal = res.total || 0;
+      if ((res.items || []).length === 0 && safeTotal > 0 && offset >= safeTotal) {
+        const lastPage = Math.max(1, Math.ceil(safeTotal / nextPageSize));
+        if (lastPage !== nextPage) setPage(lastPage);
+      }
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -125,7 +132,7 @@ export default function AdminNodesPage() {
     try {
       const res = await apiFetch<any>(`/api/v1/admin/nodes/${id}`, { method: "DELETE" });
       push({ title: t("adminNodes.disabled"), desc: `enabled=${res.is_enabled}`, type: "success" });
-      await load();
+      await load(page, pageSize);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -137,7 +144,7 @@ export default function AdminNodesPage() {
         method: "PATCH",
         body: JSON.stringify(patch),
       });
-      await load();
+      await load(page, pageSize);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -160,7 +167,7 @@ export default function AdminNodesPage() {
   });
 
   React.useEffect(() => {
-    load();
+    load(page, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
@@ -237,7 +244,7 @@ export default function AdminNodesPage() {
             <Button type="button" onClick={createOrSave}>
               {editingId == null ? t("adminNodes.create") : t("adminNodes.save")}
             </Button>
-            <Button type="button" variant="outline" onClick={load}>
+            <Button type="button" variant="outline" onClick={() => load(page, pageSize)}>
               {t("common.reload")}
             </Button>
             {editingId != null ? (
