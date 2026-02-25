@@ -26,6 +26,31 @@ router = APIRouter()
 def _now():
     return datetime.now(timezone.utc)
 
+
+def _short_err(e: Exception, size: int = 140) -> str:
+    return str(e).strip().replace("\n", " ")[:size]
+
+
+async def _delete_subaccounts_remote_first(
+    db: AsyncSession,
+    subs: list[SubAccount],
+    node_map: dict[int, Node],
+) -> tuple[int, list[str]]:
+    """Best-effort remote delete for each subaccount, then delete local record."""
+    deleted_local = 0
+    errors: list[str] = []
+    for sa in subs:
+        n = node_map.get(sa.node_id)
+        if n:
+            try:
+                adapter = get_adapter(n)
+                await adapter.delete_user(sa.remote_identifier)
+            except Exception as e:
+                errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+        await db.delete(sa)
+        deleted_local += 1
+    return deleted_local, errors
+
 @router.post("/{user_id}/extend", response_model=OpResult)
 async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
@@ -179,11 +204,26 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
     subs = qs.scalars().all()
     current_ids = {sa.node_id for sa in subs}
 
-    # Remove: just delete subaccount record (soft behavior); does NOT touch remote panels
+    remove_errors: list[str] = []
+    removed_count = 0
+
+    # Remove: delete from remote panel first (best-effort), then local subaccount
     if remove_ids:
+        remove_targets = [sa for sa in subs if sa.node_id in remove_ids]
+        node_ids_for_remove = [sa.node_id for sa in remove_targets]
+        qn_remove = await db.execute(select(Node).where(Node.id.in_(node_ids_for_remove)))
+        node_map_remove = {n.id: n for n in qn_remove.scalars().all()}
         for sa in subs:
             if sa.node_id in remove_ids:
+                n = node_map_remove.get(sa.node_id)
+                if n:
+                    try:
+                        adapter = get_adapter(n)
+                        await adapter.delete_user(sa.remote_identifier)
+                    except Exception as e:
+                        remove_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
                 await db.delete(sa)
+                removed_count += 1
 
     charged = 0
     now = _now()
@@ -213,7 +253,10 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
             order.status = OrderStatus.completed
 
     await db.commit()
-    return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+    detail = None
+    if removed_count or remove_errors:
+        detail = f"removed_nodes={removed_count}; remote_delete_errors={len(remove_errors)}"
+    return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail=detail)
 
 @router.post("/{user_id}/refund", response_model=OpResult)
 async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
@@ -224,43 +267,102 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
 
     # Determine refundable GB under policy (10 days, remaining GB)
     refundable = refundable_gb_for_user(user)
-    if refundable <= 0:
-        raise HTTPException(status_code=400, detail="Refund window expired or no remaining volume")
-
-    # Determine how many GB to refund
     if payload.action == "delete":
-        refund_gb = refundable
+        # Delete is always allowed; refund is optional and policy-based.
+        refund_gb = max(0, int(refundable))
     else:
+        if refundable <= 0:
+            raise HTTPException(status_code=400, detail="Refund window expired or no remaining volume")
         if payload.decrease_gb is None:
             raise HTTPException(status_code=400, detail="decrease_gb is required for decrease")
-        refund_gb = min(int(payload.decrease_gb), refundable)
-
-    if refund_gb <= 0:
-        raise HTTPException(status_code=400, detail="Nothing to refund")
+        refund_gb = min(int(payload.decrease_gb), int(refundable))
+        if refund_gb <= 0:
+            raise HTTPException(status_code=400, detail="Nothing to refund")
 
     # Find the create order snapshot price (fallback to reseller current price)
     q1 = await db.execute(select(Order).where(Order.user_id == user.id, Order.type == OrderType.create).order_by(Order.id.asc()))
     create_order = q1.scalars().first()
     price_per_gb = int(create_order.price_per_gb_snapshot) if create_order and create_order.price_per_gb_snapshot is not None else int(reseller.price_per_gb)
 
-    refund_amount = refund_gb * price_per_gb
+    refund_amount = int(refund_gb) * int(price_per_gb)
 
-    order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.refund, status=OrderStatus.pending, purchased_gb=refund_gb, price_per_gb_snapshot=price_per_gb)
+    order_type = OrderType.delete if payload.action == "delete" else OrderType.refund
+    order = Order(
+        reseller_id=reseller.id,
+        user_id=user.id,
+        type=order_type,
+        status=OrderStatus.pending,
+        purchased_gb=refund_gb if refund_gb > 0 else None,
+        price_per_gb_snapshot=price_per_gb,
+    )
     db.add(order)
     await db.flush()
 
     # Apply to user
-    user.total_gb = int(user.total_gb) - int(refund_gb)
+    user.total_gb = max(0, int(user.total_gb) - int(refund_gb))
+
+    remote_delete_errors: list[str] = []
+    remote_limit_errors: list[str] = []
+
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    node_ids = [s.node_id for s in subs]
+    node_map: dict[int, Node] = {}
+    if node_ids:
+        qn = await db.execute(select(Node).where(Node.id.in_(node_ids)))
+        node_map = {n.id: n for n in qn.scalars().all()}
+
     if payload.action == "delete":
+        _removed, remote_delete_errors = await _delete_subaccounts_remote_first(db, subs, node_map)
+        if remote_delete_errors:
+            sample = " | ".join(remote_delete_errors[:3])
+            raise HTTPException(
+                status_code=502,
+                detail=f"Delete sync failed on {len(remote_delete_errors)} node(s): {sample}",
+            )
         user.status = UserStatus.deleted
+        user.used_bytes = 0
+    else:
+        # For partial refund, keep user and sync reduced limits to remote panels.
+        for sa in subs:
+            n = node_map.get(sa.node_id)
+            if not n:
+                continue
+            try:
+                adapter = get_adapter(n)
+                await adapter.update_user_limits(sa.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            except Exception as e:
+                remote_limit_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
 
     now = _now()
-    reseller.balance += refund_amount
-    db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, amount=refund_amount, reason=f"refund_{payload.action}", balance_after=reseller.balance, occurred_at=now))
+    if refund_amount > 0:
+        reseller.balance += refund_amount
+        db.add(
+            LedgerTransaction(
+                reseller_id=reseller.id,
+                order_id=order.id,
+                amount=refund_amount,
+                reason=f"refund_{payload.action}",
+                balance_after=reseller.balance,
+                occurred_at=now,
+            )
+        )
     order.status = OrderStatus.completed
 
     await db.commit()
-    return OpResult(ok=True, charged_amount=0, refunded_amount=refund_amount, new_balance=reseller.balance, user_id=user.id, detail=f"refunded_gb={refund_gb}")
+    detail_parts = [f"refunded_gb={refund_gb}"]
+    if remote_delete_errors:
+        detail_parts.append(f"remote_delete_errors={len(remote_delete_errors)}")
+    if remote_limit_errors:
+        detail_parts.append(f"remote_limit_errors={len(remote_limit_errors)}")
+    return OpResult(
+        ok=True,
+        charged_amount=0,
+        refunded_amount=refund_amount,
+        new_balance=reseller.balance,
+        user_id=user.id,
+        detail="; ".join(detail_parts),
+    )
 
 
 @router.post("/{user_id}/set-status", response_model=OpResult)
