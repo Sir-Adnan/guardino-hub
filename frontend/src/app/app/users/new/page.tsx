@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
+import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/api";
 import { fmtNumber } from "@/lib/format";
 import { copyText } from "@/lib/copy";
@@ -41,7 +42,16 @@ type NodeLite = { id: number; name: string; panel_type: string; base_url: string
 type LinksResp = {
   user_id: number;
   master_link: string;
-  node_links: Array<{ node_id: number; direct_url?: string; full_url?: string; status: string; detail?: string }>;
+  node_links: Array<{
+    node_id: number;
+    node_name?: string;
+    panel_type?: string;
+    direct_url?: string;
+    full_url?: string;
+    config_download_url?: string;
+    status: string;
+    detail?: string;
+  }>;
 };
 
 type CreatedUserLinks = {
@@ -49,6 +59,16 @@ type CreatedUserLinks = {
   label: string;
   master_link: string;
   node_links: Array<{ node_id: number; node_label: string; full_url: string; status: string; detail?: string }>;
+};
+
+type CreateIssue = { label: string; error: string };
+type CreateSummary = {
+  total: number;
+  done: number;
+  success: number;
+  failed: number;
+  cancelled: boolean;
+  issues: CreateIssue[];
 };
 
 const durationPresets = [
@@ -125,9 +145,18 @@ export default function NewUserPage() {
 
   const [resultOpen, setResultOpen] = React.useState(false);
   const [resultLinks, setResultLinks] = React.useState<CreatedUserLinks[]>([]);
+  const [createSummary, setCreateSummary] = React.useState<CreateSummary | null>(null);
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [creating, setCreating] = React.useState(false);
+  const [createTotal, setCreateTotal] = React.useState(0);
+  const [createDone, setCreateDone] = React.useState(0);
+  const [createSuccess, setCreateSuccess] = React.useState(0);
+  const [createFailed, setCreateFailed] = React.useState(0);
+  const [createCurrentLabel, setCreateCurrentLabel] = React.useState("");
+  const cancelCreateRef = React.useRef(false);
+  const activeRequestRef = React.useRef<AbortController | null>(null);
 
   const nodeMap = React.useMemo(() => {
     const m = new Map<number, NodeLite>();
@@ -262,10 +291,16 @@ export default function NewUserPage() {
       const lr = await apiFetch<LinksResp>(`/api/v1/reseller/users/${userId}/links?refresh=true`);
       const node_links = (lr.node_links || []).map((nl) => {
         const meta = nodeMap.get(nl.node_id);
-        const full = nl.full_url ? nl.full_url : nl.direct_url ? normalizeUrl(nl.direct_url, meta?.base_url) : "";
+        const full = nl.config_download_url
+          ? nl.config_download_url
+          : nl.full_url
+          ? nl.full_url
+          : nl.direct_url
+          ? normalizeUrl(nl.direct_url, meta?.base_url)
+          : "";
         return {
           node_id: nl.node_id,
-          node_label: meta?.name ? `${meta.name} (#${nl.node_id})` : `Node #${nl.node_id}`,
+          node_label: (meta?.name || nl.node_name) ? `${meta?.name || nl.node_name} (#${nl.node_id})` : `Node #${nl.node_id}`,
           full_url: full,
           status: nl.status,
           detail: nl.detail,
@@ -305,29 +340,85 @@ export default function NewUserPage() {
 
   async function doCreate() {
     setLoading(true);
+    setCreating(true);
     const created: CreatedUserLinks[] = [];
+    const issues: CreateIssue[] = [];
+    cancelCreateRef.current = false;
     try {
       validateBeforeSubmit();
       const count = bulkEnabled ? Math.min(Math.max(1, Number(bulkCount) || 1), 50) : 1;
+      setCreateSummary(null);
+      setCreateTotal(count);
+      setCreateDone(0);
+      setCreateSuccess(0);
+      setCreateFailed(0);
+      setCreateCurrentLabel("");
       const base = typeof window !== "undefined" ? window.location.origin : "";
 
+      let done = 0;
+      let success = 0;
+      let failed = 0;
       for (let i = 1; i <= count; i++) {
+        if (cancelCreateRef.current) break;
+
         const labelValue = buildLabel(i, count);
+        setCreateCurrentLabel(labelValue);
         const payload = buildPayload(labelValue, buildUsername(i, count));
-        const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", { method: "POST", body: JSON.stringify(payload) });
-        const fallbackMaster = `${base}/api/v1/sub/${res.master_sub_token}`;
-        const links = await fetchLinksForCreated(res.user_id, labelValue, fallbackMaster);
-        created.push(links);
+        const ctrl = new AbortController();
+        activeRequestRef.current = ctrl;
+        try {
+          const res = await apiFetch<CreateResp>("/api/v1/reseller/user-ops", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            signal: ctrl.signal,
+          });
+          const fallbackMaster = `${base}/api/v1/sub/${res.master_sub_token}`;
+          const links = await fetchLinksForCreated(res.user_id, labelValue, fallbackMaster);
+          created.push(links);
+          success += 1;
+          setCreateSuccess(success);
+        } catch (e: any) {
+          const msg = String(e?.message || e);
+          if (cancelCreateRef.current || /abort/i.test(msg)) {
+            break;
+          }
+          failed += 1;
+          setCreateFailed(failed);
+          issues.push({ label: labelValue, error: msg });
+        } finally {
+          activeRequestRef.current = null;
+          done += 1;
+          setCreateDone(done);
+        }
       }
 
       setResultLinks(created);
+      const summary: CreateSummary = {
+        total: count,
+        done,
+        success,
+        failed,
+        cancelled: cancelCreateRef.current,
+        issues,
+      };
+      setCreateSummary(summary);
       setResultOpen(true);
       await refreshMe();
 
-      if (created.length === 1) {
+      if (summary.cancelled) {
+        push({
+          title: "ساخت گروهی متوقف شد",
+          desc: `انجام‌شده: ${summary.done} • موفق: ${summary.success} • ناموفق: ${summary.failed}`,
+          type: "warning",
+        });
+      } else if (created.length === 1 && summary.failed === 0) {
         push({ title: "کاربر ساخته شد", desc: `ID: ${created[0].user_id}`, type: "success" });
       } else {
-        push({ title: "کاربران ساخته شدند", desc: `تعداد: ${created.length}`, type: "success" });
+        push({
+          title: summary.failed ? "ساخت گروهی با خطاهای جزئی انجام شد" : "کاربران ساخته شدند",
+          desc: `موفق: ${summary.success} • ناموفق: ${summary.failed}`,
+          type: summary.failed ? "warning" : "success",
+        });
       }
     } catch (e: any) {
       if (created.length) {
@@ -336,7 +427,19 @@ export default function NewUserPage() {
       }
       push({ title: "خطا در ساخت کاربر", desc: String(e.message || e), type: "error" });
     } finally {
+      activeRequestRef.current = null;
+      setCreating(false);
+      setCreateCurrentLabel("");
       setLoading(false);
+    }
+  }
+
+  function cancelCreate() {
+    cancelCreateRef.current = true;
+    try {
+      activeRequestRef.current?.abort();
+    } catch {
+      // ignore
     }
   }
 
@@ -560,8 +663,27 @@ export default function NewUserPage() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
             <Button type="button" disabled={loading} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
+            {creating ? (
+              <Button type="button" variant="outline" disabled={!creating} onClick={cancelCreate}>توقف ساخت</Button>
+            ) : null}
             <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>{t("newUser.back")}</Button>
           </div>
+
+          {creating ? (
+            <div className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <div className="font-medium">در حال ساخت کاربران...</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">
+                  {createDone}/{createTotal}
+                </div>
+              </div>
+              <Progress value={createTotal ? Math.round((createDone / createTotal) * 100) : 0} />
+              <div className="text-xs text-[hsl(var(--fg))]/70">
+                موفق: {createSuccess} • ناموفق: {createFailed}
+                {createCurrentLabel ? ` • آخرین مورد: ${createCurrentLabel}` : ""}
+              </div>
+            </div>
+          ) : null}
 
           {quote ? (
             <Card>
@@ -591,11 +713,19 @@ export default function NewUserPage() {
         onClose={() => {
           setResultOpen(false);
           setResultLinks([]);
+          setCreateSummary(null);
         }}
         title={bulkEnabled ? "نتیجه ساخت گروهی" : "نتیجه ساخت کاربر"}
         className="max-w-4xl"
       >
         <div className="space-y-4 text-sm">
+          {createSummary ? (
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+              کل: {createSummary.total} • انجام‌شده: {createSummary.done} • موفق: {createSummary.success} • ناموفق: {createSummary.failed}
+              {createSummary.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}
+            </div>
+          ) : null}
+
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
             پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.
           </div>
@@ -672,6 +802,19 @@ export default function NewUserPage() {
             ))}
             {!resultLinks.length ? <div className="text-xs text-[hsl(var(--fg))]/70">{t("common.empty")}</div> : null}
           </div>
+
+          {createSummary?.issues?.length ? (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-red-600">خطاها</div>
+              <div className="max-h-56 overflow-auto rounded-xl border border-red-300/60 p-2">
+                {createSummary.issues.map((it, idx) => (
+                  <div key={`${it.label}-${idx}`} className="border-b border-red-200/60 py-1 text-xs last:border-b-0">
+                    <span className="font-medium">{it.label}</span>: {it.error}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </Modal>
     </div>

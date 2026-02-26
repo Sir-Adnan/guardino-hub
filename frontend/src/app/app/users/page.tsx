@@ -18,11 +18,24 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
-import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers } from "lucide-react";
+import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers, Download } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
-type LinksResp = { user_id: number; master_link: string; node_links: Array<{ node_id: number; direct_url?: string; full_url?: string; status: string; detail?: string }> };
+type LinksResp = {
+  user_id: number;
+  master_link: string;
+  node_links: Array<{
+    node_id: number;
+    node_name?: string;
+    panel_type?: string;
+    direct_url?: string;
+    full_url?: string;
+    config_download_url?: string;
+    status: string;
+    detail?: string;
+  }>;
+};
 type NodeLite = { id: number; name: string; base_url: string };
 
 function normalizeUrl(maybeUrl: string, baseUrl?: string) {
@@ -146,6 +159,10 @@ export default function UsersPage() {
     load();
   }, [page, pageSize]);
 
+  React.useEffect(() => {
+    loadNodes().catch(() => undefined);
+  }, []);
+
   function applyFilter(items: UserOut[]) {
     const qq = q.trim().toLowerCase();
     let out = items;
@@ -225,6 +242,7 @@ export default function UsersPage() {
   function extractDirectLinks(res: LinksResp) {
     return (res.node_links || [])
       .map((nl) => {
+        if (nl.config_download_url) return nl.config_download_url;
         const node = nodeMap.get(nl.node_id);
         if (nl.full_url) return nl.full_url;
         if (nl.direct_url) return normalizeUrl(nl.direct_url, node?.base_url);
@@ -248,7 +266,7 @@ export default function UsersPage() {
 
   async function copyMaster(u: UserOut) {
     try {
-      const res = await fetchUserLinks(u, false);
+      const res = await fetchUserLinks(u, true);
       const ok = await copyText(res.master_link);
       push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
     } catch (e: any) {
@@ -256,17 +274,21 @@ export default function UsersPage() {
     }
   }
 
-  async function copyDirectRecommended(u: UserOut) {
+  async function copyNodeLink(u: UserOut, nodeId: number) {
     try {
-      const res = await fetchUserLinks(u, false);
-      const direct = extractDirectLinks(res);
-      const target = direct[0] || res.master_link;
+      const res = await fetchUserLinks(u, true);
+      const picked = (res.node_links || []).find((x) => x.node_id === nodeId);
+      const node = nodeMap.get(nodeId);
+      const target =
+        picked?.config_download_url ||
+        picked?.full_url ||
+        (picked?.direct_url ? normalizeUrl(picked.direct_url, node?.base_url) : "");
+      if (!target) {
+        push({ title: "لینک مستقیم برای این نود پیدا نشد", type: "warning" });
+        return;
+      }
       const ok = await copyText(target);
-      push({
-        title: ok ? t("common.copied") : t("common.failed"),
-        desc: direct[0] ? "لینک مستقیم پنل کپی شد." : "لینک مستقیم موجود نبود؛ لینک Guardino کپی شد.",
-        type: ok ? "success" : "error",
-      });
+      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -274,7 +296,7 @@ export default function UsersPage() {
 
   async function copyAllLinksForUser(u: UserOut) {
     try {
-      const res = await fetchUserLinks(u, false);
+      const res = await fetchUserLinks(u, true);
       const direct = extractDirectLinks(res);
       const lines = [...direct, res.master_link].filter(Boolean).join("\n");
       const ok = await copyText(lines);
@@ -470,7 +492,7 @@ export default function UsersPage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {items.map((u, idx) => {
+          {items.map((u) => {
             const totalBytes = (u.total_gb || 0) * 1024 * 1024 * 1024;
             const usedGb = bytesToGb(u.used_bytes || 0);
             const pct = totalBytes > 0 ? clamp01((u.used_bytes || 0) / totalBytes) : 0;
@@ -483,40 +505,24 @@ export default function UsersPage() {
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
 
-            const priorityBadge =
-              pr.level === "high"
-                ? { v: "danger" as const, label: "نیاز اقدام" }
-                : pr.level === "med"
-                ? { v: "warning" as const, label: "نزدیک محدودیت" }
-                : { v: "muted" as const, label: "پایدار" };
+            const copyByNodeMenu = (nodes || []).map((n) => ({
+              label: `کپی لینک ${n.name}`,
+              icon: <Link2 size={16} />,
+              onClick: () => copyNodeLink(u, n.id),
+            }));
 
             return (
               <Card key={u.id} className="overflow-hidden">
-                <div
-                  className={
-                    "h-1 " +
-                    (pr.level === "high" ? "bg-red-500/70" : pr.level === "med" ? "bg-amber-500/70" : "bg-emerald-500/60")
-                  }
-                />
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="truncate text-base font-semibold">{u.label}</div>
-                        <div className="text-[10px] rounded-lg px-2 py-0.5 border border-[hsl(var(--border))] text-[hsl(var(--fg))]/70">
-                          {t("users.rankLabel")} #{idx + 1}
-                        </div>
+                        <div className="text-base font-semibold break-all leading-relaxed">{u.label}</div>
                       </div>
                       <div className="mt-1 text-xs text-[hsl(var(--fg))]/70">{expText}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={sb.v}>{sb.label}</Badge>
-                      <Badge
-                        variant={priorityBadge.v}
-                        title={`بر اساس مصرف (${percent}٪) و زمان باقی‌مانده (${pr.days ?? "نامشخص"} روز) محاسبه می‌شود.`}
-                      >
-                        وضعیت: {priorityBadge.label}
-                      </Badge>
                       <Switch checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
                     </div>
                   </div>
@@ -531,17 +537,51 @@ export default function UsersPage() {
                     <Progress value={percent} />
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" className="gap-2" disabled={busy} onClick={() => copyDirectRecommended(u)}>
-                      <Link2 size={16} /> کپی لینک مستقیم
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      className="h-9 w-9 p-0"
+                      size="sm"
+                      title={t("users.links")}
+                      aria-label={t("users.links")}
+                      disabled={busy}
+                      onClick={() => openLinks(u)}
+                    >
+                      <Layers size={16} />
                     </Button>
-                    <Button variant="outline" className="gap-2" disabled={busy} onClick={() => openLinks(u)}>
-                      <Layers size={16} /> {t("users.links")}
+                    <Button
+                      variant="outline"
+                      className="h-9 w-9 p-0"
+                      size="sm"
+                      title={t("users.details")}
+                      aria-label={t("users.details")}
+                      disabled={busy}
+                      onClick={() => router.push(`/app/users/${u.id}`)}
+                    >
+                      <SquarePen size={16} />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-9 w-9 p-0"
+                      size="sm"
+                      title="کپی لینک Guardino"
+                      aria-label="کپی لینک Guardino"
+                      disabled={busy}
+                      onClick={() => copyMaster(u)}
+                    >
+                      <Copy size={16} />
                     </Button>
 
                     <Menu
                       trigger={
-                        <Button variant="outline" className="px-3" disabled={busy} aria-label={t("users.actions")}>
+                        <Button
+                          variant="outline"
+                          className="h-9 w-9 p-0"
+                          size="sm"
+                          title={t("users.actions")}
+                          disabled={busy}
+                          aria-label={t("users.actions")}
+                        >
                           ⋯
                         </Button>
                       }
@@ -566,6 +606,7 @@ export default function UsersPage() {
                           icon: <Copy size={16} />,
                           onClick: () => copyAllLinksForUser(u),
                         },
+                        ...copyByNodeMenu,
                         {
                           label: isActive ? t("common.disable") : t("common.enable"),
                           icon: <Power size={16} />,
@@ -760,7 +801,11 @@ export default function UsersPage() {
               <div className="space-y-2">
                 {links.node_links.map((nl) => {
                   const node = nodeMap.get(nl.node_id);
-                  const full = nl.full_url
+                  const nodeName = node?.name || nl.node_name;
+                  const isWg = (nl.panel_type || "").toLowerCase() === "wg_dashboard";
+                  const full = nl.config_download_url
+                    ? nl.config_download_url
+                    : nl.full_url
                     ? nl.full_url
                     : nl.direct_url
                     ? normalizeUrl(nl.direct_url, node?.base_url)
@@ -768,22 +813,35 @@ export default function UsersPage() {
                   return (
                   <div key={nl.node_id} className="rounded-xl border border-[hsl(var(--border))] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">{node?.name ? `${node.name} (#${nl.node_id})` : `Node #${nl.node_id}`}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{nodeName ? `${nodeName} (#${nl.node_id})` : `Node #${nl.node_id}`}</div>
                       <Badge variant={nl.status === "ok" ? "success" : nl.status === "missing" ? "warning" : "danger"}>{nl.status}</Badge>
                     </div>
                     {full ? (
                       <>
                         <div className="mt-2 break-all text-xs">{full}</div>
                         <div className="mt-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              if (!full) return;
-                              copyText(full).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
-                            }}
-                          >
-                            {t("common.copy")}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                if (!full) return;
+                                copyText(full).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                              }}
+                            >
+                              {t("common.copy")}
+                            </Button>
+                            {isWg ? (
+                              <Button
+                                variant="outline"
+                                className="gap-2"
+                                onClick={() => {
+                                  window.open(full, "_blank", "noopener,noreferrer");
+                                }}
+                              >
+                                <Download size={15} /> دانلود .conf
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
                       </>
                     ) : (

@@ -208,7 +208,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "adminNodes.help.tags": "تگ‌ها برای گروه‌بندی نودها هستند (مثلاً EU,VIP). در حالت گروهی (Group) فقط نودهایی که تگِ گروه را دارند وارد ساب می‌شوند.",
     "adminNodes.help.enabled": "اگر خاموش باشد، گاردینو روی این نود هیچ کاربری نمی‌سازد و در لیست‌ها نمایش محدود می‌شود.",
     "adminNodes.help.visibleInSub": "اگر خاموش باشد، این نود داخل لینک اشتراک (ساب) نمایش داده نمی‌شود (برای مخفی کردن نود از کاربران).",
-    "adminNodes.help.credentials": "برای Marzban/Pasarguard معمولاً username/password یا token. برای WGDashboard apikey (و configName اگر لازم بود).",
+    "adminNodes.help.credentials": "برای Marzban/Pasarguard معمولاً username/password یا token. برای WGDashboard از apikey و در صورت نیاز configuration_name استفاده کنید.",
 
     "adminResellers.title": "مدیریت ریسیلرها",
     "adminResellers.subtitle": "ایجاد/ویرایش ریسیلر، فعال/غیرفعال، حذف، و شارژ",
@@ -427,7 +427,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "adminNodes.help.panelType": "marzban / pasarguard / wg_dashboard",
     "adminNodes.help.baseUrl": "Panel base URL (without trailing slash).",
     "adminNodes.help.tags": "Used for grouping/allocation (e.g., DEFAULT_POOL,VIP).",
-    "adminNodes.help.credentials": "Marzban/Pasarguard: username/password or token. WGDashboard: apikey (and configName if needed).",
+    "adminNodes.help.credentials": "Marzban/Pasarguard: username/password or token. WGDashboard: use apikey and optionally configuration_name.",
 
     "adminResellers.title": "Manage resellers",
     "adminResellers.subtitle": "Create/edit resellers, enable/disable, delete, and credit",

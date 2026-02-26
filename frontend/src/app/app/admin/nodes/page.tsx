@@ -27,6 +27,38 @@ type NodeOut = {
 };
 type NodeList = { items: NodeOut[]; total: number };
 
+function defaultCredsForPanel(panel: string): string {
+  if (panel === "wg_dashboard") {
+    return JSON.stringify(
+      {
+        apikey: "YOUR_WG_DASHBOARD_API_KEY",
+        configuration_name: "wg0",
+        verify_ssl: true,
+      },
+      null,
+      2
+    );
+  }
+  if (panel === "pasarguard") {
+    return JSON.stringify(
+      {
+        username: "admin",
+        password: "pass",
+      },
+      null,
+      2
+    );
+  }
+  return JSON.stringify(
+    {
+      username: "admin",
+      password: "pass",
+    },
+    null,
+    2
+  );
+}
+
 export default function AdminNodesPage() {
   const { push } = useToast();
   const { t } = useI18n();
@@ -40,7 +72,7 @@ export default function AdminNodesPage() {
   const [panelType, setPanelType] = React.useState("marzban");
   const [baseUrl, setBaseUrl] = React.useState("");
   const [tags, setTags] = React.useState("");
-  const [creds, setCreds] = React.useState('{"username":"admin","password":"pass"}');
+  const [creds, setCreds] = React.useState(defaultCredsForPanel("marzban"));
   const [enabled, setEnabled] = React.useState(true);
   const [visibleInSub, setVisibleInSub] = React.useState(true);
   const [q, setQ] = React.useState("");
@@ -54,7 +86,7 @@ export default function AdminNodesPage() {
     setPanelType("marzban");
     setBaseUrl("");
     setTags("");
-    setCreds('{"username":"admin","password":"pass"}');
+    setCreds(defaultCredsForPanel("marzban"));
     setEnabled(true);
     setVisibleInSub(true);
   }
@@ -193,7 +225,11 @@ export default function AdminNodesPage() {
               <select
                 className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
                 value={panelType}
-                onChange={(e) => setPanelType(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPanelType(next);
+                  if (editingId == null) setCreds(defaultCredsForPanel(next));
+                }}
               >
                 <option value="marzban">marzban</option>
                 <option value="pasarguard">pasarguard</option>

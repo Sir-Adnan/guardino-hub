@@ -16,13 +16,22 @@ import { Progress } from "@/components/ui/progress";
 import { Modal } from "@/components/ui/modal";
 import { HelpTip } from "@/components/ui/help-tip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Copy, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Copy, Download, RefreshCcw } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type LinksResp = {
   user_id: number;
   master_link: string;
-  node_links: Array<{ node_id: number; direct_url?: string; full_url?: string; status: string; detail?: string }>;
+  node_links: Array<{
+    node_id: number;
+    node_name?: string;
+    panel_type?: string;
+    direct_url?: string;
+    full_url?: string;
+    config_download_url?: string;
+    status: string;
+    detail?: string;
+  }>;
 };
 
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
@@ -126,7 +135,9 @@ export default function UserDetailPage() {
     for (const nl of links.node_links || []) {
       const meta = nodeMap.get(nl.node_id);
       const title = meta?.name ? `${meta.name} (#${nl.node_id})` : `Node #${nl.node_id}`;
-      const full = nl.full_url
+      const full = nl.config_download_url
+        ? nl.config_download_url
+        : nl.full_url
         ? nl.full_url
         : nl.direct_url
         ? normalizeUrl(nl.direct_url, meta?.base_url)
@@ -218,7 +229,7 @@ export default function UserDetailPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-xs text-[hsl(var(--fg))]/70">{t("user.title")}</div>
-                  <div className="mt-1 text-xl font-semibold truncate">{user ? user.label : `#${userId}`}</div>
+                  <div className="mt-1 text-xl font-semibold break-all leading-relaxed">{user ? user.label : `#${userId}`}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {loading ? <Skeleton className="h-6 w-20" /> : <Badge variant={sb.v}>{sb.label}</Badge>}
@@ -321,60 +332,60 @@ export default function UserDetailPage() {
 
                   <div className="space-y-2">
                     <div className="font-semibold">{t("user.links.panel")}</div>
-                    <div className="overflow-x-auto rounded-2xl border border-[hsl(var(--border))]">
-                      <table className="w-full text-sm">
-                        <thead className="text-[hsl(var(--fg))]/70">
-                          <tr className="border-b border-[hsl(var(--border))]">
-                            <th className="text-[start] py-2 px-3">{t("user.links.node")}</th>
-                            <th className="text-[start] py-2 px-3">{t("user.links.status")}</th>
-                            <th className="text-[start] py-2 px-3">{t("user.links.link")}</th>
-                            <th className="py-2 px-3"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {links.node_links.map((n) => {
-                            const meta = nodeMap.get(n.node_id);
-                            const nodeTitle = meta?.name ? `${meta.name} (#${n.node_id})` : `Node #${n.node_id}`;
-                            const full = n.full_url
-                              ? n.full_url
-                              : n.direct_url
-                              ? normalizeUrl(n.direct_url, meta?.base_url)
-                              : "";
-                            return (
-                              <tr key={n.node_id} className="border-b border-[hsl(var(--border))] last:border-b-0">
-                                <td className="py-2 px-3 whitespace-nowrap">{nodeTitle}</td>
-                                <td className="py-2 px-3">
-                                  <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
-                                </td>
-                                <td className="py-2 px-3 min-w-[260px]">
-                                  {full ? (
-                                    <div className="truncate" title={full}>{full}</div>
-                                  ) : (
-                                    <div className="text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
-                                  )}
-                                </td>
-                                <td className="py-2 px-3 text-end">
-                                  {full ? (
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="gap-2"
-                                      onClick={() => {
-                                        copyText(full).then((ok) => {
-                                          push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
-                                        });
-                                      }}
-                                    >
-                                      <Copy size={16} /> {t("common.copy")}
-                                    </Button>
-                                  ) : null}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="space-y-2">
+                      {links.node_links.map((n) => {
+                        const meta = nodeMap.get(n.node_id);
+                        const nodeTitle = (meta?.name || n.node_name) ? `${meta?.name || n.node_name} (#${n.node_id})` : `Node #${n.node_id}`;
+                        const isWg = (n.panel_type || "").toLowerCase() === "wg_dashboard";
+                        const full = n.config_download_url
+                          ? n.config_download_url
+                          : n.full_url
+                          ? n.full_url
+                          : n.direct_url
+                          ? normalizeUrl(n.direct_url, meta?.base_url)
+                          : "";
+                        return (
+                          <div key={n.node_id} className="rounded-2xl border border-[hsl(var(--border))] p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-xs text-[hsl(var(--fg))]/70">{nodeTitle}</div>
+                              <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
+                            </div>
+                            {full ? (
+                              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                                <Input value={full} readOnly />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2 sm:w-[150px]"
+                                  onClick={() => {
+                                    copyText(full).then((ok) => {
+                                      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+                                    });
+                                  }}
+                                >
+                                  <Copy size={16} /> {t("common.copy")}
+                                </Button>
+                                {isWg ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2 sm:w-[170px]"
+                                    onClick={() => {
+                                      window.open(full, "_blank", "noopener,noreferrer");
+                                    }}
+                                  >
+                                    <Download size={16} /> دانلود .conf
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </>

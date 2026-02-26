@@ -27,8 +27,20 @@ type ResellerOut = {
   bundle_price_per_gb?: number | null;
   price_per_day?: number | null;
   can_create_subreseller?: boolean;
+  user_policy?: ResellerUserPolicy | null;
 };
 type ResellerList = { items: ResellerOut[]; total: number };
+
+type ResellerUserPolicy = {
+  enabled: boolean;
+  allow_custom_days: boolean;
+  allow_custom_traffic: boolean;
+  allow_no_expire: boolean;
+  min_days: number;
+  max_days: number;
+  allowed_duration_presets: string[];
+  allowed_traffic_gb: number[];
+};
 
 type NodeOut = {
   id: number;
@@ -40,6 +52,79 @@ type NodeOut = {
 type NodeList = { items: NodeOut[]; total: number };
 
 const ADMIN_FETCH_LIMIT = 200;
+const DURATION_PRESET_OPTIONS = ["7d", "1m", "3m", "6m", "1y", "unlimited"];
+const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
+
+function defaultUserPolicy(): ResellerUserPolicy {
+  return {
+    enabled: false,
+    allow_custom_days: true,
+    allow_custom_traffic: true,
+    allow_no_expire: false,
+    min_days: 1,
+    max_days: 3650,
+    allowed_duration_presets: ["7d", "1m", "3m", "6m", "1y"],
+    allowed_traffic_gb: [...TRAFFIC_PRESET_OPTIONS],
+  };
+}
+
+function toggleString(list: string[], value: string, checked: boolean): string[] {
+  const s = new Set(list);
+  if (checked) s.add(value);
+  else s.delete(value);
+  return Array.from(s);
+}
+
+function toggleNumber(list: number[], value: number, checked: boolean): number[] {
+  const s = new Set(list);
+  if (checked) s.add(value);
+  else s.delete(value);
+  return Array.from(s).sort((a, b) => a - b);
+}
+
+function normalizePolicy(p: ResellerUserPolicy): ResellerUserPolicy {
+  const out: ResellerUserPolicy = {
+    enabled: !!p.enabled,
+    allow_custom_days: !!p.allow_custom_days,
+    allow_custom_traffic: !!p.allow_custom_traffic,
+    allow_no_expire: !!p.allow_no_expire,
+    min_days: Math.max(1, Number(p.min_days) || 1),
+    max_days: Math.max(1, Number(p.max_days) || 3650),
+    allowed_duration_presets: Array.from(
+      new Set(
+        (p.allowed_duration_presets || [])
+          .map((x) => String(x || "").trim().toLowerCase())
+          .filter((x) => DURATION_PRESET_OPTIONS.includes(x))
+      )
+    ),
+    allowed_traffic_gb: Array.from(
+      new Set((p.allowed_traffic_gb || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+    )
+      .map((x) => Math.floor(x))
+      .sort((a, b) => a - b),
+  };
+  if (out.max_days < out.min_days) out.max_days = out.min_days;
+  if (!out.allow_no_expire) {
+    out.allowed_duration_presets = out.allowed_duration_presets.filter((x) => x !== "unlimited");
+  } else if (!out.allowed_duration_presets.includes("unlimited")) {
+    out.allowed_duration_presets.push("unlimited");
+  }
+  if (!out.allowed_duration_presets.length) out.allowed_duration_presets = ["7d", "1m", "3m", "6m", "1y"];
+  if (!out.allowed_traffic_gb.length) out.allowed_traffic_gb = [...TRAFFIC_PRESET_OPTIONS];
+  return out;
+}
+
+function parseTrafficInput(raw: string): number[] {
+  return Array.from(
+    new Set(
+      raw
+        .split(/[,\s]+/g)
+        .map((x) => Number(x.trim()))
+        .filter((x) => Number.isFinite(x) && x > 0)
+        .map((x) => Math.floor(x))
+    )
+  ).sort((a, b) => a - b);
+}
 
 async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerOut[]> {
   const all: ResellerOut[] = [];
@@ -78,6 +163,14 @@ function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warnin
   return "warning";
 }
 
+function policySummary(policy: ResellerUserPolicy | null | undefined): string {
+  if (!policy || !policy.enabled) return "بدون محدودیت";
+  const p = normalizePolicy(policy);
+  const daysMode = p.allow_custom_days ? "روز دستی: روشن" : "روز دستی: خاموش";
+  const trafficMode = p.allow_custom_traffic ? "حجم دستی: روشن" : `حجم‌ها: ${p.allowed_traffic_gb.join(", ")}`;
+  return `${daysMode} | ${trafficMode} | بازه روز: ${p.min_days}-${p.max_days}`;
+}
+
 export default function AdminResellersPage() {
   const { push } = useToast();
   const { t } = useI18n();
@@ -98,6 +191,8 @@ export default function AdminResellersPage() {
   const [priceDay, setPriceDay] = React.useState<number>(0);
   const [canCreateSub, setCanCreateSub] = React.useState(true);
   const [assignAllNodes, setAssignAllNodes] = React.useState(true);
+  const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
+  const [trafficInput, setTrafficInput] = React.useState(TRAFFIC_PRESET_OPTIONS.join(", "));
 
   const [creditId, setCreditId] = React.useState<number | "">("");
   const [creditQuery, setCreditQuery] = React.useState("");
@@ -117,6 +212,9 @@ export default function AdminResellersPage() {
     setPriceDay(0);
     setCanCreateSub(true);
     setAssignAllNodes(true);
+    const p = defaultUserPolicy();
+    setUserPolicy(p);
+    setTrafficInput(p.allowed_traffic_gb.join(", "));
   }
 
   async function load(nextPage: number = page, nextPageSize: number = pageSize) {
@@ -180,6 +278,7 @@ async function assignAllNodesForReseller(resellerId: number) {
             bundle_price_per_gb: Number(bundleGb) || 0,
             price_per_day: Number(priceDay) || 0,
             can_create_subreseller: canCreateSub,
+            user_policy: normalizePolicy(userPolicy),
           }),
         });
         push({ title: t("adminResellers.created"), desc: `ID: ${res.id}`, type: "success" });
@@ -205,6 +304,7 @@ async function assignAllNodesForReseller(resellerId: number) {
             bundle_price_per_gb: Number(bundleGb),
             price_per_day: Number(priceDay),
             can_create_subreseller: canCreateSub,
+            user_policy: normalizePolicy(userPolicy),
           }),
         });
         push({ title: t("adminResellers.saved"), desc: `ID: ${res.id}`, type: "success" });
@@ -216,15 +316,23 @@ async function assignAllNodesForReseller(resellerId: number) {
     }
   }
 
-  function startEdit(x: ResellerOut) {
-    setEditingId(x.id);
-    setUsername(x.username);
-    setPassword("");
-    setParentId(x.parent_id ?? "");
-    setPriceGb(x.price_per_gb ?? 0);
-    setBundleGb((x.bundle_price_per_gb ?? 0) as number);
-    setPriceDay((x.price_per_day ?? 0) as number);
-    setCanCreateSub(x.can_create_subreseller ?? true);
+  async function startEdit(x: ResellerOut) {
+    try {
+      const detail = await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}`);
+      setEditingId(detail.id);
+      setUsername(detail.username);
+      setPassword("");
+      setParentId(detail.parent_id ?? "");
+      setPriceGb(detail.price_per_gb ?? 0);
+      setBundleGb((detail.bundle_price_per_gb ?? 0) as number);
+      setPriceDay((detail.price_per_day ?? 0) as number);
+      setCanCreateSub(detail.can_create_subreseller ?? true);
+      const p = normalizePolicy(detail.user_policy || defaultUserPolicy());
+      setUserPolicy(p);
+      setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
   }
 
   async function toggleStatus(x: ResellerOut, next: "active" | "disabled") {
@@ -282,6 +390,10 @@ async function assignAllNodesForReseller(resellerId: number) {
     loadCreditOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    setTrafficInput((userPolicy.allowed_traffic_gb || []).join(", "));
+  }, [userPolicy.allowed_traffic_gb]);
 
   return (
     <div className="space-y-6">
@@ -360,6 +472,147 @@ async function assignAllNodesForReseller(resellerId: number) {
 </div>
 <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.pricingNote")}</div>
             </div>
+
+            <div className="space-y-3 md:col-span-2 rounded-2xl border border-[hsl(var(--border))] p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium">سیاست ساخت کاربر برای رسیلر</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">
+                    با فعال‌سازی این بخش، رسیلر فقط از بسته‌های زمانی/حجمی مشخص‌شده می‌تواند استفاده کند.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={userPolicy.enabled}
+                    onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, enabled: v }))}
+                  />
+                  <span className="text-xs text-[hsl(var(--fg))]/75">{userPolicy.enabled ? "فعال" : "غیرفعال"}</span>
+                </div>
+              </div>
+
+              {userPolicy.enabled ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">بسته‌های زمانی مجاز</div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {DURATION_PRESET_OPTIONS.map((preset) => {
+                        const checked = (userPolicy.allowed_duration_presets || []).includes(preset);
+                        const disabled = preset === "unlimited" && !userPolicy.allow_no_expire;
+                        const label =
+                          preset === "7d"
+                            ? "۷ روز"
+                            : preset === "1m"
+                              ? "۱ ماه"
+                              : preset === "3m"
+                                ? "۳ ماه"
+                                : preset === "6m"
+                                  ? "۶ ماه"
+                                  : preset === "1y"
+                                    ? "۱ سال"
+                                    : "نامحدود";
+                        return (
+                          <label key={preset} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={disabled}
+                              onChange={(e) =>
+                                setUserPolicy((v) =>
+                                  normalizePolicy({
+                                    ...v,
+                                    allowed_duration_presets: toggleString(v.allowed_duration_presets || [], preset, e.target.checked),
+                                  })
+                                )
+                              }
+                            />
+                            <span>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">حجم‌های مجاز (GB)</div>
+                    <div className="flex flex-wrap gap-2">
+                      {TRAFFIC_PRESET_OPTIONS.map((g) => (
+                        <label key={g} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={(userPolicy.allowed_traffic_gb || []).includes(g)}
+                            onChange={(e) =>
+                              setUserPolicy((v) =>
+                                normalizePolicy({
+                                  ...v,
+                                  allowed_traffic_gb: toggleNumber(v.allowed_traffic_gb || [], g, e.target.checked),
+                                })
+                              )
+                            }
+                          />
+                          <span>{g}GB</span>
+                        </label>
+                      ))}
+                    </div>
+                    <Input
+                      value={trafficInput}
+                      onChange={(e) => setTrafficInput(e.target.value)}
+                      placeholder="مثال: 20, 30, 50, 100"
+                      onBlur={() => {
+                        const parsed = parseTrafficInput(trafficInput);
+                        if (parsed.length) {
+                          setUserPolicy((v) => normalizePolicy({ ...v, allowed_traffic_gb: parsed }));
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">کنترل روز و مدت‌زمان</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">اجازه روز دستی</span>
+                      <Switch
+                        checked={userPolicy.allow_custom_days}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_custom_days: v }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        type="number"
+                        value={userPolicy.min_days}
+                        onChange={(e) => setUserPolicy((v) => normalizePolicy({ ...v, min_days: Number(e.target.value) || 1 }))}
+                        placeholder="حداقل روز"
+                      />
+                      <Input
+                        type="number"
+                        value={userPolicy.max_days}
+                        onChange={(e) => setUserPolicy((v) => normalizePolicy({ ...v, max_days: Number(e.target.value) || v.min_days || 1 }))}
+                        placeholder="حداکثر روز"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">تنظیمات تکمیلی</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">اجازه حجم دستی</span>
+                      <Switch
+                        checked={userPolicy.allow_custom_traffic}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_custom_traffic: v }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">اجازه پلن نامحدود</span>
+                      <Switch
+                        checked={userPolicy.allow_no_expire}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_no_expire: v }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-[hsl(var(--fg))]/70">در حالت غیرفعال، محدودیتی برای روز/حجم اعمال نمی‌شود.</div>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -431,6 +684,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                   <th className="text-[start] py-2">{t("adminResellers.pricePerGb")}</th>
                   <th className="text-[start] py-2">{t("adminResellers.bundlePerGb")}</th>
                   <th className="text-[start] py-2">{t("adminResellers.pricePerDay")}</th>
+                  <th className="text-[start] py-2">سیاست ساخت کاربر</th>
                   <th className="text-[end] py-2">{t("common.actions")}</th>
                 </tr>
               </thead>
@@ -457,6 +711,11 @@ async function assignAllNodesForReseller(resellerId: number) {
                     <td className="py-2">{fmtNumber(x.price_per_gb)}</td>
                     <td className="py-2">{fmtNumber(x.bundle_price_per_gb ?? 0)}</td>
                     <td className="py-2">{fmtNumber(x.price_per_day ?? 0)}</td>
+                    <td className="py-2 max-w-[360px]">
+                      <div className="truncate text-xs text-[hsl(var(--fg))]/80" title={policySummary(x.user_policy)}>
+                        {policySummary(x.user_policy)}
+                      </div>
+                    </td>
                     <td className="py-2 text-[end]">
                       <Menu
                         trigger={
@@ -491,7 +750,7 @@ async function assignAllNodesForReseller(resellerId: number) {
 
                 {!filtered.length ? (
                   <tr>
-                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={8}>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={9}>
                       {t("common.empty")}
                     </td>
                   </tr>
