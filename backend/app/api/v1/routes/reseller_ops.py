@@ -30,6 +30,31 @@ def _now():
 def _short_err(e: Exception, size: int = 140) -> str:
     return str(e).strip().replace("\n", " ")[:size]
 
+def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
+    if not direct:
+        return None
+    u = direct.strip()
+    if not u:
+        return None
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if not base_url:
+        return u
+    b = base_url.strip()
+    if not b:
+        return u
+    try:
+        p = urlparse(b)
+        if p.scheme and p.netloc:
+            origin = f"{p.scheme}://{p.netloc}"
+        else:
+            origin = b
+    except Exception:
+        origin = b
+    if not u.startswith("/"):
+        u = "/" + u
+    return origin.rstrip("/") + u
+
 
 async def _delete_subaccounts_remote_first(
     db: AsyncSession,
@@ -245,7 +270,17 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
             for n in nodes:
                 adapter = get_adapter(n)
                 pr = await adapter.provision_user(label=user.label, total_gb=int(user.total_gb), expire_at=user.expire_at)
-                db.add(SubAccount(user_id=user.id, node_id=n.id, remote_identifier=pr.remote_identifier, panel_sub_url_cached=pr.direct_sub_url, panel_sub_url_cached_at=now, used_bytes=0))
+                direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
+                db.add(
+                    SubAccount(
+                        user_id=user.id,
+                        node_id=n.id,
+                        remote_identifier=pr.remote_identifier,
+                        panel_sub_url_cached=direct_url,
+                        panel_sub_url_cached_at=now if direct_url else None,
+                        used_bytes=0,
+                    )
+                )
 
             reseller.balance -= total_amount
             charged = total_amount
@@ -452,7 +487,7 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
             # WGDashboard may return a NEW identifier.
             s.remote_identifier = pr.remote_identifier
             if pr.direct_sub_url:
-                s.panel_sub_url_cached = pr.direct_sub_url
+                s.panel_sub_url_cached = _normalize_url(pr.direct_sub_url, n.base_url) or pr.direct_sub_url
                 s.panel_sub_url_cached_at = now
         except Exception:
             pass
