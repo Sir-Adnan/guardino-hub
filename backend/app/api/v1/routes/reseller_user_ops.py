@@ -15,17 +15,84 @@ from app.services.pricing import resolve_allowed_nodes, calculate_price
 from app.services.adapters.factory import get_adapter
 from app.services.user_inputs import resolve_days, sanitize_username, random_username
 from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse, PriceQuoteResponse
+from urllib.parse import urlparse
+from app.services.reseller_user_policy import (
+    get_user_policy_setting,
+    reseller_user_policy_key,
+)
 
 router = APIRouter()
 
-def _panel_username(base_label: str, node_id: int) -> str:
-    safe = "".join([c for c in base_label if c.isalnum() or c in ("-","_")]).strip()[:24] or "user"
-    suffix = secrets.token_hex(3)
-    return f"{safe}-{node_id}-{suffix}"
+def _panel_username(base_label: str) -> str:
+    # Keep panel username as close as possible to user input/random value.
+    # No node-id/random suffix is appended.
+    safe = sanitize_username(base_label)
+    return safe or random_username("u")
+
+
+def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
+    if not direct:
+        return None
+    u = direct.strip()
+    if not u:
+        return None
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if not base_url:
+        return u
+    b = base_url.strip()
+    if not b:
+        return u
+    try:
+        p = urlparse(b)
+        if p.scheme and p.netloc:
+            origin = f"{p.scheme}://{p.netloc}"
+        else:
+            origin = b
+    except Exception:
+        origin = b
+    if not u.startswith("/"):
+        u = "/" + u
+    return origin.rstrip("/") + u
+
+
+def _enforce_user_policy(payload: CreateUserRequest, policy: dict) -> int:
+    days_final = resolve_days(payload.days, payload.duration_preset)
+    if not bool(policy.get("enabled")):
+        return days_final
+
+    allow_custom_days = bool(policy.get("allow_custom_days", True))
+    allow_custom_traffic = bool(policy.get("allow_custom_traffic", True))
+    allow_no_expire = bool(policy.get("allow_no_expire", False))
+
+    allowed_presets = [str(x) for x in (policy.get("allowed_duration_presets") or [])]
+    allowed_traffic = {int(x) for x in (policy.get("allowed_traffic_gb") or []) if str(x).isdigit()}
+    min_days = int(policy.get("min_days", 1) or 1)
+    max_days = int(policy.get("max_days", 3650) or 3650)
+
+    if payload.duration_preset:
+        if payload.duration_preset not in allowed_presets:
+            raise HTTPException(status_code=400, detail="این پکیج زمانی برای حساب شما مجاز نیست.")
+    else:
+        if not allow_custom_days:
+            raise HTTPException(status_code=400, detail="انتخاب دستی روز مجاز نیست. از پکیج‌های زمانی مجاز استفاده کنید.")
+
+    if days_final == 0:
+        if not allow_no_expire:
+            raise HTTPException(status_code=400, detail="مدت زمان نامحدود برای حساب شما مجاز نیست.")
+    else:
+        if days_final < min_days or days_final > max_days:
+            raise HTTPException(status_code=400, detail=f"مدت زمان مجاز بین {min_days} تا {max_days} روز است.")
+
+    if not allow_custom_traffic and allowed_traffic and int(payload.total_gb) not in allowed_traffic:
+        raise HTTPException(status_code=400, detail="این حجم برای حساب شما مجاز نیست.")
+
+    return days_final
 
 @router.post("/quote", response_model=PriceQuoteResponse)
 async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    days_final = resolve_days(payload.days, payload.duration_preset)
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
@@ -34,7 +101,8 @@ async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), 
 
 @router.post("", response_model=CreateUserResponse)
 async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    days_final = resolve_days(payload.days, payload.duration_preset)
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
@@ -56,7 +124,8 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     await db.flush()
 
     now = datetime.now(timezone.utc)
-    expire_at = now + timedelta(days=int(days_final))
+    # For "unlimited" we keep a long local expiry timestamp for internal sorting/filters.
+    expire_at = now + timedelta(days=36500 if int(days_final) == 0 else int(days_final))
     token = secrets.token_hex(16)
 
     # username handling
@@ -77,7 +146,12 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
         master_sub_token=token,
         node_selection_mode=NodeSelectionMode.group if payload.node_group else NodeSelectionMode.manual,
         node_group=payload.node_group,
-        meta={"requested_node_ids": payload.node_ids, "requested_node_group": payload.node_group, "remote_label": remote_label},
+        meta={
+            "requested_node_ids": payload.node_ids,
+            "requested_node_group": payload.node_group,
+            "remote_label": remote_label,
+            "no_expire": bool(int(days_final) == 0),
+        },
     )
     db.add(user)
     await db.flush()
@@ -86,14 +160,15 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     try:
         for n in nodes:
             adapter = get_adapter(n)
-            panel_username = _panel_username(remote_label, n.id)
+            panel_username = _panel_username(remote_label)
             pr = await adapter.provision_user(label=panel_username, total_gb=payload.total_gb, expire_at=expire_at)
+            direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
             sa = SubAccount(
                 user_id=user.id,
                 node_id=n.id,
                 remote_identifier=pr.remote_identifier,
-                panel_sub_url_cached=pr.direct_sub_url,
-                panel_sub_url_cached_at=now if pr.direct_sub_url else None,
+                panel_sub_url_cached=direct_url,
+                panel_sub_url_cached_at=now if direct_url else None,
                 used_bytes=0,
                 last_sync_at=None,
             )
