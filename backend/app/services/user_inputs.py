@@ -9,6 +9,7 @@ _PRESETS = {
     "3m": 90,
     "6m": 180,
     "1y": 365,
+    "unlimited": 0,
 }
 
 def resolve_days(days: int, preset: Optional[str]) -> int:
