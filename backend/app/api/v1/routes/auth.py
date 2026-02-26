@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.db import get_db
-from app.core.security import verify_password, create_access_token
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.core.security import verify_password, create_access_token, hash_password
+from app.schemas.auth import LoginRequest, TokenResponse, ChangePasswordRequest
 from app.models.reseller import Reseller, ResellerStatus
 from app.api.deps import get_current_principal
 
@@ -36,3 +36,25 @@ async def me(principal=Depends(get_current_principal)):
         "balance": reseller.balance,
         "status": reseller.status.value,
     }
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(get_current_principal),
+):
+    reseller, _role = principal
+
+    if not verify_password(payload.current_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="رمز فعلی صحیح نیست.")
+
+    new_password = (payload.new_password or "").strip()
+    if len(new_password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="رمز جدید باید حداقل ۸ کاراکتر باشد.")
+    if verify_password(new_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="رمز جدید نباید با رمز فعلی یکسان باشد.")
+
+    reseller.password_hash = hash_password(new_password)
+    await db.commit()
+    return {"ok": True}
