@@ -15,11 +15,17 @@ from app.schemas.admin import (
     UpdateResellerRequest,
     SetResellerStatusRequest,
 )
+from app.schemas.settings import ResellerUserPolicy
+from app.services.reseller_user_policy import (
+    get_user_policy_setting,
+    reseller_user_policy_key,
+    set_user_policy_setting,
+)
 
 router = APIRouter()
 
 
-def _to_out(r: Reseller) -> ResellerOut:
+def _to_out(r: Reseller, user_policy: dict | None = None) -> ResellerOut:
     return ResellerOut(
         id=r.id,
         parent_id=r.parent_id,
@@ -31,6 +37,7 @@ def _to_out(r: Reseller) -> ResellerOut:
         bundle_price_per_gb=getattr(r, "bundle_price_per_gb", 0),
         price_per_day=getattr(r, "price_per_day", 0),
         can_create_subreseller=getattr(r, "can_create_subreseller", None),
+        user_policy=ResellerUserPolicy(**user_policy) if isinstance(user_policy, dict) else None,
     )
 
 
@@ -55,7 +62,8 @@ async def get_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), adm
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
-    return _to_out(r)
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    return _to_out(r, policy)
 
 @router.post("", response_model=ResellerOut)
 async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
@@ -77,8 +85,11 @@ async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Dep
     db.add(r)
     await db.commit()
     await db.refresh(r)
+    if payload.user_policy is not None:
+        await set_user_policy_setting(db, reseller_user_policy_key(r.id), payload.user_policy.model_dump())
 
-    return _to_out(r)
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    return _to_out(r, policy)
 
 
 @router.patch("/{reseller_id}", response_model=ResellerOut)
@@ -106,10 +117,13 @@ async def update_reseller(
         r.can_create_subreseller = payload.can_create_subreseller
     if payload.password:
         r.password_hash = hash_password(payload.password)
-
+    user_policy_payload = payload.user_policy
     await db.commit()
     await db.refresh(r)
-    return _to_out(r)
+    if user_policy_payload is not None:
+        await set_user_policy_setting(db, reseller_user_policy_key(r.id), user_policy_payload.model_dump())
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    return _to_out(r, policy)
 
 
 @router.post("/{reseller_id}/set-status", response_model=ResellerOut)
