@@ -9,7 +9,7 @@ from app.core.db import get_db
 from app.api.deps import block_if_balance_zero
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
-from app.models.node import Node
+from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
 from app.schemas.links import UserLinksResponse, NodeLink
 
@@ -67,18 +67,29 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
     now = datetime.now(timezone.utc)
 
     for sa in subs:
+        node = node_map.get(sa.node_id)
+        node_panel_type = node.panel_type.value if node else None
+        wg_download_url = None
+        if node and node.panel_type == PanelType.wg_dashboard:
+            wg_download_url = str(request.base_url).rstrip("/") + f"/api/v1/sub/wg/{user.master_sub_token}/{sa.node_id}.conf"
+
         direct = sa.panel_sub_url_cached
+        if direct and node:
+            normalized_cached = _normalize_url(direct, node.base_url)
+            if normalized_cached:
+                direct = normalized_cached
         status = "ok" if direct else "missing"
         detail = None
 
-        if refresh and sa.node_id in node_map:
+        if refresh and sa.node_id in node_map and (node_panel_type != "wg_dashboard"):
             try:
                 adapter = get_adapter(node_map[sa.node_id])
                 direct_new = await adapter.get_direct_subscription_url(sa.remote_identifier)
                 if direct_new:
-                    sa.panel_sub_url_cached = direct_new
+                    normalized_new = _normalize_url(direct_new, node.base_url if node else None)
+                    sa.panel_sub_url_cached = normalized_new or direct_new
                     sa.panel_sub_url_cached_at = now
-                    direct = direct_new
+                    direct = sa.panel_sub_url_cached
                     status = "ok"
                 else:
                     status = "missing"
@@ -86,24 +97,25 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                 status = "error"
                 detail = str(e)[:160]
 
-        node_links.append(NodeLink(node_id=sa.node_id, direct_url=direct, status=status, detail=detail))
+        if node_panel_type == "wg_dashboard":
+            direct = wg_download_url
+            status = "ok" if wg_download_url else "missing"
+
+        node_links.append(
+            NodeLink(
+                node_id=sa.node_id,
+                node_name=node.name if node else None,
+                panel_type=node_panel_type,
+                direct_url=direct,
+                full_url=_normalize_url(direct, node.base_url if node else None),
+                config_download_url=wg_download_url,
+                status=status,
+                detail=detail,
+            )
+        )
 
     if refresh:
         await db.commit()
 
     master = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
-    # normalize links (full_url) for clients
-    node_links_full = []
-    for nl in node_links:
-        base_url = node_map.get(nl.node_id).base_url if nl.node_id in node_map else None
-        full = _normalize_url(nl.direct_url, base_url)
-        node_links_full.append(
-            NodeLink(
-                node_id=nl.node_id,
-                direct_url=nl.direct_url,
-                status=nl.status,
-                detail=nl.detail,
-                full_url=full,
-            )
-        )
-    return UserLinksResponse(user_id=user.id, master_link=master, node_links=node_links_full)
+    return UserLinksResponse(user_id=user.id, master_link=master, node_links=node_links)
