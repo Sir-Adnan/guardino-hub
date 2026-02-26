@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-import base64
+from urllib.parse import quote
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives import serialization
 
 from app.services.adapters.base import AdapterError, ProvisionResult, TestConnectionResult
 
@@ -14,10 +12,10 @@ from app.services.adapters.base import AdapterError, ProvisionResult, TestConnec
 class WGDashboardAdapter:
     """WGDashboard adapter (v4.3.x).
 
-    Node.credentials expected:
+    Node.credentials expected (minimum):
       {
         "apikey": "...",
-        "interface": "wg0",
+        "configuration_name": "wg0",  # optional, auto-detected if omitted
         "dns_addresses": "1.1.1.1",
         "mtu": 1460,
         "keep_alive": 21,
@@ -25,13 +23,18 @@ class WGDashboardAdapter:
         "allowed_ips_validation": true
       }
 
-    remote_identifier is stored as the peer public_key (base64).
+    remote_identifier is stored as WG peer id/public_key (base64).
     """
 
     def __init__(self, base_url: str, credentials: dict[str, Any], verify_ssl: bool = True, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
         self.apikey = str(credentials.get("apikey") or "")
-        self.interface = str(credentials.get("interface") or "wg0")
+        self.configuration_name = str(
+            credentials.get("configuration_name")
+            or credentials.get("config_name")
+            or credentials.get("interface")
+            or ""
+        ).strip()
         self.verify_ssl = verify_ssl
         self.timeout = timeout
 
@@ -47,13 +50,23 @@ class WGDashboardAdapter:
     def _headers(self) -> dict[str, str]:
         return {"Accept": "application/json", "wg-dashboard-apikey": self.apikey}
 
-    async def _get_json(self, path: str) -> Any:
+    def _extract_data_or_raise(self, payload: Any) -> Any:
+        if isinstance(payload, dict) and "status" in payload:
+            ok = bool(payload.get("status"))
+            if not ok:
+                msg = str(payload.get("message") or "WGDashboard API returned status=false")
+                raise AdapterError(msg)
+            return payload.get("data")
+        return payload
+
+    async def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{self.base_url}{path}"
         async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
-            r = await client.get(url, headers=self._headers())
+            r = await client.get(url, headers=self._headers(), params=params)
         if r.status_code >= 400:
             raise AdapterError(f"HTTP {r.status_code} GET {path}: {r.text[:300]}")
-        return r.json() if r.text else None
+        payload = r.json() if r.text else None
+        return self._extract_data_or_raise(payload)
 
     async def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
         url = f"{self.base_url}{path}"
@@ -61,66 +74,87 @@ class WGDashboardAdapter:
             r = await client.post(url, headers={**self._headers(), "Content-Type": "application/json"}, json=payload)
         if r.status_code >= 400:
             raise AdapterError(f"HTTP {r.status_code} POST {path}: {r.text[:300]}")
-        return r.json() if r.text else None
+        body = r.json() if r.text else None
+        return self._extract_data_or_raise(body)
+
+    async def _resolve_configuration_name(self) -> str:
+        if self.configuration_name:
+            return self.configuration_name
+
+        data = await self._get_json("/api/getWireguardConfigurations")
+        if not isinstance(data, list) or not data:
+            raise AdapterError("WGDashboard has no WireGuard configuration available")
+
+        for item in data:
+            if isinstance(item, dict):
+                name = str(item.get("Name") or "").strip()
+                if name:
+                    self.configuration_name = name
+                    return name
+        raise AdapterError("WGDashboard configuration discovery failed")
 
     async def test_connection(self) -> TestConnectionResult:
         try:
             await self._get_json("/api/handshake")
-            return TestConnectionResult(ok=True, detail="ok", meta=None)
+            config_name = await self._resolve_configuration_name()
+            return TestConnectionResult(ok=True, detail="ok", meta={"configuration_name": config_name})
         except Exception as e:
             return TestConnectionResult(ok=False, detail=str(e))
 
-    def _gen_keypair(self) -> tuple[str, str]:
-        priv = X25519PrivateKey.generate()
-        pub = priv.public_key()
-        priv_b64 = base64.b64encode(priv.private_bytes(encoding=serialization.Encoding.Raw, format=serialization.PrivateFormat.Raw, encryption_algorithm=serialization.NoEncryption())).decode()
-        pub_b64 = base64.b64encode(pub.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)).decode()
-        return priv_b64, pub_b64
-
     async def _get_available_ip(self) -> str:
-        js = await self._get_json(f"/api/getAvailableIPs/{self.interface}")
-        if isinstance(js, dict):
-            ips = js.get("availableIPs") or js.get("available_ips") or js.get("ips")
-            if isinstance(ips, list) and ips:
-                return str(ips[0])
-        if isinstance(js, list) and js:
-            return str(js[0])
+        config_name = await self._resolve_configuration_name()
+        data = await self._get_json(f"/api/getAvailableIPs/{config_name}")
+        if isinstance(data, dict):
+            for _subnet, ip_list in data.items():
+                if isinstance(ip_list, list):
+                    for candidate in ip_list:
+                        s = str(candidate or "").strip()
+                        if s:
+                            return s
+        if isinstance(data, list):
+            for candidate in data:
+                s = str(candidate or "").strip()
+                if s:
+                    return s
         raise AdapterError("WGDashboard: no available IP returned")
 
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
-        allowed_ip = await self._get_available_ip()
-        priv_b64, pub_b64 = self._gen_keypair()
-
-        payload = {
-            "name": label,
-            "private_key": priv_b64,
-            "public_key": pub_b64,
-            "allowed_ips": [allowed_ip],
-            "allowed_ips_validation": self.allowed_ips_validation,
-            "endpoint_allowed_ip": self.endpoint_allowed_ip,
-            "dns_addresses": self.dns_addresses,
-            "mtu": self.mtu,
-            "keep_alive": self.keep_alive,
-            "preshared_key": "",
-        }
-        await self._post_json(f"/api/addPeers/{self.interface}", payload)
-
-        remote_identifier = pub_b64
+        config_name = await self._resolve_configuration_name()
+        # Let WGDashboard apply its own default peer settings (official API behavior).
+        # This avoids mismatch issues and guarantees downloadable .conf generation.
+        payload = {"name": label}
+        result = await self._post_json(f"/api/addPeers/{config_name}", payload)
+        if not isinstance(result, list) or not result:
+            raise AdapterError("WGDashboard addPeers returned an empty response")
+        peer = result[0] if isinstance(result[0], dict) else {}
+        remote_identifier = str(peer.get("id") or "").strip()
+        if not remote_identifier:
+            raise AdapterError("WGDashboard addPeers did not return peer id")
         direct = await self.get_direct_subscription_url(remote_identifier)
-        return ProvisionResult(remote_identifier=remote_identifier, direct_sub_url=direct, meta={"allowed_ip": allowed_ip})
+        return ProvisionResult(
+            remote_identifier=remote_identifier,
+            direct_sub_url=direct,
+            meta={
+                "configuration_name": config_name,
+                "allowed_ip": peer.get("allowed_ip"),
+                "name": peer.get("name"),
+            },
+        )
 
     async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
         # WGDashboard doesn't support data-limit/expire natively (handled by Guardino).
         return None
 
     async def delete_user(self, remote_identifier: str) -> None:
-        await self._post_json(f"/api/deletePeers/{self.interface}", {"peers": [remote_identifier]})
+        config_name = await self._resolve_configuration_name()
+        await self._post_json(f"/api/deletePeers/{config_name}", {"peers": [remote_identifier]})
 
     async def set_status(self, remote_identifier: str, status: str) -> None:
+        config_name = await self._resolve_configuration_name()
         if status == "active":
-            await self._post_json(f"/api/allowAccessPeers/{self.interface}", {"peers": [remote_identifier]})
+            await self._post_json(f"/api/allowAccessPeers/{config_name}", {"peers": [remote_identifier]})
         else:
-            await self._post_json(f"/api/restrictPeers/{self.interface}", {"peers": [remote_identifier]})
+            await self._post_json(f"/api/restrictPeers/{config_name}", {"peers": [remote_identifier]})
 
     async def disable_user(self, remote_identifier: str) -> None:
         await self.set_status(remote_identifier, "disabled")
@@ -129,7 +163,22 @@ class WGDashboardAdapter:
         await self.set_status(remote_identifier, "active")
 
     async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
-        return f"{self.base_url}/api/downloadPeer/{self.interface}?id={remote_identifier}"
+        config_name = await self._resolve_configuration_name()
+        encoded = quote(remote_identifier, safe="")
+        return f"{self.base_url}/api/downloadPeer/{config_name}?id={encoded}"
+
+    async def download_peer_config(self, remote_identifier: str) -> tuple[str, str]:
+        config_name = await self._resolve_configuration_name()
+        data = await self._get_json(f"/api/downloadPeer/{config_name}", params={"id": remote_identifier})
+        if not isinstance(data, dict):
+            raise AdapterError("WGDashboard downloadPeer returned invalid payload")
+        file_content = str(data.get("file") or "")
+        if not file_content.strip():
+            raise AdapterError("WGDashboard did not return peer config content")
+        file_name = str(data.get("fileName") or "wireguard-peer").strip() or "wireguard-peer"
+        if not file_name.lower().endswith(".conf"):
+            file_name = f"{file_name}.conf"
+        return file_name, file_content
 
     async def revoke_subscription(self, label: str, remote_identifier: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
         # Policy: delete & recreate peer (link changes).
@@ -140,8 +189,25 @@ class WGDashboardAdapter:
         return await self.provision_user(label=label, total_gb=total_gb, expire_at=expire_at)
 
     async def reset_usage(self, remote_identifier: str) -> None:
-        await self._post_json(f"/api/resetPeerData/{self.interface}", {"peers": [remote_identifier]})
+        config_name = await self._resolve_configuration_name()
+        await self._post_json(f"/api/resetPeerData/{config_name}", {"id": remote_identifier, "type": "total"})
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
-        # API doesn't provide a simple per-peer usage endpoint in this collection.
+        config_name = await self._resolve_configuration_name()
+        data = await self._get_json("/api/getWireguardConfigurationInfo", params={"configurationName": config_name})
+        if not isinstance(data, dict):
+            return None
+        peers = data.get("configurationPeers")
+        if not isinstance(peers, list):
+            return None
+        for p in peers:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("id") or "") != str(remote_identifier):
+                continue
+            val = p.get("total_data")
+            try:
+                return int(val)
+            except Exception:
+                return None
         return None
