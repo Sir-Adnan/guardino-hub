@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_reseller
 from app.core.db import get_db
 from app.schemas.settings import UserDefaults, UserDefaultsEnvelope
+from app.schemas.settings import ResellerUserPolicy
 from app.services.user_defaults import (
     GLOBAL_USER_DEFAULTS_KEY,
     base_user_defaults,
@@ -13,6 +14,10 @@ from app.services.user_defaults import (
     get_user_defaults_setting_optional,
     reseller_user_defaults_key,
     set_user_defaults_setting,
+)
+from app.services.reseller_user_policy import (
+    get_user_policy_setting,
+    reseller_user_policy_key,
 )
 
 router = APIRouter()
@@ -42,3 +47,12 @@ async def put_user_defaults(
 ):
     saved = await set_user_defaults_setting(db, reseller_user_defaults_key(reseller.id), payload.model_dump())
     return UserDefaults(**saved)
+
+
+@router.get("/user-policy", response_model=ResellerUserPolicy)
+async def get_user_policy(
+    db: AsyncSession = Depends(get_db),
+    reseller=Depends(require_reseller),
+):
+    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    return ResellerUserPolicy(**policy)
