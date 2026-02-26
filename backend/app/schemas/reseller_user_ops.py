@@ -8,11 +8,11 @@ class CreateUserRequest(BaseModel):
     username: Optional[str] = None
     randomize_username: bool = Field(default=False, description="If true, username is auto-generated")
 
-    # One of: 7d, 1m, 3m, 6m, 1y
+    # One of: 7d, 1m, 3m, 6m, 1y, unlimited
     duration_preset: Optional[str] = None
 
     total_gb: int = Field(gt=0, le=100000)
-    days: int = Field(gt=0, le=3650)
+    days: int = Field(ge=0, le=36500)
 
     pricing_mode: str = Field(default="per_node", pattern="^(per_node|bundle)$")
 
