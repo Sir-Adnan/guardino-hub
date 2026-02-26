@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from app.schemas.settings import ResellerUserPolicy
+
 class CreateResellerRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=6, max_length=128)
@@ -9,6 +11,7 @@ class CreateResellerRequest(BaseModel):
     bundle_price_per_gb: Optional[int] = 0
     price_per_day: Optional[int] = 0
     can_create_subreseller: bool = True
+    user_policy: Optional[ResellerUserPolicy] = None
 
 class ResellerOut(BaseModel):
     id: int
@@ -21,6 +24,7 @@ class ResellerOut(BaseModel):
     bundle_price_per_gb: Optional[int]
     price_per_day: Optional[int]
     can_create_subreseller: Optional[bool] = None
+    user_policy: Optional[ResellerUserPolicy] = None
 
 
 class UpdateResellerRequest(BaseModel):
@@ -30,6 +34,7 @@ class UpdateResellerRequest(BaseModel):
     bundle_price_per_gb: Optional[int] = None
     price_per_day: Optional[int] = None
     can_create_subreseller: Optional[bool] = None
+    user_policy: Optional[ResellerUserPolicy] = None
 
 
 class SetResellerStatusRequest(BaseModel):
