@@ -2,16 +2,14 @@
 set -euo pipefail
 
 # Usage: bash deploy/backup.sh [/opt/guardino-hub] [output_dir]
-ROOT="${1:-$(pwd)}"
-OUT="${2:-$ROOT/backups}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+OUT="${2:-${ROOT}/backups}"
 
-mkdir -p "$OUT"
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
+if [ ! -x "${ROOT}/installer/manage.sh" ]; then
+  echo "ERROR: installer/manage.sh not found in ROOT=${ROOT}" 1>&2
+  exit 1
+fi
 
-echo "Backing up database..."
-docker compose -f "$ROOT/docker-compose.yml" exec -T db pg_dump -U guardino guardino > "$OUT/db_$TS.sql"
-
-echo "Backing up env (without secrets if you want)..."
-cp "$ROOT/.env" "$OUT/env_$TS.env"
-
-echo "Done: $OUT"
+mkdir -p "${OUT}"
+INSTALL_DIR="${ROOT}" BACKUP_DIR="${OUT}" bash "${ROOT}/installer/manage.sh" --backup-now
