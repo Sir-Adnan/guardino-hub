@@ -40,6 +40,34 @@ def _raise_remote_sync_failed(action: str, errors: list[str]) -> None:
     )
 
 
+async def _rollback_limit_changes(
+    successful_sync: list[tuple[SubAccount, Node]],
+    *,
+    total_gb: int,
+    expire_at: datetime,
+) -> list[str]:
+    """Best-effort rollback for partially-synced nodes."""
+    rollback_errors: list[str] = []
+    for sa, n in successful_sync:
+        try:
+            adapter = get_adapter(n)
+            await adapter.update_user_limits(sa.remote_identifier, total_gb=int(total_gb), expire_at=expire_at)
+        except Exception as e:
+            rollback_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+    return rollback_errors
+
+
+def _raise_remote_sync_failed_with_rollback(action: str, errors: list[str], rollback_errors: list[str]) -> None:
+    if not errors:
+        return
+    sample = " | ".join(errors[:3])
+    detail = f"{action} sync failed on {len(errors)} node(s): {sample}"
+    if rollback_errors:
+        rollback_sample = " | ".join(rollback_errors[:2])
+        detail = f"{detail} || rollback failed on {len(rollback_errors)} node(s): {rollback_sample}"
+    raise HTTPException(status_code=502, detail=detail)
+
+
 def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     if not direct:
         return None
@@ -105,12 +133,15 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     db.add(order)
     await db.flush()
 
-    user.expire_at = user.expire_at + timedelta(days=int(payload.days))
+    old_total_gb = int(user.total_gb)
+    old_expire_at = user.expire_at
+    user.expire_at = old_expire_at + timedelta(days=int(payload.days))
 
     # Update remote panels before local financial commit.
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs_sub.scalars().all()
     remote_sync_errors: list[str] = []
+    remote_synced_ok: list[tuple[SubAccount, Node]] = []
     if subs:
         qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
         node_map = {n.id: n for n in qn.scalars().all()}
@@ -125,10 +156,12 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
             except Exception as e:
                 remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
                 continue
+            remote_synced_ok.append((s, n))
             try:
                 await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
             except Exception as e:
                 remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                continue
 
             # WGDashboard share links (legacy support) - best-effort
             try:
@@ -150,7 +183,9 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
                             )
             except Exception:
                 pass
-    _raise_remote_sync_failed("Extend", remote_sync_errors)
+    if remote_sync_errors:
+        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
+        _raise_remote_sync_failed_with_rollback("Extend", remote_sync_errors, rollback_errors)
     now = _now()
     charged = 0
     if time_amount > 0:
@@ -186,12 +221,15 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
     db.add(order)
     await db.flush()
 
-    user.total_gb = int(user.total_gb) + int(payload.add_gb)
+    old_total_gb = int(user.total_gb)
+    old_expire_at = user.expire_at
+    user.total_gb = old_total_gb + int(payload.add_gb)
 
     # Update remote panels before local financial commit.
     qn2 = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
     node_map2 = {n.id: n for n in qn2.scalars().all()}
     remote_sync_errors: list[str] = []
+    remote_synced_ok: list[tuple[SubAccount, Node]] = []
     for s in subs:
         n = node_map2.get(s.node_id)
         if not n:
@@ -203,6 +241,7 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
         except Exception as e:
             remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
             continue
+        remote_synced_ok.append((s, n))
         try:
             await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
         except Exception as e:
@@ -223,7 +262,9 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
         except Exception:
             pass
 
-    _raise_remote_sync_failed("Add traffic", remote_sync_errors)
+    if remote_sync_errors:
+        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
+        _raise_remote_sync_failed_with_rollback("Add traffic", remote_sync_errors, rollback_errors)
 
     now = _now()
     reseller.balance -= total_amount
@@ -376,7 +417,9 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
     await db.flush()
 
     # Apply to user
-    user.total_gb = max(0, int(user.total_gb) - int(refund_gb))
+    old_total_gb = int(user.total_gb)
+    old_expire_at = user.expire_at
+    user.total_gb = max(0, old_total_gb - int(refund_gb))
 
     remote_delete_errors: list[str] = []
     remote_limit_errors: list[str] = []
@@ -396,6 +439,7 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
         user.used_bytes = 0
     else:
         # For partial refund, keep user and sync reduced limits to remote panels.
+        remote_synced_ok: list[tuple[SubAccount, Node]] = []
         for sa in subs:
             n = node_map.get(sa.node_id)
             if not n:
@@ -406,7 +450,11 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
                 await adapter.update_user_limits(sa.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             except Exception as e:
                 remote_limit_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
-        _raise_remote_sync_failed("Refund/decrease", remote_limit_errors)
+                continue
+            remote_synced_ok.append((sa, n))
+        if remote_limit_errors:
+            rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
+            _raise_remote_sync_failed_with_rollback("Refund/decrease", remote_limit_errors, rollback_errors)
 
     now = _now()
     if refund_amount > 0:
