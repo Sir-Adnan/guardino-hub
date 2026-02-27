@@ -505,6 +505,7 @@ export default function NewUserPage() {
 
           <div className="space-y-2">
             <label className="text-sm">حجم (GB)</label>
+            <Input className="max-w-[220px]" type="number" value={totalGb} onChange={(e) => setTotalGb(Number(e.target.value) || 0)} />
             <div className="flex flex-wrap gap-2">
               {trafficPresets.map((gb) => (
                 <Button
@@ -516,19 +517,18 @@ export default function NewUserPage() {
                   {gb} GB
                 </Button>
               ))}
-              <Input className="max-w-[180px]" type="number" value={totalGb} onChange={(e) => setTotalGb(Number(e.target.value) || 0)} />
             </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm">پکیج زمانی</label>
+            <Input className="max-w-[220px]" type="number" value={days} onChange={(e) => setDays(Number(e.target.value) || 0)} />
             <div className="flex flex-wrap gap-2">
               {durationPresets.map((p) => (
                 <Button key={p.key} type="button" variant={preset === p.key ? "primary" : "outline"} onClick={() => applyDurationPreset(p.key)}>
                   {p.label}
                 </Button>
               ))}
-              <Input className="max-w-[180px]" type="number" value={days} onChange={(e) => setDays(Number(e.target.value) || 0)} />
             </div>
             <div className="text-xs text-[hsl(var(--fg))]/70">در صورت نیاز می‌توانید تعداد روز را دستی تغییر دهید.</div>
           </div>
