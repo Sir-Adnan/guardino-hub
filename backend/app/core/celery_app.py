@@ -10,13 +10,17 @@ celery_app = Celery(
 )
 
 celery_app.conf.timezone = "UTC"
+
+usage_every = max(30, min(3600, int(getattr(settings, "USAGE_SYNC_SECONDS", 60) or 60)))
+expiry_every = max(30, min(3600, int(getattr(settings, "EXPIRY_SYNC_SECONDS", 60) or 60)))
+
 celery_app.conf.beat_schedule = {
-    "expire_users_every_minute": {
+    "expire_users_every_interval": {
         "task": "app.tasks.expiry.expire_due_users",
-        "schedule": 60.0,
+        "schedule": float(expiry_every),
     },
-    "sync_usage_every_5min": {
+    "sync_usage_every_interval": {
         "task": "app.tasks.usage.sync_usage",
-        "schedule": 300.0,
+        "schedule": float(usage_every),
     },
 }
