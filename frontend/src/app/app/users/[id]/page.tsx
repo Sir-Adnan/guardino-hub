@@ -37,6 +37,7 @@ type LinksResp = {
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 type NodeLite = { id: number; name: string; base_url: string };
 type OpMode = "extend" | "traffic_up" | "traffic_down" | "controls";
+const AUTO_REFRESH_MS = 30_000;
 
 function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
@@ -143,6 +144,15 @@ export default function UserDetailPage() {
 
   React.useEffect(() => {
     refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, hasValidUserId]);
+
+  React.useEffect(() => {
+    if (!hasValidUserId) return;
+    const timer = window.setInterval(() => {
+      refresh().catch(() => undefined);
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, hasValidUserId]);
 
