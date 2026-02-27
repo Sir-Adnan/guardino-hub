@@ -324,13 +324,29 @@ export default function NewUserPage() {
   React.useEffect(() => {
     if (!effectiveDurationPresets.length) return;
     const allowedPresetKeys = new Set(effectiveDurationPresets.map((x) => x.key));
-    if (!allowedPresetKeys.has(preset)) {
-      const fallback = effectiveDurationPresets[0];
-      setPreset(fallback.key);
-      setDays(fallback.days);
-      return;
+
+    // When manual days are locked by reseller policy, enforce a valid preset strictly.
+    if (customDaysLocked) {
+      if (!allowedPresetKeys.has(preset)) {
+        const fallback = effectiveDurationPresets[0];
+        setPreset(fallback.key);
+        setDays(fallback.days);
+        return;
+      }
+      const p = effectiveDurationPresets.find((x) => x.key === preset);
+      if (p && days !== p.days) {
+        setDays(p.days);
+        return;
+      }
+    } else {
+      // Manual mode: keep free-typed day values even if not one of presets.
+      // Only clear invalid preset selection silently.
+      if (preset && !allowedPresetKeys.has(preset)) {
+        setPreset("");
+      }
     }
-    if (days === 0 && !userPolicy.allow_no_expire) {
+
+    if (days === 0 && userPolicy.enabled && !userPolicy.allow_no_expire) {
       const fallback = effectiveDurationPresets.find((x) => x.days > 0) || effectiveDurationPresets[0];
       setPreset(fallback.key);
       setDays(fallback.days);
