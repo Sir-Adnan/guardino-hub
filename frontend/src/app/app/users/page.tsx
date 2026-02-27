@@ -107,7 +107,7 @@ export default function UsersPage() {
   const [data, setData] = React.useState<UsersPage | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<StatusFilter>("all");
-  const [sortMode, setSortMode] = React.useState<SortMode>("priority");
+  const [sortMode, setSortMode] = React.useState<SortMode>("newest");
 
   const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
   const nodeMap = React.useMemo(() => {
