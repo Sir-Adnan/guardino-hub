@@ -31,6 +31,21 @@ class WGDashboardAdapter:
     BYTES_PER_GB = 1024 ** 3
     _TRAFFIC_FIELDS = {"total_receive", "total_sent", "total_data"}
     _EXPIRY_FIELDS = {"date", "datetime", "expire", "expire_at", "expire_date"}
+    _PEER_ID_FIELDS = (
+        "id",
+        "peer_id",
+        "peerId",
+        "public_key",
+        "publicKey",
+        "client_public_key",
+        "clientPublicKey",
+    )
+    _TOTAL_USAGE_FIELDS = ("total_data", "totalData", "total_traffic", "totalTraffic")
+    _TOTAL_RECV_FIELDS = ("total_receive", "totalReceive", "download")
+    _TOTAL_SENT_FIELDS = ("total_sent", "totalSent", "upload")
+    _CUMU_USAGE_FIELDS = ("cumu_data", "cumuData", "cumulative_data", "cumulativeData")
+    _CUMU_RECV_FIELDS = ("cumu_receive", "cumuReceive", "cumulative_receive", "cumulativeReceive")
+    _CUMU_SENT_FIELDS = ("cumu_sent", "cumuSent", "cumulative_sent", "cumulativeSent")
 
     def __init__(self, base_url: str, credentials: dict[str, Any], verify_ssl: bool = True, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
@@ -51,6 +66,9 @@ class WGDashboardAdapter:
         self.allowed_ips_validation = self._as_bool(credentials.get("allowed_ips_validation"), True)
         self.remote_endpoint = str(credentials.get("remote_endpoint") or "").strip()
         self.preshared_key = str(credentials.get("preshared_key") or "").strip()
+        self._configuration_names_cache: list[str] | None = None
+        self._peer_index_loaded: bool = False
+        self._peer_index: dict[str, tuple[dict[str, Any], str, bool]] = {}
 
         if not self.apikey:
             raise AdapterError("WGDashboard credentials must include 'apikey'")
@@ -100,6 +118,41 @@ class WGDashboardAdapter:
     def _headers(self) -> dict[str, str]:
         return {"Accept": "application/json", "wg-dashboard-apikey": self.apikey}
 
+    @staticmethod
+    def _id_candidates(value: Any) -> set[str]:
+        raw = str(value or "").strip()
+        if not raw:
+            return set()
+        out = {raw}
+        try:
+            uq = unquote(raw).strip()
+            if uq:
+                out.add(uq)
+        except Exception:
+            pass
+        try:
+            q = quote(raw, safe="").strip()
+            if q:
+                out.add(q)
+        except Exception:
+            pass
+        return {x for x in out if x}
+
+    @classmethod
+    def _peer_identifier_candidates(cls, peer: dict[str, Any]) -> set[str]:
+        ids: set[str] = set()
+        for field in cls._PEER_ID_FIELDS:
+            ids.update(cls._id_candidates(peer.get(field)))
+        return ids
+
+    @classmethod
+    def _id_matches(cls, left: Any, right: Any) -> bool:
+        return bool(cls._id_candidates(left).intersection(cls._id_candidates(right)))
+
+    def _invalidate_peer_index(self) -> None:
+        self._peer_index_loaded = False
+        self._peer_index = {}
+
     def _extract_data_or_raise(self, payload: Any) -> Any:
         if isinstance(payload, dict) and "status" in payload:
             ok = bool(payload.get("status"))
@@ -130,49 +183,130 @@ class WGDashboardAdapter:
     async def _resolve_configuration_name(self) -> str:
         if self.configuration_name:
             return self.configuration_name
+        names = await self._list_configuration_names()
+        self.configuration_name = names[0]
+        return self.configuration_name
 
+    async def _list_configuration_names(self) -> list[str]:
+        if self._configuration_names_cache is not None:
+            return self._configuration_names_cache
         data = await self._get_json("/api/getWireguardConfigurations")
         if not isinstance(data, list) or not data:
             raise AdapterError("WGDashboard has no WireGuard configuration available")
-
+        names: list[str] = []
         for item in data:
-            if isinstance(item, dict):
-                name = str(item.get("Name") or "").strip()
-                if name:
-                    self.configuration_name = name
-                    return name
-        raise AdapterError("WGDashboard configuration discovery failed")
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("Name") or "").strip()
+            if name:
+                names.append(name)
+        if not names:
+            raise AdapterError("WGDashboard configuration discovery failed")
+        self._configuration_names_cache = names
+        return names
 
-    async def _get_configuration_info(self) -> dict[str, Any]:
-        config_name = await self._resolve_configuration_name()
-        data = await self._get_json("/api/getWireguardConfigurationInfo", params={"configurationName": config_name})
+    async def _ordered_configuration_names(self) -> list[str]:
+        names = await self._list_configuration_names()
+        preferred = str(self.configuration_name or "").strip()
+        if not preferred:
+            return names
+        ordered = [preferred]
+        ordered.extend(n for n in names if n != preferred)
+        return ordered
+
+    async def _get_configuration_info(self, config_name: str | None = None) -> dict[str, Any]:
+        target_config = str(config_name or "").strip() or await self._resolve_configuration_name()
+        data = await self._get_json("/api/getWireguardConfigurationInfo", params={"configurationName": target_config})
         if not isinstance(data, dict):
             raise AdapterError("WGDashboard getWireguardConfigurationInfo returned invalid payload")
         return data
 
-    async def _get_peer_info(self, remote_identifier: str) -> dict[str, Any] | None:
-        data = await self._get_configuration_info()
+    @staticmethod
+    def _iter_info_peers(data: dict[str, Any]) -> list[tuple[dict[str, Any], bool]]:
+        out: list[tuple[dict[str, Any], bool]] = []
         peers = data.get("configurationPeers")
-        if not isinstance(peers, list):
-            return None
-        target = str(remote_identifier or "").strip()
-        target_unquoted = unquote(target)
-        target_candidates = {target, target_unquoted}
-        for peer in peers:
-            if not isinstance(peer, dict):
+        if isinstance(peers, list):
+            for peer in peers:
+                if isinstance(peer, dict):
+                    out.append((peer, False))
+        restricted = data.get("configurationRestrictedPeers")
+        if isinstance(restricted, list):
+            for peer in restricted:
+                if isinstance(peer, dict):
+                    out.append((peer, True))
+                elif isinstance(peer, str) and peer.strip():
+                    out.append(({"id": peer.strip()}, True))
+        return out
+
+    async def _ensure_peer_index(self, *, refresh_config_names: bool = False) -> None:
+        if self._peer_index_loaded and not refresh_config_names:
+            return
+        if refresh_config_names:
+            self._configuration_names_cache = None
+        index: dict[str, tuple[dict[str, Any], str, bool]] = {}
+        first_error: Exception | None = None
+        for config_name in await self._ordered_configuration_names():
+            try:
+                info = await self._get_configuration_info(config_name)
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
                 continue
-            candidate_values = {
-                str(peer.get("id") or "").strip(),
-                str(peer.get("peer_id") or "").strip(),
-                str(peer.get("peerId") or "").strip(),
-                str(peer.get("public_key") or "").strip(),
-                str(peer.get("publicKey") or "").strip(),
-                str(peer.get("client_public_key") or "").strip(),
-                str(peer.get("clientPublicKey") or "").strip(),
-            }
-            if target_candidates.intersection({v for v in candidate_values if v}):
-                return peer
-        return None
+            for peer, is_restricted in self._iter_info_peers(info):
+                ids = self._peer_identifier_candidates(peer)
+                for pid in ids:
+                    if pid not in index:
+                        index[pid] = (peer, config_name, is_restricted)
+        if not index and first_error is not None:
+            raise first_error
+        self._peer_index = index
+        self._peer_index_loaded = True
+
+    async def _get_peer_context(
+        self,
+        remote_identifier: str,
+        *,
+        allow_refresh: bool = True,
+    ) -> tuple[dict[str, Any] | None, str | None, bool]:
+        candidates = self._id_candidates(remote_identifier)
+        if not candidates:
+            return None, None, False
+        await self._ensure_peer_index()
+        for candidate in candidates:
+            found = self._peer_index.get(candidate)
+            if found:
+                return found
+        if allow_refresh:
+            # Retry once with refreshed configuration list in case configs changed.
+            await self._ensure_peer_index(refresh_config_names=True)
+            for candidate in candidates:
+                found = self._peer_index.get(candidate)
+                if found:
+                    return found
+        return None, None, False
+
+    async def _resolve_peer_request_id(self, remote_identifier: str) -> str:
+        peer, _config_name, _is_restricted = await self._get_peer_context(remote_identifier)
+        if isinstance(peer, dict):
+            preferred = str(peer.get("id") or "").strip()
+            if preferred:
+                return preferred
+            for field in self._PEER_ID_FIELDS:
+                candidate = str(peer.get(field) or "").strip()
+                if candidate:
+                    return candidate
+        unquoted = unquote(str(remote_identifier or "").strip())
+        return unquoted.strip() or str(remote_identifier or "").strip()
+
+    async def _resolve_peer_configuration_name(self, remote_identifier: str) -> str:
+        _peer, config_name, _restricted = await self._get_peer_context(remote_identifier)
+        if config_name:
+            return config_name
+        return await self._resolve_configuration_name()
+
+    async def _get_peer_info(self, remote_identifier: str) -> dict[str, Any] | None:
+        peer, _config_name, _restricted = await self._get_peer_context(remote_identifier)
+        return peer
 
     @staticmethod
     def _job_field(job: dict[str, Any]) -> str:
@@ -199,12 +333,12 @@ class WGDashboardAdapter:
         return value.strftime("%Y-%m-%d %H:%M:%S")
 
     def _is_volume_job(self, job: dict[str, Any], remote_identifier: str) -> bool:
-        if str(job.get("Peer") or "") != str(remote_identifier):
+        if not self._id_matches(job.get("Peer"), remote_identifier):
             return False
         return self._job_field(job) == "total_data" and self._job_action(job) == "restrict"
 
     def _is_expiry_job(self, job: dict[str, Any], remote_identifier: str) -> bool:
-        if str(job.get("Peer") or "") != str(remote_identifier):
+        if not self._id_matches(job.get("Peer"), remote_identifier):
             return False
         field = self._job_field(job)
         if field in self._EXPIRY_FIELDS:
@@ -227,7 +361,7 @@ class WGDashboardAdapter:
         for job in jobs:
             if not isinstance(job, dict):
                 continue
-            if str(job.get("Peer") or "") != str(remote_identifier):
+            if not self._id_matches(job.get("Peer"), remote_identifier):
                 continue
             out.append(job)
         return out
@@ -263,7 +397,8 @@ class WGDashboardAdapter:
         action: str,
         matcher,
     ) -> None:
-        config_name = await self._resolve_configuration_name()
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
         jobs = await self._list_peer_jobs(remote_identifier)
         matched = [j for j in jobs if matcher(j, remote_identifier)]
         current = matched[0] if matched else None
@@ -271,7 +406,7 @@ class WGDashboardAdapter:
         job = {
             "JobID": str((current or {}).get("JobID") or str(uuid.uuid4())),
             "Configuration": config_name,
-            "Peer": str(remote_identifier),
+            "Peer": str(peer_id),
             "Field": field,
             "Operator": operator,
             "Value": str(value),
@@ -388,6 +523,7 @@ class WGDashboardAdapter:
         remote_identifier = str(peer.get("id") or "").strip()
         if not remote_identifier:
             raise AdapterError("WGDashboard addPeers did not return peer id")
+        self._invalidate_peer_index()
 
         # Explicitly allow access (idempotent) and sync schedule limit.
         try:
@@ -419,11 +555,16 @@ class WGDashboardAdapter:
     async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
         # WGDashboard does not have native quota/expiry fields per peer.
         # Mirror Guardino limits using peer schedule jobs.
+        peer, _config_name, _restricted = await self._get_peer_context(remote_identifier)
+        if not isinstance(peer, dict):
+            raise AdapterError(f"WGDashboard peer not found: {remote_identifier}")
         await self._sync_peer_volume_job(remote_identifier, total_gb)
         await self._sync_peer_expiry_job(remote_identifier, expire_at)
+        self._invalidate_peer_index()
 
     async def delete_user(self, remote_identifier: str) -> None:
-        config_name = await self._resolve_configuration_name()
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
         try:
             await self._delete_peer_volume_jobs(remote_identifier)
         except Exception:
@@ -432,24 +573,24 @@ class WGDashboardAdapter:
             await self._delete_peer_expiry_jobs(remote_identifier)
         except Exception:
             pass
-        await self._post_json(f"/api/deletePeers/{config_name}", {"peers": [remote_identifier]})
+        await self._post_json(f"/api/deletePeers/{config_name}", {"peers": [peer_id]})
+        self._invalidate_peer_index()
 
     async def set_status(self, remote_identifier: str, status: str) -> None:
-        config_name = await self._resolve_configuration_name()
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
         if status == "active":
             try:
-                await self._post_json(f"/api/allowAccessPeers/{config_name}", {"peers": [remote_identifier]})
-            except AdapterError as e:
-                # Some WGDashboard builds return status=false for peers that are already allowed.
-                # Treat this specific case as idempotent success when the peer still exists.
-                msg = str(e).lower()
-                if "failed to allow access of peer" in msg:
-                    peer = await self._get_peer_info(remote_identifier)
-                    if isinstance(peer, dict):
-                        return
+                await self._post_json(f"/api/allowAccessPeers/{config_name}", {"peers": [peer_id]})
+            except AdapterError:
+                # Some WGDashboard builds return status=false even when peer is already allowed.
+                peer, _cfg, is_restricted = await self._get_peer_context(remote_identifier)
+                if isinstance(peer, dict) and not is_restricted:
+                    return
                 raise
         else:
-            await self._post_json(f"/api/restrictPeers/{config_name}", {"peers": [remote_identifier]})
+            await self._post_json(f"/api/restrictPeers/{config_name}", {"peers": [peer_id]})
+        self._invalidate_peer_index()
 
     async def disable_user(self, remote_identifier: str) -> None:
         await self.set_status(remote_identifier, "disabled")
@@ -458,13 +599,15 @@ class WGDashboardAdapter:
         await self.set_status(remote_identifier, "active")
 
     async def get_direct_subscription_url(self, remote_identifier: str) -> str | None:
-        config_name = await self._resolve_configuration_name()
-        encoded = quote(remote_identifier, safe="")
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
+        encoded = quote(peer_id, safe="")
         return f"{self.base_url}/api/downloadPeer/{config_name}?id={encoded}"
 
     async def download_peer_config(self, remote_identifier: str) -> tuple[str, str]:
-        config_name = await self._resolve_configuration_name()
-        data = await self._get_json(f"/api/downloadPeer/{config_name}", params={"id": remote_identifier})
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
+        data = await self._get_json(f"/api/downloadPeer/{config_name}", params={"id": peer_id})
         if not isinstance(data, dict):
             raise AdapterError("WGDashboard downloadPeer returned invalid payload")
         file_content = str(data.get("file") or "")
@@ -486,31 +629,70 @@ class WGDashboardAdapter:
         return await self.provision_user(label=label, total_gb=total_gb, expire_at=expire_at)
 
     async def reset_usage(self, remote_identifier: str) -> None:
-        config_name = await self._resolve_configuration_name()
-        await self._post_json(f"/api/resetPeerData/{config_name}", {"id": remote_identifier, "type": "total"})
+        config_name = await self._resolve_peer_configuration_name(remote_identifier)
+        peer_id = await self._resolve_peer_request_id(remote_identifier)
+        await self._post_json(f"/api/resetPeerData/{config_name}", {"id": peer_id, "type": "total"})
+        try:
+            await self._post_json(f"/api/resetPeerData/{config_name}", {"id": peer_id, "type": "cumu"})
+        except Exception:
+            pass
+        self._invalidate_peer_index()
+
+    @classmethod
+    def _extract_peer_used_bytes(cls, peer: dict[str, Any]) -> int | None:
+        def _pick(keys: tuple[str, ...] | list[str]) -> int | None:
+            for key in keys:
+                parsed = cls._as_optional_int(peer.get(key))
+                if parsed is not None:
+                    return max(0, parsed)
+            return None
+
+        direct_total = _pick(cls._TOTAL_USAGE_FIELDS)
+        direct_cumu = _pick(cls._CUMU_USAGE_FIELDS)
+
+        total_recv = _pick(cls._TOTAL_RECV_FIELDS)
+        total_sent = _pick(cls._TOTAL_SENT_FIELDS)
+        total_sum = (total_recv or 0) + (total_sent or 0) if (total_recv is not None or total_sent is not None) else None
+
+        cumu_recv = _pick(cls._CUMU_RECV_FIELDS)
+        cumu_sent = _pick(cls._CUMU_SENT_FIELDS)
+        cumu_sum = (cumu_recv or 0) + (cumu_sent or 0) if (cumu_recv is not None or cumu_sent is not None) else None
+
+        total_candidate = direct_total if direct_total is not None else total_sum
+        cumu_candidate = direct_cumu if direct_cumu is not None else cumu_sum
+
+        if total_candidate is None and cumu_candidate is None:
+            return None
+        if total_candidate is None:
+            return max(0, int(cumu_candidate or 0))
+        if total_candidate > 0:
+            return max(0, int(total_candidate))
+        if cumu_candidate is not None and cumu_candidate > 0:
+            # Some builds only update cumulative counters while total_* stays zero.
+            return max(0, int(cumu_candidate))
+        return max(0, int(total_candidate))
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
         peer = await self._get_peer_info(remote_identifier)
         if not isinstance(peer, dict):
             return None
-        # Different WGDashboard builds expose different field names.
-        for key in ("total_data", "totalData", "total_traffic", "totalTraffic"):
-            parsed = self._as_optional_int(peer.get(key))
-            if parsed is not None:
-                return max(0, parsed)
+        return self._extract_peer_used_bytes(peer)
 
-        recv = self._as_optional_int(peer.get("total_receive"))
-        if recv is None:
-            recv = self._as_optional_int(peer.get("totalReceive"))
-        if recv is None:
-            recv = self._as_optional_int(peer.get("download"))
-
-        sent = self._as_optional_int(peer.get("total_sent"))
-        if sent is None:
-            sent = self._as_optional_int(peer.get("totalSent"))
-        if sent is None:
-            sent = self._as_optional_int(peer.get("upload"))
-
-        if recv is None and sent is None:
-            return None
-        return max(0, (recv or 0) + (sent or 0))
+    async def get_used_bytes_many(self, remote_identifiers: list[str]) -> dict[str, int | None]:
+        result: dict[str, int | None] = {}
+        cleaned: list[str] = []
+        for rid in remote_identifiers:
+            key = str(rid or "").strip()
+            if not key:
+                continue
+            cleaned.append(key)
+            result[key] = None
+        if not cleaned:
+            return result
+        await self._ensure_peer_index()
+        for rid in cleaned:
+            peer, _config_name, _restricted = await self._get_peer_context(rid, allow_refresh=False)
+            if not isinstance(peer, dict):
+                continue
+            result[rid] = self._extract_peer_used_bytes(peer)
+        return result
