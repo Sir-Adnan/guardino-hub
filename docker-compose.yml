@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-guardino}
       POSTGRES_USER: ${POSTGRES_USER:-guardino}
@@ -15,6 +16,7 @@ services:
 
   redis:
     image: redis:7
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -23,6 +25,7 @@ services:
 
   api:
     build: ./backend
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -35,6 +38,7 @@ services:
 
   worker:
     build: ./backend
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -46,6 +50,7 @@ services:
 
   beat:
     build: ./backend
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -57,6 +62,7 @@ services:
 
   web:
     build: ./frontend
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -66,6 +72,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    restart: unless-stopped
     depends_on:
       - api
       - web
