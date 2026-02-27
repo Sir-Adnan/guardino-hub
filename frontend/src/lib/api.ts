@@ -16,6 +16,25 @@ function localizeApiError(message: string): string {
   return m;
 }
 
+function extractApiErrorDetail(raw: string): string | null {
+  const txt = (raw || "").trim();
+  if (!txt) return null;
+  try {
+    const parsed = JSON.parse(txt);
+    if (typeof parsed === "string" && parsed.trim()) return parsed.trim();
+    if (typeof parsed?.detail === "string" && parsed.detail.trim()) return parsed.detail.trim();
+    if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim();
+    if (Array.isArray(parsed?.detail) && parsed.detail.length) {
+      const first = parsed.detail[0];
+      if (typeof first === "string" && first.trim()) return first.trim();
+      if (typeof first?.msg === "string" && first.msg.trim()) return first.msg.trim();
+    }
+  } catch {
+    // not JSON, fallback to raw text
+  }
+  return txt;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = storage.get("token");
   const headers: Record<string, string> = {
@@ -35,20 +54,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (!res.ok) {
     const txt = await res.text();
     if (txt) {
-      try {
-        const parsed = JSON.parse(txt);
-        const detail =
-          typeof parsed?.detail === "string"
-            ? parsed.detail
-            : typeof parsed?.message === "string"
-            ? parsed.message
-            : null;
-        throw new Error(localizeApiError(detail || txt));
-      } catch {
-        throw new Error(localizeApiError(txt));
-      }
+      const detail = extractApiErrorDetail(txt);
+      if (detail) throw new Error(localizeApiError(detail));
     }
-    throw new Error(`HTTP ${res.status}`);
+    throw new Error(localizeApiError(res.statusText || `HTTP ${res.status}`));
   }
   return (await res.json()) as T;
 }
