@@ -106,18 +106,18 @@ def _render_sub_page(
         panel_type = str(item.get("panel_type") or "unknown")
         panel_key = panel_type if panel_type in ("marzban", "pasarguard", "wg_dashboard") else "unknown"
         panel_label = {
-            "marzban": "Marzban",
-            "pasarguard": "Pasarguard",
-            "wg_dashboard": "WGDashboard",
-            "unknown": "Unknown",
-        }.get(panel_key, "Unknown")
+            "wg_dashboard": "وایرگارد",
+            "marzban": "لینک امن",
+            "pasarguard": "لینک امن",
+            "unknown": "لینک امن",
+        }.get(panel_key, "لینک امن")
         panel_css = {
             "marzban": "panel-marzban",
             "pasarguard": "panel-pasarguard",
             "wg_dashboard": "panel-wg",
             "unknown": "panel-unknown",
         }.get(panel_key, "panel-unknown")
-        panel_icon = {"marzban": "M", "pasarguard": "P", "wg_dashboard": "W", "unknown": "?"}.get(panel_key, "?")
+        panel_icon = {"marzban": "S", "pasarguard": "S", "wg_dashboard": "WG", "unknown": "S"}.get(panel_key, "S")
 
         status_raw = str(item.get("status") or "missing")
         status_badge = "ok" if status_raw == "ok" else ("warn" if status_raw == "missing" else "err")
@@ -155,6 +155,53 @@ def _render_sub_page(
     status_value = str(user.status.value if hasattr(user.status, "value") else user.status)
     status_text = html.escape({"active": "فعال", "disabled": "غیرفعال", "deleted": "حذف‌شده"}.get(status_value, status_value))
     status_class = "ok" if status_value == "active" else ("warn" if status_value == "disabled" else "err")
+    is_disabled = status_value != "active"
+    is_expired = sec_left < 0
+    is_volume_exhausted = total_gb > 0 and used_gb >= total_gb
+    is_near_expiry = (not is_expired) and days_left <= 3
+
+    account_state = "normal"
+    if is_disabled or is_expired or is_volume_exhausted:
+        account_state = "blocked"
+    elif is_near_expiry or percent >= 85:
+        account_state = "warning"
+
+    if account_state == "blocked":
+        status_headline = "سرویس شما نیاز به اقدام دارد"
+        status_desc = "برای ادامه استفاده، وضعیت اشتراک را بررسی و در صورت نیاز تمدید یا ارتقا انجام دهید."
+    elif account_state == "warning":
+        status_headline = "سرویس شما نزدیک به محدودیت است"
+        status_desc = "زمان یا حجم اشتراک در آستانه پایان است. بهتر است قبل از قطع سرویس اقدام کنید."
+    else:
+        status_headline = "سرویس شما آماده استفاده است"
+        status_desc = "همه چیز در وضعیت مناسب قرار دارد و می‌توانید از لینک‌های اشتراک استفاده کنید."
+
+    alert_reasons: list[str] = []
+    if is_disabled:
+        alert_reasons.append("حساب کاربری شما غیرفعال شده است.")
+    if is_expired:
+        alert_reasons.append("مدت زمان اشتراک شما به پایان رسیده است.")
+    if is_volume_exhausted:
+        alert_reasons.append("حجم اشتراک شما به پایان رسیده است.")
+    has_alert_modal = len(alert_reasons) > 0
+    alert_items_html = "".join(f"<li>{html.escape(reason)}</li>" for reason in alert_reasons)
+    alert_modal_html = (
+        f"""
+    <div id="statusModal" class="modal show" role="dialog" aria-modal="true" aria-labelledby="statusModalTitle">
+      <div class="modal-card">
+        <div class="modal-icon" aria-hidden="true">!</div>
+        <h3 id="statusModalTitle">توجه: وضعیت اشتراک نیاز به بررسی دارد</h3>
+        <p>یک یا چند مورد مهم در حساب شما شناسایی شده است:</p>
+        <ul>{alert_items_html}</ul>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>متوجه شدم</button>
+        </div>
+      </div>
+    </div>
+        """
+        if has_alert_modal
+        else ""
+    )
     expire_text = html.escape(expire_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
     created_text = html.escape(created_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
     updated_text = html.escape(updated_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
@@ -173,7 +220,7 @@ def _render_sub_page(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Guardino Subscription Center - {label}</title>
+  <title>داشبورد اشتراک - {label}</title>
   <style>
     :root {{
       --bg-0: #f2f6ff;
@@ -206,6 +253,24 @@ def _render_sub_page(
       --accent-soft: #06b6d4;
       --ring-rest: #1a2c4e;
       --shadow: 0 16px 36px rgba(2, 8, 23, 0.44);
+    }}
+    body[data-account-state="warning"] {{
+      --accent: #d97706;
+      --accent-soft: #f59e0b;
+      --ring-rest: #fef3c7;
+    }}
+    body[data-account-state="blocked"] {{
+      --accent: #dc2626;
+      --accent-soft: #f97316;
+      --ring-rest: #fee2e2;
+      --shadow: 0 18px 36px rgba(127, 29, 29, 0.2);
+    }}
+    html[data-theme="night"] body[data-account-state="warning"] {{
+      --ring-rest: #4d2e12;
+    }}
+    html[data-theme="night"] body[data-account-state="blocked"] {{
+      --ring-rest: #4f1d1d;
+      --shadow: 0 18px 36px rgba(2, 8, 23, 0.58);
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -264,6 +329,19 @@ def _render_sub_page(
       padding: 18px;
       display: grid;
       gap: 14px;
+      position: relative;
+      overflow: hidden;
+    }}
+    .hero::after {{
+      content: "";
+      position: absolute;
+      width: 240px;
+      height: 240px;
+      border-radius: 999px;
+      background: radial-gradient(circle at center, rgba(37, 99, 235, 0.22), transparent 70%);
+      top: -110px;
+      left: -70px;
+      pointer-events: none;
     }}
     .hero-top {{
       display: flex;
@@ -379,6 +457,53 @@ def _render_sub_page(
       gap: 8px;
       flex-wrap: wrap;
     }}
+    .state-hero {{
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      background: linear-gradient(120deg, #eef5ff, #ffffff);
+    }}
+    .state-hero-icon {{
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      box-shadow: 0 8px 16px rgba(37, 99, 235, 0.28);
+    }}
+    .state-hero-title {{
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.4;
+      color: var(--fg);
+    }}
+    .state-hero-sub {{
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }}
+    .state-hero.warning {{
+      border-color: #f59e0b66;
+      background: linear-gradient(120deg, #fff7e6, #fffdf6);
+    }}
+    .state-hero.blocked {{
+      border-color: #ef444480;
+      background: linear-gradient(120deg, #fff1f2, #fff7ed);
+    }}
+    html[data-theme="night"] .state-hero.warning {{
+      background: linear-gradient(120deg, #3f2a10, #302012);
+    }}
+    html[data-theme="night"] .state-hero.blocked {{
+      background: linear-gradient(120deg, #4a1f24, #462415);
+    }}
     .badge {{
       border: 1px solid var(--line);
       border-radius: 999px;
@@ -409,6 +534,16 @@ def _render_sub_page(
     .k {{
       font-size: 12px;
       color: var(--muted);
+    }}
+    body[data-account-state="warning"] .k {{
+      color: #9a5b00;
+    }}
+    body[data-account-state="blocked"] .k {{
+      color: #9f1239;
+    }}
+    html[data-theme="night"] body[data-account-state="warning"] .k,
+    html[data-theme="night"] body[data-account-state="blocked"] .k {{
+      color: #fcd34d;
     }}
     .v {{
       font-size: 18px;
@@ -547,6 +682,10 @@ def _render_sub_page(
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+    }}
+    body[data-account-state="blocked"] .track > span,
+    body[data-account-state="blocked"] .ring {{
+      filter: saturate(1.1);
     }}
     .health-grid {{
       display: grid;
@@ -790,6 +929,74 @@ def _render_sub_page(
     .toast.ok {{ border-color: #22c55e88; }}
     .toast.warn {{ border-color: #f59e0b88; }}
     .toast.err {{ border-color: #ef444488; }}
+    .modal {{
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      background: rgba(10, 18, 36, 0.5);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      padding: 16px;
+    }}
+    .modal.show {{
+      opacity: 1;
+      pointer-events: auto;
+    }}
+    .modal-card {{
+      width: min(520px, 100%);
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: var(--paper-strong);
+      box-shadow: 0 20px 45px rgba(2, 8, 23, 0.25);
+      padding: 18px;
+      display: grid;
+      gap: 10px;
+      animation: reveal .3s ease;
+    }}
+    html[data-theme="night"] .modal-card {{
+      background: #122648;
+    }}
+    .modal-icon {{
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #ef4444, #f97316);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      font-size: 22px;
+      box-shadow: 0 12px 24px rgba(239, 68, 68, 0.3);
+    }}
+    .modal-card h3 {{
+      margin: 0;
+      font-size: 18px;
+      font-weight: 900;
+    }}
+    .modal-card p {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+    }}
+    .modal-card ul {{
+      margin: 0;
+      padding: 0 18px 0 0;
+      display: grid;
+      gap: 6px;
+      color: var(--fg);
+      font-size: 13px;
+      line-height: 1.8;
+    }}
+    .modal-actions {{
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }}
     .reveal {{
       opacity: 0;
       transform: translateY(10px);
@@ -832,10 +1039,13 @@ def _render_sub_page(
       .top-actions .btn {{ width: 100%; }}
       .section-head {{ flex-direction: column; align-items: flex-start; }}
       .health-grid {{ grid-template-columns: 1fr; }}
+      .state-hero {{ grid-template-columns: 1fr; }}
+      .modal-card {{ padding: 14px; border-radius: 15px; }}
+      .modal-actions .btn {{ width: 100%; }}
     }}
   </style>
 </head>
-<body>
+<body data-account-state="{account_state}" data-has-alert="{1 if has_alert_modal else 0}">
   <div class="orb orb-a"></div>
   <div class="orb orb-b"></div>
   <main class="page">
@@ -848,8 +1058,8 @@ def _render_sub_page(
             </svg>
           </div>
           <div>
-            <h1 class="hero-title">مرکز ساب‌لینک Guardino</h1>
-            <p class="hero-subtitle">نمای کامل وضعیت اشتراک، لینک مرکزی و لینک‌های مستقیم برای اتصال سریع در کلاینت‌های VPN.</p>
+            <h1 class="hero-title">داشبورد مدیریت اشتراک</h1>
+            <p class="hero-subtitle">نمای کامل وضعیت سرویس، لینک اصلی اشتراک و لینک‌های مستقیم برای اتصال سریع در کلاینت‌های VPN.</p>
           </div>
         </div>
         <div class="top-actions">
@@ -857,8 +1067,8 @@ def _render_sub_page(
             <span class="theme-icon" aria-hidden="true"></span>
             <span id="themeLabel">حالت شب</span>
           </button>
-          <button type="button" class="btn btn-soft copy-btn" data-copy="{master_link_attr}">کپی لینک مرکزی</button>
-          <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک مرکزی</a>
+          <button type="button" class="btn btn-soft copy-btn" data-copy="{master_link_attr}">کپی لینک اصلی</button>
+          <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک اصلی</a>
         </div>
       </div>
       <div class="token-line">
@@ -870,6 +1080,13 @@ def _render_sub_page(
         <span class="badge {expiry_badge}">{expiry_state}</span>
         <span class="badge {status_class}">وضعیت کاربر: {status_text}</span>
         <span class="badge neutral"><span data-number="{usable_links}">{usable_links}</span> لینک فعال</span>
+      </div>
+      <div class="state-hero {account_state}">
+        <div class="state-hero-icon" aria-hidden="true">{'!' if account_state != 'normal' else '✓'}</div>
+        <div>
+          <div class="state-hero-title">{status_headline}</div>
+          <div class="state-hero-sub">{status_desc}</div>
+        </div>
       </div>
     </section>
 
@@ -958,20 +1175,20 @@ def _render_sub_page(
           <span class="badge neutral">لینک‌های آماده: <span data-number="{total_links}">{total_links}</span></span>
         </div>
         <div class="progress-list">
-          <div class="progress-item">
-            <div class="progress-meta">
-              <span>۱) لینک مرکزی</span>
-              <strong>پیشنهادی</strong>
+            <div class="progress-item">
+              <div class="progress-meta">
+                <span>۱) لینک اصلی اشتراک</span>
+                <strong>پیشنهادی</strong>
+              </div>
+              <div class="muted">ابتدا لینک اصلی را کپی کنید و در کلاینت وارد کنید تا همه نودها یکجا لود شوند.</div>
             </div>
-            <div class="muted">ابتدا لینک مرکزی را کپی کنید و در کلاینت وارد کنید تا همه نودها یکجا لود شوند.</div>
-          </div>
-          <div class="progress-item">
-            <div class="progress-meta">
-              <span>۲) لینک مستقیم نود</span>
-              <strong>جایگزین</strong>
+            <div class="progress-item">
+              <div class="progress-meta">
+                <span>۲) لینک مستقیم نود</span>
+                <strong>جایگزین</strong>
+              </div>
+              <div class="muted">اگر کلاینت شما با لینک اصلی سازگار نیست، از لینک‌های مستقیم همین صفحه استفاده کنید.</div>
             </div>
-            <div class="muted">اگر کلاینت شما با لینک مرکزی سازگار نیست، از لینک‌های مستقیم همین صفحه استفاده کنید.</div>
-          </div>
           <div class="progress-item">
             <div class="progress-meta">
               <span>۳) انقضا و مصرف</span>
@@ -986,7 +1203,7 @@ def _render_sub_page(
     <section class="glass master reveal" style="--delay:.33s">
       <div class="section-head">
         <div>
-          <h2 class="section-title">ساب‌لینک مرکزی</h2>
+          <h2 class="section-title">لینک اصلی اشتراک</h2>
           <p class="section-sub">این لینک را در کلاینت‌ها قرار دهید تا همه نودهای مجاز یک‌جا خوانده شوند.</p>
         </div>
         <div class="actions">
@@ -1001,7 +1218,7 @@ def _render_sub_page(
       <div class="section-head">
         <div>
           <h2 class="section-title">لینک‌های مستقیم نودها</h2>
-          <p class="section-sub">برای نودهای WGDashboard فایل کانفیگ `.conf` ارائه می‌شود.</p>
+          <p class="section-sub">برای برخی سرویس‌ها فایل پیکربندی `.conf` ارائه می‌شود.</p>
         </div>
         <span class="badge neutral"><span data-number="{total_links}">{total_links}</span> نود</span>
       </div>
@@ -1014,6 +1231,7 @@ def _render_sub_page(
     </footer>
   </main>
   <div id="toast" class="toast"></div>
+  {alert_modal_html}
   <script>
     let toastTimer = null;
     function showToast(msg, tone) {{
@@ -1150,8 +1368,26 @@ def _render_sub_page(
       }});
     }}
 
+    function initStatusModal() {{
+      const modal = document.getElementById("statusModal");
+      if (!modal) return;
+      const closeModal = () => {{
+        modal.classList.remove("show");
+        setTimeout(() => {{
+          if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
+        }}, 200);
+      }};
+      modal.querySelectorAll("[data-close-modal]").forEach((btn) => {{
+        btn.addEventListener("click", closeModal);
+      }});
+      modal.addEventListener("click", (e) => {{
+        if (e.target === modal) closeModal();
+      }});
+    }}
+
     initTheme();
     bindCopyButtons();
+    initStatusModal();
     renderFaNumbers();
     renderJalaliDates();
   </script>
