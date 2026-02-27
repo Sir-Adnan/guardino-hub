@@ -85,6 +85,24 @@ class MarzbanAdapter:
         if r.status_code >= 400:
             raise AdapterError(f"HTTP {r.status_code} DELETE {path}: {r.text[:300]}")
 
+    @staticmethod
+    def _as_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        try:
+            s = str(value).strip()
+            if not s:
+                return None
+            return int(float(s))
+        except Exception:
+            return None
+
     async def _get_active_inbounds(self) -> dict[str, list[str]]:
         """Return protocol -> inbound tags.
 
@@ -179,9 +197,38 @@ class MarzbanAdapter:
         await self._post_json(f"/api/user/{remote_identifier}/reset", {})
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
+        # Newer APIs expose used_traffic directly on /api/user/{username}
+        try:
+            js_user = await self._get_json(f"/api/user/{remote_identifier}")
+            if isinstance(js_user, dict):
+                direct = self._as_int(js_user.get("used_traffic"))
+                if direct is None and isinstance(js_user.get("data"), dict):
+                    direct = self._as_int(js_user["data"].get("used_traffic"))
+                if direct is not None:
+                    return max(0, direct)
+        except Exception:
+            pass
+
+        # Fallback to explicit usage endpoint:
+        # { username: ..., usages: [ { used_traffic: ... }, ... ] }
         js = await self._get_json(f"/api/user/{remote_identifier}/usage")
         if isinstance(js, dict):
-            used = js.get("used_traffic")
-            if isinstance(used, int):
-                return used
+            payload = js.get("data") if isinstance(js.get("data"), dict) else js
+            usages = payload.get("usages")
+            if isinstance(usages, list):
+                total = 0
+                found = False
+                for item in usages:
+                    if not isinstance(item, dict):
+                        continue
+                    val = self._as_int(item.get("used_traffic"))
+                    if val is None:
+                        continue
+                    total += max(0, val)
+                    found = True
+                if found:
+                    return total
+            direct = self._as_int(payload.get("used_traffic"))
+            if direct is not None:
+                return max(0, direct)
         return None
