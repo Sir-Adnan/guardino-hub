@@ -4,6 +4,7 @@ import html
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -63,13 +64,11 @@ def _wants_html(request: Request) -> bool:
 
 
 def _safe_conf_filename(name: str | None, fallback: str) -> str:
-    base = str(name or "").strip()
-    if not base:
-        base = fallback
-    base = re.sub(r"[^a-zA-Z0-9_.-]+", "_", base).strip("._-") or fallback
-    if not base.lower().endswith(".conf"):
-        base = f"{base}.conf"
-    return base[:120]
+    raw = Path(str(name or "").strip()).name
+    fallback_raw = Path(str(fallback or "").strip()).name or "wireguard"
+    stem = Path(raw).stem if raw else Path(fallback_raw).stem
+    safe_stem = re.sub(r"[^a-zA-Z0-9_.-]+", "_", stem).strip("._-") or "wireguard"
+    return f"{safe_stem[:110]}.conf"
 
 
 def _render_sub_page(
@@ -84,12 +83,21 @@ def _render_sub_page(
     remain_gb = max(0.0, total_gb - used_gb)
     percent = 0 if total_gb <= 0 else min(100, int((used_gb / total_gb) * 100))
     now = datetime.now(timezone.utc)
-    days_left = int((user.expire_at - now).total_seconds() // 86400)
+    sec_left = int((user.expire_at - now).total_seconds())
+    days_left = int(sec_left // 86400)
+    expiry_state = "منقضی شده" if sec_left < 0 else ("نزدیک به انقضا" if days_left <= 3 else "فعال")
+    expiry_badge = "err" if sec_left < 0 else ("warn" if days_left <= 3 else "ok")
+    usable_links = sum(1 for it in node_links if (it.get("url") or "").strip())
 
     rows = []
-    for item in node_links:
+    for idx, item in enumerate(node_links, start=1):
         node_name = html.escape(item.get("node_name") or f"Node #{item.get('node_id')}")
         panel_type = html.escape(item.get("panel_type") or "unknown")
+        panel_label = {
+            "marzban": "Marzban",
+            "pasarguard": "Pasarguard",
+            "wg_dashboard": "WGDashboard",
+        }.get(panel_type, panel_type)
         status = html.escape(item.get("status") or "missing")
         url = item.get("url") or ""
         url_html = html.escape(url)
@@ -101,20 +109,18 @@ def _render_sub_page(
             if url
             else '<span class="muted">بدون لینک</span>'
         )
-        copy_btn = (
-            f'<button class="btn btn-outline" onclick="copyText({url_js})">کپی</button>' if url else ""
-        )
+        copy_btn = f'<button class="btn btn-outline" onclick="copyText({url_js})">کپی</button>' if url else ""
         rows.append(
             f"""
-            <div class="row">
+            <article class="row" style="animation-delay:{min(idx * 0.04, 0.36):.2f}s">
               <div class="meta">
                 <div class="name">{node_name}</div>
-                <div class="sub">{panel_type}</div>
+                <div class="sub">{panel_label}</div>
               </div>
               <div class="url">{url_html or "—"}</div>
               <div class="status {badge}">{status}</div>
               <div class="actions">{copy_btn}{action}</div>
-            </div>
+            </article>
             """
         )
 
@@ -131,63 +137,173 @@ def _render_sub_page(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Guardino Subscription</title>
+  <title>Guardino Subscription - {label}</title>
   <style>
     :root {{
-      --bg: #0b1220;
-      --card: #0f172a;
-      --line: #1f2937;
-      --fg: #e5e7eb;
-      --muted: #94a3b8;
-      --ok: #16a34a;
-      --warn: #d97706;
-      --err: #dc2626;
-      --btn: #2563eb;
+      --bg-0: #060f1f;
+      --bg-1: #0e1b34;
+      --card: #0f1e38;
+      --line: #223658;
+      --fg: #eaf3ff;
+      --muted: #93a9cc;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --btn: #1d4ed8;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: radial-gradient(1200px 700px at 15% -10%, #1e293b 0%, var(--bg) 45%);
+      background:
+        radial-gradient(900px 620px at 10% -12%, #1e3a8a66 0%, transparent 60%),
+        radial-gradient(720px 520px at 100% 0%, #0891b233 0%, transparent 64%),
+        linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
       color: var(--fg);
-      padding: 16px;
+      min-height: 100dvh;
+      padding: 18px;
     }}
-    .container {{ max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; }}
-    .card {{ background: color-mix(in srgb, var(--card) 88%, #000 12%); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }}
-    .title {{ font-size: 22px; font-weight: 800; margin: 0 0 6px; }}
-    .subtitle {{ color: var(--muted); font-size: 13px; }}
+    .container {{ max-width: 1160px; margin: 0 auto; display: grid; gap: 14px; }}
+    .card {{
+      background: linear-gradient(180deg, color-mix(in srgb, var(--card) 88%, #fff 2%), color-mix(in srgb, var(--card) 93%, #000 7%));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 16px 36px #02081766;
+      backdrop-filter: blur(3px);
+    }}
+    .title {{ font-size: 24px; font-weight: 900; margin: 0 0 8px; letter-spacing: .2px; }}
+    .subtitle {{ color: var(--muted); font-size: 13px; line-height: 1.7; }}
+    .row-head {{ display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }}
+    .pill {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      background: #0b1530;
+    }}
+    .pill.ok {{ color: #86efac; border-color: #16653488; }}
+    .pill.warn {{ color: #fcd34d; border-color: #92400e88; }}
+    .pill.err {{ color: #fca5a5; border-color: #991b1b88; }}
     .grid {{ display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }}
-    .stat {{ border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #0b1325; }}
+    .stat {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: linear-gradient(180deg, #0b1833, #0a162d);
+    }}
     .k {{ color: var(--muted); font-size: 12px; }}
-    .v {{ margin-top: 5px; font-size: 16px; font-weight: 700; }}
-    .progress {{ height: 9px; border-radius: 999px; background: #111827; overflow: hidden; margin-top: 10px; border: 1px solid var(--line); }}
-    .progress > span {{ display: block; height: 100%; width: {percent}%; background: linear-gradient(90deg, #22c55e, #0ea5e9); }}
-    .row {{ display: grid; gap: 10px; align-items: center; grid-template-columns: 220px 1fr 90px 180px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-top: 8px; }}
+    .v {{ margin-top: 5px; font-size: 16px; font-weight: 800; }}
+    .progress {{
+      height: 10px;
+      border-radius: 999px;
+      background: #0a1226;
+      overflow: hidden;
+      margin-top: 10px;
+      border: 1px solid var(--line);
+    }}
+    .progress > span {{
+      display: block;
+      height: 100%;
+      width: {percent}%;
+      background: linear-gradient(90deg, #16a34a 0%, #06b6d4 52%, #2563eb 100%);
+      transition: width .45s ease;
+    }}
+    .row {{
+      display: grid;
+      gap: 10px;
+      align-items: center;
+      grid-template-columns: 230px 1fr 96px 186px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 10px;
+      margin-top: 8px;
+      background: linear-gradient(180deg, #0a1631, #091327);
+      opacity: 0;
+      transform: translateY(8px);
+      animation: fadeUp .45s ease forwards;
+    }}
     .meta .name {{ font-weight: 700; word-break: break-word; }}
     .meta .sub {{ font-size: 12px; color: var(--muted); margin-top: 3px; }}
-    .url {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #bfdbfe; word-break: break-all; }}
+    .url {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #bfdbfe;
+      word-break: break-all;
+      border: 1px dashed #355083;
+      border-radius: 10px;
+      padding: 6px 8px;
+      background: #08132a;
+    }}
     .status {{ justify-self: start; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); text-transform: uppercase; }}
-    .status.ok {{ background: color-mix(in srgb, var(--ok) 22%, transparent); color: #86efac; }}
+    .status.ok {{ background: color-mix(in srgb, var(--ok) 24%, transparent); color: #86efac; }}
     .status.warn {{ background: color-mix(in srgb, var(--warn) 22%, transparent); color: #fcd34d; }}
     .status.err {{ background: color-mix(in srgb, var(--err) 22%, transparent); color: #fca5a5; }}
     .actions {{ display: flex; gap: 8px; justify-content: end; flex-wrap: wrap; }}
-    .btn {{ border: 0; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #fff; background: var(--btn); }}
-    .btn-outline {{ border: 1px solid var(--line); background: transparent; color: var(--fg); }}
+    .btn {{
+      border: 0;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #fff;
+      background: linear-gradient(135deg, #1d4ed8, #2563eb);
+      transition: transform .18s ease, filter .18s ease;
+    }}
+    .btn:hover {{ transform: translateY(-1px); filter: brightness(1.05); }}
+    .btn-outline {{ border: 1px solid var(--line); background: #0a1530; color: var(--fg); }}
     .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #bfdbfe; word-break: break-all; }}
     .empty {{ color: var(--muted); font-size: 13px; padding: 8px 0; }}
     .muted {{ color: var(--muted); font-size: 12px; }}
+    .toast {{
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      background: #061225f0;
+      border: 1px solid #334d7f;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #e2ecff;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s ease, transform .2s ease;
+      pointer-events: none;
+      z-index: 30;
+    }}
+    .toast.show {{ opacity: 1; transform: translateY(0); }}
+    @keyframes fadeUp {{
+      from {{ opacity: 0; transform: translateY(8px); }}
+      to {{ opacity: 1; transform: translateY(0); }}
+    }}
     @media (max-width: 980px) {{
       .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       .row {{ grid-template-columns: 1fr; }}
       .actions {{ justify-content: flex-start; }}
+    }}
+    @media (max-width: 560px) {{
+      body {{ padding: 10px; }}
+      .card {{ padding: 12px; border-radius: 14px; }}
+      .title {{ font-size: 20px; }}
+      .grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
 <body>
   <div class="container">
     <section class="card">
-      <h1 class="title">اشتراک Guardino</h1>
-      <div class="subtitle">توکن: <span class="mono">{token_html}</span></div>
+      <div class="row-head">
+        <div>
+          <h1 class="title">اشتراک Guardino</h1>
+          <div class="subtitle">توکن کاربر: <span class="mono">{token_html}</span></div>
+        </div>
+        <div class="pill {expiry_badge}">{expiry_state}</div>
+      </div>
       <div class="grid">
         <div class="stat"><div class="k">کاربر</div><div class="v">{label}</div></div>
         <div class="stat"><div class="k">وضعیت</div><div class="v">{status}</div></div>
@@ -218,16 +334,34 @@ def _render_sub_page(
     </section>
 
     <section class="card">
-      <div class="title" style="font-size:18px;margin:0 0 6px;">لینک‌های هر نود</div>
-      <div class="subtitle">برای نودهای WGDashboard فایل کانفیگ `.conf` نمایش داده می‌شود.</div>
+      <div class="row-head">
+        <div>
+          <div class="title" style="font-size:18px;margin:0;">لینک‌های هر نود</div>
+          <div class="subtitle">برای نودهای WGDashboard فایل کانفیگ `.conf` ارائه می‌شود.</div>
+        </div>
+        <div class="pill">{usable_links} لینک فعال</div>
+      </div>
       {rows_html}
     </section>
   </div>
+  <div id="toast" class="toast"></div>
   <script>
+    let toastTimer = null;
+    function showToast(msg) {{
+      const el = document.getElementById("toast");
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.add("show");
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {{
+        el.classList.remove("show");
+      }}, 1500);
+    }}
+
     async function copyText(t) {{
       try {{
         await navigator.clipboard.writeText(t);
-        alert("کپی شد");
+        showToast("کپی شد");
       }} catch (_e) {{
         prompt("کپی دستی:", t);
       }}
@@ -443,6 +577,6 @@ async def download_wg_config(token: str, node_id: int, db: AsyncSession = Depend
     safe_name = _safe_conf_filename(filename, fallback=f"wg_{user.id}_{node_id}.conf")
     return Response(
         content=content,
-        media_type="text/plain; charset=utf-8",
+        media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
