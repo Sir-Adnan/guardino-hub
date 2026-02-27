@@ -35,6 +35,8 @@ SILENT="0"
 BACKUP_MODE="${BACKUP_MODE:-full}"
 TELEGRAM_AUTO_UPLOAD="${TELEGRAM_AUTO_UPLOAD:-0}"
 LAST_BACKUP_ARCHIVE=""
+SCHEDULE_EXPR=""
+SCHEDULE_DESC=""
 
 BOLD='\033[1m'
 RED='\033[0;31m'
@@ -356,6 +358,42 @@ print_item() {
   printf " ${GREEN}[%s]${NC} ${CYAN}%-18s${NC} ${GREY}%s${NC}\n" "${id}" "${title}" "${desc}"
 }
 
+show_detailed_help() {
+  echo ""
+  echo -e "${WHITE}Guardino Manager - Detailed Help${NC}"
+  echo -e "${GREY}--------------------------------------------------------------${NC}"
+  echo " [1] Install Panel"
+  echo "     - Fresh install or repair install from INSTALL_DIR."
+  echo " [2] Update Panel"
+  echo "     - Pull/rebuild stack and run migrations."
+  echo " [3] Status"
+  echo "     - Shows compose service status and /health response."
+  echo " [4] Logs"
+  echo "     - Follows compose logs for live debugging."
+  echo ""
+  echo " [5] Backup Now (full)"
+  echo "     - Creates migration-grade archive locally."
+  echo " [6] Setup TG (Full)"
+  echo "     - Configure Telegram + schedule + test upload."
+  echo " [7] Setup TG (Lite)"
+  echo "     - Lighter backups to reduce upload size/time."
+  echo " [8] Schedule Local"
+  echo "     - Backup schedule without Telegram upload."
+  echo " [10] Restore Backup"
+  echo "     - Restores DB and config from selected archive."
+  echo " [11] Disable Backup"
+  echo "     - Removes cron jobs and Telegram backup config."
+  echo ""
+  echo " Backup modes:"
+  echo "   full      -> includes TLS/certbot archives when available"
+  echo "   essential -> excludes heavy TLS archives"
+  echo ""
+  echo " Telegram requirements:"
+  echo "   - Bot token from @BotFather"
+  echo "   - Chat ID from your target chat/user"
+  echo ""
+}
+
 assert_source_ready_or_fail() {
   if is_source_ready; then
     return 0
@@ -397,6 +435,13 @@ create_backup_archive() {
   if [ "${mode}" != "full" ] && [ "${mode}" != "essential" ]; then
     log_warn "Invalid backup mode '${mode}', using full."
     mode="full"
+  fi
+
+  log_info "Starting backup in '${mode}' mode."
+  if [ "${mode}" = "full" ]; then
+    log_info "Full mode includes TLS/certbot archives when present."
+  else
+    log_info "Essential mode excludes heavy TLS archives for faster upload."
   fi
 
   mkdir -p "${out_dir}"
@@ -538,6 +583,12 @@ restore_backup_archive() {
   local do_confirm="${2:-1}"
   if [ "${do_confirm}" = "1" ]; then
     echo ""
+    echo "Restore Guide:"
+    echo "  - Current DB data will be replaced."
+    echo "  - .env / nginx / compose backup files will be restored."
+    echo "  - Services will be restarted automatically."
+    echo "  - Keep this only for trusted backup files."
+    echo ""
     log_warn "Restore will overwrite current Guardino database and config."
     read -r -p "Type RESTORE to continue: " confirm
     if [ "${confirm}" != "RESTORE" ]; then
@@ -603,40 +654,89 @@ restore_backup_archive() {
 }
 
 ask_backup_frequency() {
-  echo ""
-  echo " [1] Every 30 minutes"
-  echo " [2] Every X hours"
-  echo " [3] Daily at fixed hour"
-  echo ""
-  read -r -p "Select backup frequency: " freq
+  SCHEDULE_EXPR=""
+  SCHEDULE_DESC=""
 
-  local cron_expr
+  echo ""
+  echo -e "${WHITE}Backup Frequency Guide${NC}"
+  echo "  [1] Every 30 minutes   (*/30 * * * *)"
+  echo "  [2] Every 1 hour       (0 * * * *)"
+  echo "  [3] Every 2 hours      (0 */2 * * *)"
+  echo "  [4] Every X hours      (custom: 1..23)"
+  echo "  [5] Daily at hour      (0 H * * *)"
+  echo "  [6] Weekly schedule    (0 H * * D)"
+  echo ""
+  echo "  Notes:"
+  echo "  - Option [2] is explicit 1-hour interval."
+  echo "  - Time values use server local timezone."
+  echo ""
+  read -r -p "Select backup frequency [1-6]: " freq
+
+  local every_hours at_hour day_num day_name
   case "${freq}" in
     1)
-      cron_expr="*/30 * * * *"
+      SCHEDULE_EXPR="*/30 * * * *"
+      SCHEDULE_DESC="Every 30 minutes"
       ;;
     2)
+      SCHEDULE_EXPR="0 * * * *"
+      SCHEDULE_DESC="Every 1 hour"
+      ;;
+    3)
+      SCHEDULE_EXPR="0 */2 * * *"
+      SCHEDULE_DESC="Every 2 hours"
+      ;;
+    4)
       read -r -p "Enter hours (1-23): " every_hours
       if [[ ! "${every_hours:-}" =~ ^[0-9]+$ ]] || [ "${every_hours}" -lt 1 ] || [ "${every_hours}" -gt 23 ]; then
         log_warn "Invalid value; defaulting to every 1 hour."
         every_hours=1
       fi
-      cron_expr="0 */${every_hours} * * *"
+      SCHEDULE_EXPR="0 */${every_hours} * * *"
+      SCHEDULE_DESC="Every ${every_hours} hour(s)"
       ;;
-    3)
+    5)
       read -r -p "Hour (0-23): " at_hour
       if [[ ! "${at_hour:-}" =~ ^[0-9]+$ ]] || [ "${at_hour}" -lt 0 ] || [ "${at_hour}" -gt 23 ]; then
         log_warn "Invalid value; defaulting to 03:00."
         at_hour=3
       fi
-      cron_expr="0 ${at_hour} * * *"
+      SCHEDULE_EXPR="0 ${at_hour} * * *"
+      SCHEDULE_DESC="Daily at ${at_hour}:00"
+      ;;
+    6)
+      echo "Weekday: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday"
+      read -r -p "Weekday (0-6): " day_num
+      read -r -p "Hour (0-23): " at_hour
+      if [[ ! "${day_num:-}" =~ ^[0-6]$ ]]; then
+        log_warn "Invalid weekday; defaulting to Sunday."
+        day_num=0
+      fi
+      if [[ ! "${at_hour:-}" =~ ^[0-9]+$ ]] || [ "${at_hour}" -lt 0 ] || [ "${at_hour}" -gt 23 ]; then
+        log_warn "Invalid hour; defaulting to 03:00."
+        at_hour=3
+      fi
+      case "${day_num}" in
+        0) day_name="Sunday" ;;
+        1) day_name="Monday" ;;
+        2) day_name="Tuesday" ;;
+        3) day_name="Wednesday" ;;
+        4) day_name="Thursday" ;;
+        5) day_name="Friday" ;;
+        6) day_name="Saturday" ;;
+      esac
+      SCHEDULE_EXPR="0 ${at_hour} * * ${day_num}"
+      SCHEDULE_DESC="Weekly on ${day_name} at ${at_hour}:00"
       ;;
     *)
       log_warn "Unknown option; defaulting to daily 03:00."
-      cron_expr="0 3 * * *"
+      SCHEDULE_EXPR="0 3 * * *"
+      SCHEDULE_DESC="Daily at 03:00"
       ;;
   esac
-  echo "${cron_expr}"
+
+  log_info "Selected schedule: ${SCHEDULE_DESC}"
+  log_info "Cron expression: ${SCHEDULE_EXPR}"
 }
 
 write_backup_wrapper() {
@@ -663,11 +763,19 @@ install_backup_cron() {
 set_backup_schedule() {
   assert_source_ready_or_fail
   ensure_cron_ready
-  local cron_expr
-  cron_expr="$(ask_backup_frequency)"
+  echo ""
+  echo -e "${WHITE}Local Backup Schedule Setup${NC}"
+  echo "This configures local backup archives in: ${BACKUP_DIR_DEFAULT}"
+  echo "No Telegram upload is used in this mode."
+  ask_backup_frequency
+  local cron_expr="${SCHEDULE_EXPR}"
+  if [ -z "${cron_expr}" ]; then
+    log_err "Schedule was not selected."
+    return 1
+  fi
   write_backup_wrapper "full" "0"
   install_backup_cron "${cron_expr}"
-  log_ok "Backup schedule saved."
+  log_ok "Backup schedule saved (${SCHEDULE_DESC})."
 
   log_info "Running a backup test..."
   bash "${BACKUP_SCRIPT_PATH}"
@@ -690,6 +798,13 @@ setup_telegram_backup() {
   echo ""
   echo -e "${YELLOW}Telegram Backup Setup (${mode})${NC}"
   echo -e "${GREY}--------------------------------------------------------------${NC}"
+  echo "Guide:"
+  echo "  1) Create a Telegram bot via @BotFather and copy bot token."
+  echo "  2) Get target chat id (user/group/channel) and paste chat id."
+  echo "  3) Choose a server prefix used in backup captions."
+  echo "  4) Select schedule (hourly options are available explicitly)."
+  echo "  5) Script runs a test backup and uploads it to Telegram."
+  echo ""
 
   local token_in chat_in prefix_in
   read -r -p "Bot Token [current: ${TG_BOT_TOKEN:+set}]: " token_in
@@ -713,13 +828,17 @@ setup_telegram_backup() {
   fi
   log_ok "Telegram credentials verified."
 
-  local cron_expr
-  cron_expr="$(ask_backup_frequency)"
+  ask_backup_frequency
+  local cron_expr="${SCHEDULE_EXPR}"
+  if [ -z "${cron_expr}" ]; then
+    log_err "Schedule was not selected."
+    return 1
+  fi
 
   save_telegram_config "${token}" "${chat}" "${prefix}" "${mode}"
   write_backup_wrapper "${mode}" "1"
   install_backup_cron "${cron_expr}"
-  log_ok "Telegram backup schedule saved."
+  log_ok "Telegram backup schedule saved (${SCHEDULE_DESC})."
 
   TELEGRAM_AUTO_UPLOAD="1"
   BACKUP_MODE="${mode}"
@@ -758,6 +877,12 @@ show_stack_status() {
 }
 
 run_install() {
+  echo ""
+  echo -e "${WHITE}Install Guide${NC}"
+  echo " - Installs/updates dependencies as needed."
+  echo " - Prepares .env and nginx config."
+  echo " - Starts stack and runs DB migrations."
+  echo ""
   ensure_source_tree
   if [ ! -x "${INSTALL_DIR}/installer/install.sh" ]; then
     chmod +x "${INSTALL_DIR}/installer/install.sh"
@@ -766,6 +891,12 @@ run_install() {
 }
 
 run_update() {
+  echo ""
+  echo -e "${WHITE}Update Guide${NC}"
+  echo " - Pulls latest source (if git exists)."
+  echo " - Rebuilds/recreates containers."
+  echo " - Applies latest migrations."
+  echo ""
   if ! assert_source_ready_or_fail; then
     return 1
   fi
@@ -782,6 +913,11 @@ uninstall_guardino() {
   ensure_docker_ready
   echo ""
   log_warn "This removes running services from INSTALL_DIR=${INSTALL_DIR}."
+  echo "Uninstall Guide:"
+  echo "  - This stops and removes Guardino containers."
+  echo "  - Optional volume wipe will delete PostgreSQL data permanently."
+  echo "  - If unsure, create a backup first."
+  echo ""
   read -r -p "Type UNINSTALL to continue: " confirm
   if [ "${confirm}" != "UNINSTALL" ]; then
     log_warn "Uninstall cancelled."
@@ -822,6 +958,7 @@ menu_loop() {
     echo -e "${GREY}--------------------------------------------------------------${NC}"
     echo -e "${YELLOW}SYSTEM${NC}"
     print_item 0 "Uninstall" "Stop services and optional data wipe"
+    print_item 12 "Help" "Show detailed text guide"
     print_item 9 "Exit" "Quit manager"
 
     echo ""
@@ -843,6 +980,7 @@ menu_loop() {
         pause_prompt
         ;;
       11) disable_backup_schedule; pause_prompt ;;
+      12) show_detailed_help; pause_prompt ;;
       0) uninstall_guardino; pause_prompt ;;
       9) clear; exit 0 ;;
       *) ;;
