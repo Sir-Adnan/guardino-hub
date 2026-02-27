@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
-from app.models.node import Node
+from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
 from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
@@ -52,15 +52,59 @@ async def _sync_usage_async():
             subs = sq.scalars().all()
 
             by_user: dict[int, list[SubAccount]] = {}
+            by_node: dict[int, list[SubAccount]] = {}
             node_ids: set[int] = set()
             for s in subs:
                 by_user.setdefault(s.user_id, []).append(s)
+                by_node.setdefault(s.node_id, []).append(s)
                 node_ids.add(s.node_id)
 
             nodes: dict[int, Node] = {}
             if node_ids:
                 nq = await db.execute(select(Node).where(Node.id.in_(list(node_ids))))
                 nodes = {n.id: n for n in nq.scalars().all()}
+
+            adapters: dict[int, object] = {}
+            for node_id, node in nodes.items():
+                try:
+                    adapters[node_id] = get_adapter(node)
+                except Exception as e:
+                    if failure_log_budget > 0:
+                        logger.warning(
+                            "sync_usage adapter init failed node_id=%s err=%s",
+                            node_id,
+                            str(e)[:220],
+                        )
+                        failure_log_budget -= 1
+
+            wg_usage_map_by_node: dict[int, dict[str, int | None]] = {}
+            wg_failed_nodes: set[int] = set()
+            for node_id, node in nodes.items():
+                if node.panel_type != PanelType.wg_dashboard:
+                    continue
+                adapter = adapters.get(node_id)
+                node_subs = by_node.get(node_id, [])
+                if not adapter:
+                    wg_failed_nodes.add(node_id)
+                    stats.remote_failures += len(node_subs)
+                    continue
+                try:
+                    if hasattr(adapter, "get_used_bytes_many"):
+                        ids = [str(s.remote_identifier or "").strip() for s in node_subs if str(s.remote_identifier or "").strip()]
+                        wg_usage_map_by_node[node_id] = await adapter.get_used_bytes_many(ids)  # type: ignore[attr-defined]
+                    else:
+                        wg_usage_map_by_node[node_id] = {}
+                except Exception as e:
+                    wg_failed_nodes.add(node_id)
+                    stats.remote_failures += len(node_subs)
+                    if failure_log_budget > 0:
+                        logger.warning(
+                            "sync_usage WG bulk fetch failed node_id=%s peers=%s err=%s",
+                            node_id,
+                            len(node_subs),
+                            str(e)[:220],
+                        )
+                        failure_log_budget -= 1
 
             for u in users:
                 u_subs = by_user.get(u.id, [])
@@ -75,8 +119,31 @@ async def _sync_usage_async():
                     if not n:
                         total_used += effective_used
                         continue
+                    adapter = adapters.get(s.node_id)
+                    if not adapter:
+                        if n.panel_type == PanelType.wg_dashboard and s.node_id in wg_failed_nodes:
+                            total_used += effective_used
+                            continue
+                        stats.remote_failures += 1
+                        total_used += effective_used
+                        continue
+                    if n.panel_type == PanelType.wg_dashboard:
+                        if s.node_id in wg_failed_nodes:
+                            total_used += effective_used
+                            continue
+                        used = wg_usage_map_by_node.get(s.node_id, {}).get(str(s.remote_identifier or "").strip())
+                        if used is None:
+                            stats.remote_skipped += 1
+                            total_used += effective_used
+                            continue
+                        effective_used = max(0, int(used))
+                        s.used_bytes = effective_used
+                        s.last_sync_at = now
+                        remote_success_count += 1
+                        stats.remote_success += 1
+                        total_used += effective_used
+                        continue
                     try:
-                        adapter = get_adapter(n)
                         used = await adapter.get_used_bytes(s.remote_identifier)
                         if used is None:
                             stats.remote_skipped += 1
@@ -115,7 +182,7 @@ async def _sync_usage_async():
                         if not n:
                             continue
                         try:
-                            adapter = get_adapter(n)
+                            adapter = adapters.get(s.node_id) or get_adapter(n)
                             await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
                             stats.remote_actions += 1
                         except Exception:
