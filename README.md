@@ -123,6 +123,7 @@ Menu includes:
 - Restore backup
 - Disable backup jobs
 - Uninstall
+- Detailed help page (`Help` option in menu)
 
 ### Non-interactive commands
 
@@ -181,8 +182,19 @@ Flow:
 1. Enter bot token
 2. Enter chat ID
 3. Verify Telegram connection
-4. Choose schedule (30 min / every X hours / daily)
+4. Choose schedule:
+   - every 30 minutes
+   - every 1 hour
+   - every 2 hours
+   - every X hours (custom)
+   - daily
+   - weekly
 5. Auto-test backup + upload
+
+Where to get values:
+
+- **Bot Token:** create bot with `@BotFather`
+- **Chat ID:** use bots like `@userinfobot` (for personal chat) or group chat id tools for groups/channels
 
 Config file is stored at:
 
@@ -370,4 +382,3 @@ Guardino Hub یک پنل مرکزی برای مدیریت فروش VPN روی چ
 ```bash
 bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
 ```
-
