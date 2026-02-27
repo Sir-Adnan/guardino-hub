@@ -29,6 +29,8 @@ class WGDashboardAdapter:
     remote_identifier is stored as WG peer id/public_key (base64).
     """
     BYTES_PER_GB = 1024 ** 3
+    _TRAFFIC_FIELDS = {"total_receive", "total_sent", "total_data"}
+    _EXPIRY_FIELDS = {"date", "datetime", "expire", "expire_at", "expire_date"}
 
     def __init__(self, base_url: str, credentials: dict[str, Any], verify_ssl: bool = True, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
@@ -142,51 +144,155 @@ class WGDashboardAdapter:
                 return peer
         return None
 
-    async def _delete_peer_volume_jobs(self, remote_identifier: str) -> None:
+    @staticmethod
+    def _job_field(job: dict[str, Any]) -> str:
+        return str(job.get("Field") or "").strip().lower()
+
+    @staticmethod
+    def _job_action(job: dict[str, Any]) -> str:
+        return str(job.get("Action") or "").strip().lower()
+
+    @staticmethod
+    def _looks_like_datetime(value: str) -> bool:
+        s = str(value or "").strip()
+        if not s:
+            return False
+        try:
+            datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _format_job_datetime(value: datetime) -> str:
+        # WGDashboard schedule jobs expect "YYYY-mm-dd HH:MM:SS" string.
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _is_volume_job(self, job: dict[str, Any], remote_identifier: str) -> bool:
+        if str(job.get("Peer") or "") != str(remote_identifier):
+            return False
+        return self._job_field(job) == "total_data" and self._job_action(job) == "restrict"
+
+    def _is_expiry_job(self, job: dict[str, Any], remote_identifier: str) -> bool:
+        if str(job.get("Peer") or "") != str(remote_identifier):
+            return False
+        field = self._job_field(job)
+        if field in self._EXPIRY_FIELDS:
+            return True
+        # Backward/legacy compatibility: any datetime-based restrict/delete rule.
+        if field in self._TRAFFIC_FIELDS:
+            return False
+        if self._job_action(job) not in {"restrict", "delete"}:
+            return False
+        return self._looks_like_datetime(str(job.get("Value") or ""))
+
+    async def _list_peer_jobs(self, remote_identifier: str) -> list[dict[str, Any]]:
         peer = await self._get_peer_info(remote_identifier)
         if not isinstance(peer, dict):
-            return
+            return []
         jobs = peer.get("jobs")
         if not isinstance(jobs, list):
-            return
+            return []
+        out: list[dict[str, Any]] = []
         for job in jobs:
             if not isinstance(job, dict):
                 continue
             if str(job.get("Peer") or "") != str(remote_identifier):
                 continue
-            if str(job.get("Field") or "").lower() != "total_data":
-                continue
-            if str(job.get("Action") or "").lower() != "restrict":
+            out.append(job)
+        return out
+
+    async def _delete_peer_jobs(
+        self,
+        remote_identifier: str,
+        matcher,
+    ) -> None:
+        jobs = await self._list_peer_jobs(remote_identifier)
+        for job in jobs:
+            if not matcher(job, remote_identifier):
                 continue
             try:
                 await self._post_json("/api/deletePeerScheduleJob", {"Job": job})
             except Exception:
-                # best-effort cleanup to avoid duplicate/legacy jobs
+                # best-effort cleanup
+                continue
+
+    async def _delete_peer_volume_jobs(self, remote_identifier: str) -> None:
+        await self._delete_peer_jobs(remote_identifier, self._is_volume_job)
+
+    async def _delete_peer_expiry_jobs(self, remote_identifier: str) -> None:
+        await self._delete_peer_jobs(remote_identifier, self._is_expiry_job)
+
+    async def _upsert_peer_schedule_job(
+        self,
+        remote_identifier: str,
+        *,
+        field: str,
+        operator: str,
+        value: str,
+        action: str,
+        matcher,
+    ) -> None:
+        config_name = await self._resolve_configuration_name()
+        jobs = await self._list_peer_jobs(remote_identifier)
+        matched = [j for j in jobs if matcher(j, remote_identifier)]
+        current = matched[0] if matched else None
+
+        job = {
+            "JobID": str((current or {}).get("JobID") or str(uuid.uuid4())),
+            "Configuration": config_name,
+            "Peer": str(remote_identifier),
+            "Field": field,
+            "Operator": operator,
+            "Value": str(value),
+            "CreationDate": str((current or {}).get("CreationDate") or ""),
+            "ExpireDate": str((current or {}).get("ExpireDate") or ""),
+            "Action": action,
+        }
+        await self._post_json("/api/savePeerScheduleJob", {"Job": job})
+
+        # Keep a single active job for this rule kind.
+        keep_id = str(job["JobID"])
+        for old in matched[1:]:
+            old_id = str(old.get("JobID") or "")
+            if not old_id or old_id == keep_id:
+                continue
+            try:
+                await self._post_json("/api/deletePeerScheduleJob", {"Job": old})
+            except Exception:
                 continue
 
     async def _sync_peer_volume_job(self, remote_identifier: str, total_gb: int) -> None:
         safe_total = max(0, int(total_gb))
-        await self._delete_peer_volume_jobs(remote_identifier)
         if safe_total <= 0:
+            await self._delete_peer_volume_jobs(remote_identifier)
             return
 
-        config_name = await self._resolve_configuration_name()
         value_bytes = safe_total * self.BYTES_PER_GB
-        stable_job_id = str(
-            uuid.uuid5(uuid.NAMESPACE_URL, f"guardino:{self.base_url}:{config_name}:{remote_identifier}:total_data")
+        await self._upsert_peer_schedule_job(
+            remote_identifier,
+            field="total_data",
+            operator="lgt",
+            value=str(value_bytes),
+            action="restrict",
+            matcher=self._is_volume_job,
         )
-        job = {
-            "JobID": stable_job_id,
-            "Configuration": config_name,
-            "Peer": str(remote_identifier),
-            "Field": "total_data",
-            "Operator": "lgt",
-            "Value": str(value_bytes),
-            "CreationDate": "",
-            "ExpireDate": "",
-            "Action": "restrict",
-        }
-        await self._post_json("/api/savePeerScheduleJob", {"Job": job})
+
+    async def _sync_peer_expiry_job(self, remote_identifier: str, expire_at: datetime) -> None:
+        # Guardino uses far-future timestamp for "no-expire"; skip creating expiry jobs for that case.
+        now_ref = datetime.now(tz=expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
+        if (expire_at - now_ref).total_seconds() >= (36500 * 86400) - 60:
+            await self._delete_peer_expiry_jobs(remote_identifier)
+            return
+
+        await self._upsert_peer_schedule_job(
+            remote_identifier,
+            field="date",
+            operator="lgt",
+            value=self._format_job_datetime(expire_at),
+            action="restrict",
+            matcher=self._is_expiry_job,
+        )
 
     async def _build_add_peer_payload(self, label: str) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -263,6 +369,11 @@ class WGDashboardAdapter:
         except Exception:
             # Guardino local enforcement still applies even if peer job fails.
             pass
+        try:
+            await self._sync_peer_expiry_job(remote_identifier, expire_at)
+        except Exception:
+            # Guardino local enforcement still applies even if peer job fails.
+            pass
 
         direct = await self.get_direct_subscription_url(remote_identifier)
         return ProvisionResult(
@@ -277,13 +388,18 @@ class WGDashboardAdapter:
 
     async def update_user_limits(self, remote_identifier: str, total_gb: int, expire_at: datetime) -> None:
         # WGDashboard does not have native quota/expiry fields per peer.
-        # We mirror Guardino traffic limit via peer schedule jobs.
+        # Mirror Guardino limits using peer schedule jobs.
         await self._sync_peer_volume_job(remote_identifier, total_gb)
+        await self._sync_peer_expiry_job(remote_identifier, expire_at)
 
     async def delete_user(self, remote_identifier: str) -> None:
         config_name = await self._resolve_configuration_name()
         try:
             await self._delete_peer_volume_jobs(remote_identifier)
+        except Exception:
+            pass
+        try:
+            await self._delete_peer_expiry_jobs(remote_identifier)
         except Exception:
             pass
         await self._post_json(f"/api/deletePeers/{config_name}", {"peers": [remote_identifier]})
