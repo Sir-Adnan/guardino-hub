@@ -407,7 +407,17 @@ class WGDashboardAdapter:
     async def set_status(self, remote_identifier: str, status: str) -> None:
         config_name = await self._resolve_configuration_name()
         if status == "active":
-            await self._post_json(f"/api/allowAccessPeers/{config_name}", {"peers": [remote_identifier]})
+            try:
+                await self._post_json(f"/api/allowAccessPeers/{config_name}", {"peers": [remote_identifier]})
+            except AdapterError as e:
+                # Some WGDashboard builds return status=false for peers that are already allowed.
+                # Treat this specific case as idempotent success when the peer still exists.
+                msg = str(e).lower()
+                if "failed to allow access of peer" in msg:
+                    peer = await self._get_peer_info(remote_identifier)
+                    if isinstance(peer, dict):
+                        return
+                raise
         else:
             await self._post_json(f"/api/restrictPeers/{config_name}", {"peers": [remote_identifier]})
 
