@@ -270,8 +270,9 @@ export default function NewUserPage() {
 
   function randomName() {
     const v = randomLabel();
-    if (!label.trim()) setLabel(v);
+    setLabel(v);
     setUsername(v);
+    if (randomize) setRandomize(false);
   }
 
   async function loadNodes() {
