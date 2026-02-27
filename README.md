@@ -257,6 +257,17 @@ bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/
 sudo bash installer/install.sh
 ```
 
+### Update Existing Deployment
+
+```bash
+sudo bash installer/update.sh
+```
+
+What it enforces on every update:
+- keeps sync intervals in `.env` (`USAGE_SYNC_SECONDS=60`, `EXPIRY_SYNC_SECONDS=60`),
+- recreates services (applies restart policy / image changes),
+- runs DB migrations.
+
 ---
 
 ## Configuration
