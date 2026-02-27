@@ -72,7 +72,6 @@ def _safe_conf_filename(name: str | None, fallback: str) -> str:
 
 def _render_sub_page(
     *,
-    token: str,
     user: GuardinoUser,
     master_raw_link: str,
     node_links: list[dict[str, str]],
@@ -212,8 +211,6 @@ def _render_sub_page(
     generated_iso = html.escape(now.isoformat())
     master_link_html = html.escape(master_raw_link)
     master_link_attr = html.escape(master_raw_link, quote=True)
-    token_html = html.escape(token)
-    token_attr = html.escape(token, quote=True)
 
     return f"""<!doctype html>
 <html lang="fa" dir="rtl">
@@ -435,14 +432,6 @@ def _render_sub_page(
     html[data-theme="night"] .theme-icon {{
       background: linear-gradient(135deg, #64748b, #94a3b8);
     }}
-    .token-line {{
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-      font-size: 12px;
-      color: var(--muted);
-    }}
     .mono {{
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
@@ -568,7 +557,7 @@ def _render_sub_page(
     .grid-2 {{
       display: grid;
       gap: 10px;
-      grid-template-columns: 1.2fr .8fr;
+      grid-template-columns: 1fr;
     }}
     .analytics {{
       padding: 14px;
@@ -1058,8 +1047,8 @@ def _render_sub_page(
             </svg>
           </div>
           <div>
-            <h1 class="hero-title">داشبورد مدیریت اشتراک</h1>
-            <p class="hero-subtitle">نمای کامل وضعیت سرویس، لینک اصلی اشتراک و لینک‌های مستقیم برای اتصال سریع در کلاینت‌های VPN.</p>
+            <h1 class="hero-title">وضعیت اشتراک شما</h1>
+            <p class="hero-subtitle">نمای خلاصه وضعیت سرویس، حجم و زمان باقی‌مانده و لینک‌های اتصال.</p>
           </div>
         </div>
         <div class="top-actions">
@@ -1070,11 +1059,6 @@ def _render_sub_page(
           <button type="button" class="btn btn-soft copy-btn" data-copy="{master_link_attr}">کپی لینک اصلی</button>
           <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک اصلی</a>
         </div>
-      </div>
-      <div class="token-line">
-        <span>توکن کاربر:</span>
-        <span class="mono">{token_html}</span>
-        <button type="button" class="btn btn-soft copy-btn" data-copy="{token_attr}">کپی توکن</button>
       </div>
       <div class="mini-chips">
         <span class="badge {expiry_badge}">{expiry_state}</span>
@@ -1129,8 +1113,8 @@ def _render_sub_page(
       <article class="glass analytics reveal" style="--delay:.27s">
         <div class="section-head">
           <div>
-            <h2 class="section-title">تحلیل مصرف و زمان</h2>
-            <p class="section-sub">نمودار مصرف حجم، روند زمانی اشتراک، و جزئیات تخصیص.</p>
+            <h2 class="section-title">خلاصه مصرف و زمان</h2>
+            <p class="section-sub">نمای سریع مصرف حجم و وضعیت زمانی اشتراک.</p>
           </div>
           <span class="badge neutral">شناسه کاربر: <span data-number="{user.id}">{user.id}</span></span>
         </div>
@@ -1166,38 +1150,6 @@ def _render_sub_page(
         </div>
       </article>
 
-      <article class="glass analytics reveal" style="--delay:.30s">
-        <div class="section-head">
-          <div>
-            <h2 class="section-title">راهنمای استفاده سریع</h2>
-            <p class="section-sub">مراحل پیشنهادی برای اتصال پایدار در کلاینت‌های مختلف.</p>
-          </div>
-          <span class="badge neutral">لینک‌های آماده: <span data-number="{total_links}">{total_links}</span></span>
-        </div>
-        <div class="progress-list">
-            <div class="progress-item">
-              <div class="progress-meta">
-                <span>۱) لینک اصلی اشتراک</span>
-                <strong>پیشنهادی</strong>
-              </div>
-              <div class="muted">ابتدا لینک اصلی را کپی کنید و در کلاینت وارد کنید تا همه نودها یکجا لود شوند.</div>
-            </div>
-            <div class="progress-item">
-              <div class="progress-meta">
-                <span>۲) لینک مستقیم نود</span>
-                <strong>جایگزین</strong>
-              </div>
-              <div class="muted">اگر کلاینت شما با لینک اصلی سازگار نیست، از لینک‌های مستقیم همین صفحه استفاده کنید.</div>
-            </div>
-          <div class="progress-item">
-            <div class="progress-meta">
-              <span>۳) انقضا و مصرف</span>
-              <strong>پایش روزانه</strong>
-            </div>
-            <div class="muted">تاریخ انقضا و درصد مصرف را بررسی کنید تا پیش از قطع سرویس، تمدید انجام شود.</div>
-          </div>
-        </div>
-      </article>
     </section>
 
     <section class="glass master reveal" style="--delay:.33s">
@@ -1228,6 +1180,7 @@ def _render_sub_page(
     <footer class="foot-note">
       زمان تولید صفحه:
       <span class="jalali" data-jalali="datetime" data-iso="{generated_iso}" data-fallback="{generated_text}">{generated_text}</span>
+      • بروزرسانی خودکار هر ۶۰ ثانیه
     </footer>
   </main>
   <div id="toast" class="toast"></div>
@@ -1325,7 +1278,7 @@ def _render_sub_page(
         return false;
       }}
       try {{
-        if (navigator.clipboard && window.isSecureContext) {{
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
           await navigator.clipboard.writeText(value);
           showToast("با موفقیت کپی شد", "ok");
           return true;
@@ -1385,11 +1338,19 @@ def _render_sub_page(
       }});
     }}
 
+    function initAutoRefresh() {{
+      setInterval(() => {{
+        if (document.hidden) return;
+        window.location.reload();
+      }}, 60000);
+    }}
+
     initTheme();
     bindCopyButtons();
     initStatusModal();
     renderFaNumbers();
     renderJalaliDates();
+    initAutoRefresh();
   </script>
 </body>
 </html>"""
@@ -1406,6 +1367,11 @@ async def _get_user_by_token(db: AsyncSession, token: str) -> GuardinoUser:
 @router.get("/sub/{token}")
 async def subscription(token: str, request: Request, db: AsyncSession = Depends(get_db)):
     user = await _get_user_by_token(db, token)
+    no_store_headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
 
     # Resolve nodes for this user:
     # - If manual: nodes from subaccounts
@@ -1452,7 +1418,7 @@ async def subscription(token: str, request: Request, db: AsyncSession = Depends(
     qs2 = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs2.scalars().all()
     if not subs:
-        return Response(content=merge_subscriptions([]), media_type="text/plain")
+        return Response(content=merge_subscriptions([]), media_type="text/plain", headers=no_store_headers)
 
     node_ids = [sa.node_id for sa in subs]
     qn2 = await db.execute(select(Node).where(Node.id.in_(node_ids)))
@@ -1560,14 +1526,14 @@ async def subscription(token: str, request: Request, db: AsyncSession = Depends(
     if _wants_html(request):
         return HTMLResponse(
             _render_sub_page(
-                token=token,
                 user=user,
                 master_raw_link=f"{base}/api/v1/sub/{token}?raw=1",
                 node_links=node_links_for_view,
-            )
+            ),
+            headers=no_store_headers,
         )
 
-    return Response(content=merged_b64, media_type="text/plain")
+    return Response(content=merged_b64, media_type="text/plain", headers=no_store_headers)
 
 
 @router.get("/sub/wg/{token}/{node_id}.conf")
