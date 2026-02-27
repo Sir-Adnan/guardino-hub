@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -163,7 +163,6 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 
 export default function NewUserPage() {
   const r = useRouter();
-  const searchParams = useSearchParams();
   const { push } = useToast();
   const { t } = useI18n();
   const { refresh: refreshMe } = useAuth();
@@ -329,10 +328,11 @@ export default function NewUserPage() {
     if (appliedNodeSelectionFromUrlRef.current) return;
     appliedNodeSelectionFromUrlRef.current = true;
 
-    const rawNodeIds = String(searchParams.get("node_ids") || "").trim();
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const rawNodeIds = String(params.get("node_ids") || "").trim();
     if (!rawNodeIds) return;
 
-    const mode = String(searchParams.get("node_mode") || "").trim().toLowerCase();
+    const mode = String(params.get("node_mode") || "").trim().toLowerCase();
     const parsedIds = Array.from(
       new Set(
         rawNodeIds
@@ -356,7 +356,7 @@ export default function NewUserPage() {
       desc: `${allowedIds.length} نود از صفحه نودها اعمال شد.`,
       type: "success",
     });
-  }, [nodes, defaultsLoaded, searchParams, push]);
+  }, [nodes, defaultsLoaded, push]);
 
   React.useEffect(() => {
     if (!effectiveDurationPresets.length) return;
