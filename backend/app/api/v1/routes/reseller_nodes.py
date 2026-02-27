@@ -27,7 +27,8 @@ async def list_allowed_nodes(request: Request, db: AsyncSession = Depends(get_db
         items.append({
             "id": node.id,
             "name": node.name,
-            "base_url": node.base_url,
+            # Security: do not expose raw node base URL in reseller node listing.
+            "public_code": f"N-{node.id:04d}",
             "panel_type": node.panel_type.value,
             "tags": node.tags,
             "is_visible_in_sub": node.is_visible_in_sub,
