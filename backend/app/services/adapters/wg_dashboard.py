@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 
@@ -63,6 +63,24 @@ class WGDashboardAdapter:
             return int(str(value).strip())
         except Exception:
             return default
+
+    @staticmethod
+    def _as_optional_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        try:
+            s = str(value).strip()
+            if not s:
+                return None
+            return int(float(s))
+        except Exception:
+            return None
 
     @staticmethod
     def _as_bool(value: Any, default: bool) -> bool:
@@ -137,10 +155,22 @@ class WGDashboardAdapter:
         peers = data.get("configurationPeers")
         if not isinstance(peers, list):
             return None
+        target = str(remote_identifier or "").strip()
+        target_unquoted = unquote(target)
+        target_candidates = {target, target_unquoted}
         for peer in peers:
             if not isinstance(peer, dict):
                 continue
-            if str(peer.get("id") or "") == str(remote_identifier):
+            candidate_values = {
+                str(peer.get("id") or "").strip(),
+                str(peer.get("peer_id") or "").strip(),
+                str(peer.get("peerId") or "").strip(),
+                str(peer.get("public_key") or "").strip(),
+                str(peer.get("publicKey") or "").strip(),
+                str(peer.get("client_public_key") or "").strip(),
+                str(peer.get("clientPublicKey") or "").strip(),
+            }
+            if target_candidates.intersection({v for v in candidate_values if v}):
                 return peer
         return None
 
@@ -463,8 +493,24 @@ class WGDashboardAdapter:
         peer = await self._get_peer_info(remote_identifier)
         if not isinstance(peer, dict):
             return None
-        val = peer.get("total_data")
-        try:
-            return int(val)
-        except Exception:
+        # Different WGDashboard builds expose different field names.
+        for key in ("total_data", "totalData", "total_traffic", "totalTraffic"):
+            parsed = self._as_optional_int(peer.get(key))
+            if parsed is not None:
+                return max(0, parsed)
+
+        recv = self._as_optional_int(peer.get("total_receive"))
+        if recv is None:
+            recv = self._as_optional_int(peer.get("totalReceive"))
+        if recv is None:
+            recv = self._as_optional_int(peer.get("download"))
+
+        sent = self._as_optional_int(peer.get("total_sent"))
+        if sent is None:
+            sent = self._as_optional_int(peer.get("totalSent"))
+        if sent is None:
+            sent = self._as_optional_int(peer.get("upload"))
+
+        if recv is None and sent is None:
             return None
+        return max(0, (recv or 0) + (sent or 0))
