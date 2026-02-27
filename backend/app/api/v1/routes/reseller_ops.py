@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
+import secrets
 
 from app.core.db import get_db
 from app.api.deps import block_if_balance_zero
@@ -66,6 +67,15 @@ def _raise_remote_sync_failed_with_rollback(action: str, errors: list[str], roll
         rollback_sample = " | ".join(rollback_errors[:2])
         detail = f"{detail} || rollback failed on {len(rollback_errors)} node(s): {rollback_sample}"
     raise HTTPException(status_code=502, detail=detail)
+
+
+async def _new_unique_master_sub_token(db: AsyncSession) -> str:
+    for _ in range(8):
+        candidate = secrets.token_hex(16)
+        q = await db.execute(select(GuardinoUser.id).where(GuardinoUser.master_sub_token == candidate))
+        if q.scalar_one_or_none() is None:
+            return candidate
+    return secrets.token_hex(24)
 
 
 def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
@@ -588,5 +598,8 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
 
     _raise_remote_sync_failed("Revoke subscription", remote_sync_errors)
 
+    # Rotate master subscription token as well so old central link is invalidated.
+    user.master_sub_token = await _new_unique_master_sub_token(db)
+
     await db.commit()
-    return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+    return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail="master_sub_rotated=1")
