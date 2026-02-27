@@ -10,7 +10,6 @@ from app.models.reseller import Reseller
 from app.models.user import GuardinoUser, UserStatus, NodeSelectionMode
 from app.models.subaccount import SubAccount
 from app.models.node import Node
-from app.models.node_allocation import NodeAllocation
 from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.services.pricing import calculate_price, resolve_allowed_nodes
@@ -29,6 +28,17 @@ def _now():
 
 def _short_err(e: Exception, size: int = 140) -> str:
     return str(e).strip().replace("\n", " ")[:size]
+
+
+def _raise_remote_sync_failed(action: str, errors: list[str]) -> None:
+    if not errors:
+        return
+    sample = " | ".join(errors[:3])
+    raise HTTPException(
+        status_code=502,
+        detail=f"{action} sync failed on {len(errors)} node(s): {sample}",
+    )
+
 
 def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     if not direct:
@@ -97,27 +107,28 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
 
     user.expire_at = user.expire_at + timedelta(days=int(payload.days))
 
-    # Update remote panels (best-effort)
+    # Update remote panels before local financial commit.
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs_sub.scalars().all()
+    remote_sync_errors: list[str] = []
     if subs:
         qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
         node_map = {n.id: n for n in qn.scalars().all()}
         for s in subs:
             n = node_map.get(s.node_id)
             if not n:
+                remote_sync_errors.append(f"node#{s.node_id}: node not found")
+                continue
+            adapter = get_adapter(n)
+            try:
+                await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
                 continue
             try:
-                adapter = get_adapter(n)
-                await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
-            except Exception:
-                # best-effort
-                pass
-            try:
-                adapter = get_adapter(n)
                 await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
-            except Exception:
-                pass
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
 
             # WGDashboard share links (legacy support) - best-effort
             try:
@@ -139,6 +150,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
                             )
             except Exception:
                 pass
+    _raise_remote_sync_failed("Extend", remote_sync_errors)
     now = _now()
     charged = 0
     if time_amount > 0:
@@ -176,32 +188,42 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
 
     user.total_gb = int(user.total_gb) + int(payload.add_gb)
 
-    # Update remote panels (best-effort)
+    # Update remote panels before local financial commit.
     qn2 = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
     node_map2 = {n.id: n for n in qn2.scalars().all()}
+    remote_sync_errors: list[str] = []
     for s in subs:
         n = node_map2.get(s.node_id)
         if not n:
+            remote_sync_errors.append(f"node#{s.node_id}: node not found")
+            continue
+        adapter = get_adapter(n)
+        try:
+            await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+        except Exception as e:
+            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
             continue
         try:
-            adapter = get_adapter(n)
-            await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
-            try:
-                await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
-            except Exception:
-                pass
-            # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
-            try:
-                if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
-                    qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
-                    sid = (qs.get("ShareID") or [None])[0]
-                    if sid and getattr(n, 'panel_type', None) and n.panel_type.value == 'wg_dashboard':
-                        async with build_async_client() as client:
-                            await client.post(f"{n.base_url.rstrip('/')}/api/sharePeer/update", headers={"wg-dashboard-apikey": n.credentials.get("apikey","")}, json={"ShareID": sid, "ExpireDate": user.expire_at.strftime('%Y-%m-%d %H:%M:%S')})
-            except Exception:
-                pass
+            await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
+        except Exception as e:
+            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            continue
+        # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
+        try:
+            if s.panel_sub_url_cached and "sharePeer/get" in s.panel_sub_url_cached and "ShareID=" in s.panel_sub_url_cached:
+                qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
+                sid = (qs.get("ShareID") or [None])[0]
+                if sid and getattr(n, "panel_type", None) and n.panel_type.value == "wg_dashboard":
+                    async with build_async_client() as client:
+                        await client.post(
+                            f"{n.base_url.rstrip('/')}/api/sharePeer/update",
+                            headers={"wg-dashboard-apikey": (n.credentials or {}).get("apikey", "")},
+                            json={"ShareID": sid, "ExpireDate": user.expire_at.strftime("%Y-%m-%d %H:%M:%S")},
+                        )
         except Exception:
             pass
+
+    _raise_remote_sync_failed("Add traffic", remote_sync_errors)
 
     now = _now()
     reseller.balance -= total_amount
@@ -241,14 +263,19 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
         for sa in subs:
             if sa.node_id in remove_ids:
                 n = node_map_remove.get(sa.node_id)
-                if n:
-                    try:
-                        adapter = get_adapter(n)
-                        await adapter.delete_user(sa.remote_identifier)
-                    except Exception as e:
-                        remove_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+                if not n:
+                    remove_errors.append(f"node#{sa.node_id}: node not found")
+                    continue
+                try:
+                    adapter = get_adapter(n)
+                    await adapter.delete_user(sa.remote_identifier)
+                except Exception as e:
+                    remove_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+                    continue
                 await db.delete(sa)
                 removed_count += 1
+
+    _raise_remote_sync_failed("Change nodes (remove)", remove_errors)
 
     charged = 0
     now = _now()
@@ -266,21 +293,36 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
             db.add(order)
             await db.flush()
 
-            # Provision on each added node (real adapters)
-            for n in nodes:
-                adapter = get_adapter(n)
-                pr = await adapter.provision_user(label=user.label, total_gb=int(user.total_gb), expire_at=user.expire_at)
-                direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
-                db.add(
-                    SubAccount(
-                        user_id=user.id,
-                        node_id=n.id,
-                        remote_identifier=pr.remote_identifier,
-                        panel_sub_url_cached=direct_url,
-                        panel_sub_url_cached_at=now if direct_url else None,
-                        used_bytes=0,
+            # Provision on each added node; if partial failure happens, try best-effort cleanup.
+            provisioned_remote: list[tuple[Node, str]] = []
+            try:
+                for n in nodes:
+                    adapter = get_adapter(n)
+                    pr = await adapter.provision_user(label=user.label, total_gb=int(user.total_gb), expire_at=user.expire_at)
+                    provisioned_remote.append((n, pr.remote_identifier))
+                    direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
+                    db.add(
+                        SubAccount(
+                            user_id=user.id,
+                            node_id=n.id,
+                            remote_identifier=pr.remote_identifier,
+                            panel_sub_url_cached=direct_url,
+                            panel_sub_url_cached_at=now if direct_url else None,
+                            used_bytes=0,
+                        )
                     )
-                )
+            except Exception as e:
+                cleanup_errors: list[str] = []
+                for pn, rid in provisioned_remote:
+                    try:
+                        cleanup_adapter = get_adapter(pn)
+                        await cleanup_adapter.delete_user(rid)
+                    except Exception as ce:
+                        cleanup_errors.append(f"node#{pn.id}: {_short_err(ce)}")
+                detail = f"Change nodes provision failed: {_short_err(e)}"
+                if cleanup_errors:
+                    detail = f"{detail}; cleanup_failures={len(cleanup_errors)}"
+                raise HTTPException(status_code=502, detail=detail)
 
             reseller.balance -= total_amount
             charged = total_amount
@@ -289,8 +331,8 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
 
     await db.commit()
     detail = None
-    if removed_count or remove_errors:
-        detail = f"removed_nodes={removed_count}; remote_delete_errors={len(remove_errors)}"
+    if removed_count:
+        detail = f"removed_nodes={removed_count}"
     return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail=detail)
 
 @router.post("/{user_id}/refund", response_model=OpResult)
@@ -349,12 +391,7 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
 
     if payload.action == "delete":
         _removed, remote_delete_errors = await _delete_subaccounts_remote_first(db, subs, node_map)
-        if remote_delete_errors:
-            sample = " | ".join(remote_delete_errors[:3])
-            raise HTTPException(
-                status_code=502,
-                detail=f"Delete sync failed on {len(remote_delete_errors)} node(s): {sample}",
-            )
+        _raise_remote_sync_failed("Delete", remote_delete_errors)
         user.status = UserStatus.deleted
         user.used_bytes = 0
     else:
@@ -362,12 +399,14 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
         for sa in subs:
             n = node_map.get(sa.node_id)
             if not n:
+                remote_limit_errors.append(f"node#{sa.node_id}: node not found")
                 continue
             try:
                 adapter = get_adapter(n)
                 await adapter.update_user_limits(sa.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             except Exception as e:
                 remote_limit_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+        _raise_remote_sync_failed("Refund/decrease", remote_limit_errors)
 
     now = _now()
     if refund_amount > 0:
@@ -386,10 +425,6 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
 
     await db.commit()
     detail_parts = [f"refunded_gb={refund_gb}"]
-    if remote_delete_errors:
-        detail_parts.append(f"remote_delete_errors={len(remote_delete_errors)}")
-    if remote_limit_errors:
-        detail_parts.append(f"remote_limit_errors={len(remote_limit_errors)}")
     return OpResult(
         ok=True,
         charged_amount=0,
@@ -412,12 +447,14 @@ async def set_user_status(user_id: int, payload: SetStatusRequest, db: AsyncSess
 
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs_sub.scalars().all()
+    remote_sync_errors: list[str] = []
     if subs:
         qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
         node_map = {n.id: n for n in qn.scalars().all()}
         for s in subs:
             n = node_map.get(s.node_id)
             if not n:
+                remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
             try:
                 adapter = get_adapter(n)
@@ -425,8 +462,10 @@ async def set_user_status(user_id: int, payload: SetStatusRequest, db: AsyncSess
                     await adapter.enable_user(s.remote_identifier)
                 else:
                     await adapter.disable_user(s.remote_identifier)
-            except Exception:
-                pass
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+
+    _raise_remote_sync_failed("Set status", remote_sync_errors)
 
     await db.commit()
     return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
@@ -441,19 +480,24 @@ async def reset_user_usage(user_id: int, db: AsyncSession = Depends(get_db), res
 
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs_sub.scalars().all()
+    remote_sync_errors: list[str] = []
     if subs:
         qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
         node_map = {n.id: n for n in qn.scalars().all()}
         for s in subs:
             n = node_map.get(s.node_id)
             if not n:
+                remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
             try:
                 adapter = get_adapter(n)
                 await adapter.reset_usage(s.remote_identifier)
-            except Exception:
-                pass
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                continue
             s.used_bytes = 0
+
+    _raise_remote_sync_failed("Reset usage", remote_sync_errors)
 
     user.used_bytes = 0
     await db.commit()
@@ -475,11 +519,13 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
     qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
     node_map = {n.id: n for n in qn.scalars().all()}
     now = _now()
+    remote_sync_errors: list[str] = []
 
-    # Best-effort across nodes. For WGDashboard: delete & recreate (link changes).
+    # Revoke across all nodes and fail if any remote call fails.
     for s in subs:
         n = node_map.get(s.node_id)
         if not n:
+            remote_sync_errors.append(f"node#{s.node_id}: node not found")
             continue
         try:
             adapter = get_adapter(n)
@@ -489,8 +535,10 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
             if pr.direct_sub_url:
                 s.panel_sub_url_cached = _normalize_url(pr.direct_sub_url, n.base_url) or pr.direct_sub_url
                 s.panel_sub_url_cached_at = now
-        except Exception:
-            pass
+        except Exception as e:
+            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+
+    _raise_remote_sync_failed("Revoke subscription", remote_sync_errors)
 
     await db.commit()
     return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
