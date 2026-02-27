@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: bash deploy/restore.sh [/opt/guardino-hub] path/to/db_dump.sql
-ROOT="${1:-$(pwd)}"
-DUMP="${2:-}"
+# Usage: bash deploy/restore.sh [/opt/guardino-hub] path/to/guardino_backup_*.tar.gz
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+ARCHIVE="${2:-}"
 
-if [ -z "$DUMP" ] || [ ! -f "$DUMP" ]; then
-  echo "Provide dump file: bash deploy/restore.sh /opt/guardino-hub backups/db_XXXX.sql"
+if [ -z "${ARCHIVE}" ] || [ ! -f "${ARCHIVE}" ]; then
+  echo "Provide backup archive: bash deploy/restore.sh /opt/guardino-hub backups/guardino_backup_YYYYmmddTHHMMSSZ.tar.gz"
   exit 1
 fi
 
-echo "Restoring database from $DUMP ..."
-cat "$DUMP" | docker compose -f "$ROOT/docker-compose.yml" exec -T db psql -U guardino guardino
+if [ ! -x "${ROOT}/installer/manage.sh" ]; then
+  echo "ERROR: installer/manage.sh not found in ROOT=${ROOT}" 1>&2
+  exit 1
+fi
 
-echo "Done."
+INSTALL_DIR="${ROOT}" bash "${ROOT}/installer/manage.sh" --restore "${ARCHIVE}"
