@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
@@ -17,7 +18,8 @@ BYTES_PER_GB = 1024 ** 3
 
 @celery_app.task(name="app.tasks.usage.sync_usage")
 def sync_usage():
-    with redis_lock("guardino:lock:sync_usage", ttl_seconds=280) as ok:
+    lock_ttl = max(90, int(getattr(settings, "USAGE_SYNC_SECONDS", 60) or 60) * 2)
+    with redis_lock("guardino:lock:sync_usage", ttl_seconds=lock_ttl) as ok:
         if not ok:
             return
         asyncio.run(_sync_usage_async())
