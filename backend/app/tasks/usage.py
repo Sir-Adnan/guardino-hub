@@ -27,67 +27,79 @@ def sync_usage():
 async def _sync_usage_async():
     stats = TaskRunStats()
     now = datetime.now(timezone.utc)
+    batch_size = max(100, min(10000, int(getattr(settings, "USAGE_SYNC_BATCH_SIZE", 2000) or 2000)))
+    last_id = 0
 
     async with AsyncSessionLocal() as db:
-        q = await db.execute(select(GuardinoUser).where(GuardinoUser.status == UserStatus.active).limit(2000))
-        users = q.scalars().all()
-        stats.scanned_users = len(users)
-        if not users:
-            return
+        while True:
+            q = await db.execute(
+                select(GuardinoUser)
+                .where(GuardinoUser.status == UserStatus.active, GuardinoUser.id > last_id)
+                .order_by(GuardinoUser.id.asc())
+                .limit(batch_size)
+            )
+            users = q.scalars().all()
+            if not users:
+                break
 
-        user_ids = [u.id for u in users]
-        sq = await db.execute(select(SubAccount).where(SubAccount.user_id.in_(user_ids)))
-        subs = sq.scalars().all()
+            stats.scanned_users += len(users)
+            user_ids = [u.id for u in users]
+            sq = await db.execute(select(SubAccount).where(SubAccount.user_id.in_(user_ids)))
+            subs = sq.scalars().all()
 
-        by_user: dict[int, list[SubAccount]] = {}
-        node_ids: set[int] = set()
-        for s in subs:
-            by_user.setdefault(s.user_id, []).append(s)
-            node_ids.add(s.node_id)
+            by_user: dict[int, list[SubAccount]] = {}
+            node_ids: set[int] = set()
+            for s in subs:
+                by_user.setdefault(s.user_id, []).append(s)
+                node_ids.add(s.node_id)
 
-        nodes: dict[int, Node] = {}
-        if node_ids:
-            nq = await db.execute(select(Node).where(Node.id.in_(list(node_ids))))
-            nodes = {n.id: n for n in nq.scalars().all()}
+            nodes: dict[int, Node] = {}
+            if node_ids:
+                nq = await db.execute(select(Node).where(Node.id.in_(list(node_ids))))
+                nodes = {n.id: n for n in nq.scalars().all()}
 
-        for u in users:
-            u_subs = by_user.get(u.id, [])
-            total_used = 0
+            for u in users:
+                u_subs = by_user.get(u.id, [])
+                total_used = 0
 
-            # sync usage from remote
-            for s in u_subs:
-                n = nodes.get(s.node_id)
-                if not n:
-                    continue
-                try:
-                    adapter = get_adapter(n)
-                    used = await adapter.get_used_bytes(s.remote_identifier)
-                    if used is None:
-                        continue
-                    s.used_bytes = int(used)
-                    s.last_sync_at = now
-                    total_used += int(used)
-                except Exception:
-                    stats.remote_failures += 1
-                    continue
-
-            u.used_bytes = int(total_used)
-
-            # enforce volume exhaustion
-            if u.used_bytes >= int(u.total_gb) * BYTES_PER_GB and u.status == UserStatus.active:
-                u.status = UserStatus.disabled
-                stats.affected_users += 1
+                # sync usage from remote
                 for s in u_subs:
                     n = nodes.get(s.node_id)
                     if not n:
                         continue
                     try:
                         adapter = get_adapter(n)
-                        await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
-                        stats.remote_actions += 1
+                        used = await adapter.get_used_bytes(s.remote_identifier)
+                        if used is None:
+                            continue
+                        s.used_bytes = int(used)
+                        s.last_sync_at = now
+                        total_used += int(used)
                     except Exception:
                         stats.remote_failures += 1
                         continue
 
-        await db.commit()
+                u.used_bytes = int(total_used)
+
+                # enforce volume exhaustion
+                if u.used_bytes >= int(u.total_gb) * BYTES_PER_GB and u.status == UserStatus.active:
+                    u.status = UserStatus.disabled
+                    stats.affected_users += 1
+                    for s in u_subs:
+                        n = nodes.get(s.node_id)
+                        if not n:
+                            continue
+                        try:
+                            adapter = get_adapter(n)
+                            await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
+                            stats.remote_actions += 1
+                        except Exception:
+                            stats.remote_failures += 1
+                            continue
+
+            await db.commit()
+            last_id = users[-1].id
+            if len(users) < batch_size:
+                break
+
         print("sync_usage stats:", stats)
