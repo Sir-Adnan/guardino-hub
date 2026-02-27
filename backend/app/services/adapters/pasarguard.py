@@ -86,6 +86,24 @@ class PasarguardAdapter:
         if r.status_code >= 400:
             raise AdapterError(f"HTTP {r.status_code} DELETE {path}: {r.text[:300]}")
 
+    @staticmethod
+    def _as_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        try:
+            s = str(value).strip()
+            if not s:
+                return None
+            return int(float(s))
+        except Exception:
+            return None
+
     async def _get_inbound_tags(self) -> list[str]:
         """Return a list of inbound tags.
 
@@ -381,9 +399,46 @@ class PasarguardAdapter:
         await self._post_json(f"/api/user/{remote_identifier}/reset", {})
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
-        js = await self._get_json(f"/api/user/{remote_identifier}/usage")
+        # Prefer direct used_traffic from user object (fast + explicit in API schema)
+        try:
+            js_user = await self._get_json(f"/api/user/{remote_identifier}")
+            if isinstance(js_user, dict):
+                direct = self._as_int(js_user.get("used_traffic"))
+                if direct is None and isinstance(js_user.get("data"), dict):
+                    direct = self._as_int(js_user["data"].get("used_traffic"))
+                if direct is not None:
+                    return max(0, direct)
+        except Exception:
+            pass
+
+        # Fallback: usage stats endpoint requires period query param.
+        # We use month snapshots and infer current usage from the latest value(s).
+        js = await self._get_json(f"/api/user/{remote_identifier}/usage?period=month")
         if isinstance(js, dict):
-            used = js.get("used_traffic")
-            if isinstance(used, int):
-                return used
+            payload = js.get("data") if isinstance(js.get("data"), dict) else js
+            stats = payload.get("stats")
+            if isinstance(stats, dict):
+                total = 0
+                found_any = False
+                for _series, points in stats.items():
+                    if not isinstance(points, list):
+                        continue
+                    vals: list[int] = []
+                    for p in points:
+                        if not isinstance(p, dict):
+                            continue
+                        v = self._as_int(p.get("total_traffic"))
+                        if v is None:
+                            continue
+                        vals.append(max(0, v))
+                    if vals:
+                        # keep the latest cumulative value for each series
+                        total += max(vals)
+                        found_any = True
+                if found_any:
+                    return total
+
+            direct = self._as_int(payload.get("used_traffic"))
+            if direct is not None:
+                return max(0, direct)
         return None
