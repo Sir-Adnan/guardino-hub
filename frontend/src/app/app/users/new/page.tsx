@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ type UserDefaultsEnvelope = {
   effective: UserDefaults;
 };
 
-type NodeLite = { id: number; name: string; panel_type: string; base_url: string; tags?: string[] };
+type NodeLite = { id: number; name: string; panel_type: string; base_url?: string; tags?: string[] };
 type LinksResp = {
   user_id: number;
   master_link: string;
@@ -163,6 +163,7 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 
 export default function NewUserPage() {
   const r = useRouter();
+  const searchParams = useSearchParams();
   const { push } = useToast();
   const { t } = useI18n();
   const { refresh: refreshMe } = useAuth();
@@ -205,6 +206,7 @@ export default function NewUserPage() {
   const [createCurrentLabel, setCreateCurrentLabel] = React.useState("");
   const cancelCreateRef = React.useRef(false);
   const activeRequestRef = React.useRef<AbortController | null>(null);
+  const appliedNodeSelectionFromUrlRef = React.useRef(false);
 
   const nodeMap = React.useMemo(() => {
     const m = new Map<number, NodeLite>();
@@ -321,6 +323,40 @@ export default function NewUserPage() {
     if (!nodes?.length) return;
     setSelectedNodeIds((prev) => prev.filter((id) => nodes.some((n) => n.id === id)));
   }, [nodes]);
+
+  React.useEffect(() => {
+    if (!nodes?.length || !defaultsLoaded) return;
+    if (appliedNodeSelectionFromUrlRef.current) return;
+    appliedNodeSelectionFromUrlRef.current = true;
+
+    const rawNodeIds = String(searchParams.get("node_ids") || "").trim();
+    if (!rawNodeIds) return;
+
+    const mode = String(searchParams.get("node_mode") || "").trim().toLowerCase();
+    const parsedIds = Array.from(
+      new Set(
+        rawNodeIds
+          .split(",")
+          .map((x) => Number(x.trim()))
+          .filter((x) => Number.isInteger(x) && x > 0)
+      )
+    );
+    if (!parsedIds.length) return;
+
+    const allowedSet = new Set((nodes || []).map((n) => n.id));
+    const allowedIds = parsedIds.filter((id) => allowedSet.has(id));
+    if (!allowedIds.length) return;
+
+    setNodeMode(mode === "group" ? "group" : "manual");
+    setSelectedNodeIds(allowedIds);
+    if (mode !== "group") setNodeGroup("");
+
+    push({
+      title: "انتخاب نود اعمال شد",
+      desc: `${allowedIds.length} نود از صفحه نودها اعمال شد.`,
+      type: "success",
+    });
+  }, [nodes, defaultsLoaded, searchParams, push]);
 
   React.useEffect(() => {
     if (!effectiveDurationPresets.length) return;
