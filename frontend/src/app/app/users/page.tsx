@@ -126,6 +126,7 @@ export default function UsersPage() {
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
   const [editUser, setEditUser] = React.useState<UserOut | null>(null);
+  const [quickMode, setQuickMode] = React.useState<"extend" | "add" | "dec">("extend");
   const [editDays, setEditDays] = React.useState(30);
   const [editAddGb, setEditAddGb] = React.useState(10);
   const [editDecGb, setEditDecGb] = React.useState(5);
@@ -274,26 +275,6 @@ export default function UsersPage() {
     }
   }
 
-  async function copyNodeLink(u: UserOut, nodeId: number) {
-    try {
-      const res = await fetchUserLinks(u, true);
-      const picked = (res.node_links || []).find((x) => x.node_id === nodeId);
-      const node = nodeMap.get(nodeId);
-      const target =
-        picked?.config_download_url ||
-        picked?.full_url ||
-        (picked?.direct_url ? normalizeUrl(picked.direct_url, node?.base_url) : "");
-      if (!target) {
-        push({ title: "لینک مستقیم برای این نود پیدا نشد", type: "warning" });
-        return;
-      }
-      const ok = await copyText(target);
-      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
-    } catch (e: any) {
-      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
-    }
-  }
-
   async function copyAllLinksForUser(u: UserOut) {
     try {
       const res = await fetchUserLinks(u, true);
@@ -354,6 +335,7 @@ export default function UsersPage() {
 
   function openQuickEdit(u: UserOut) {
     setEditUser(u);
+    setQuickMode("extend");
     setEditDays(30);
     setEditAddGb(10);
     setEditDecGb(5);
@@ -505,12 +487,6 @@ export default function UsersPage() {
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
 
-            const copyByNodeMenu = (nodes || []).map((n) => ({
-              label: `کپی لینک ${n.name}`,
-              icon: <Link2 size={16} />,
-              onClick: () => copyNodeLink(u, n.id),
-            }));
-
             return (
               <Card key={u.id} className="overflow-hidden">
                 <CardContent className="p-4 space-y-3">
@@ -564,8 +540,8 @@ export default function UsersPage() {
                       variant="outline"
                       className="h-9 w-9 p-0"
                       size="sm"
-                      title="کپی لینک Guardino"
-                      aria-label="کپی لینک Guardino"
+                      title="کپی لینک اصلی اشتراک"
+                      aria-label="کپی لینک اصلی اشتراک"
                       disabled={busy}
                       onClick={() => copyMaster(u)}
                     >
@@ -597,7 +573,7 @@ export default function UsersPage() {
                           onClick: () => openQuickEdit(u),
                         },
                         {
-                          label: "کپی لینک Guardino",
+                          label: "کپی لینک اصلی اشتراک",
                           icon: <Copy size={16} />,
                           onClick: () => copyMaster(u),
                         },
@@ -606,7 +582,6 @@ export default function UsersPage() {
                           icon: <Copy size={16} />,
                           onClick: () => copyAllLinksForUser(u),
                         },
-                        ...copyByNodeMenu,
                         {
                           label: isActive ? t("common.disable") : t("common.enable"),
                           icon: <Power size={16} />,
@@ -680,61 +655,96 @@ export default function UsersPage() {
       >
         {editUser ? (
           <div className="space-y-4 text-sm">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
-              این بخش برای ویرایش سریع حجم/زمان طراحی شده است. برای تغییرات کامل از صفحه جزئیات استفاده کنید.
+            <div className="grid grid-cols-3 gap-2">
+              <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
+                تمدید
+              </Button>
+              <Button type="button" size="sm" variant={quickMode === "add" ? "primary" : "outline"} onClick={() => setQuickMode("add")}>
+                افزایش حجم
+              </Button>
+              <Button type="button" size="sm" variant={quickMode === "dec" ? "primary" : "outline"} onClick={() => setQuickMode("dec")}>
+                کاهش حجم
+              </Button>
             </div>
 
-            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
-              <div className="font-medium">تمدید زمانی</div>
-              <div className="flex gap-2">
-                <Input type="number" value={editDays} onChange={(e) => setEditDays(Number(e.target.value) || 0)} />
-                <Button
-                  disabled={busyId === editUser.id || locked}
-                  onClick={async () => {
-                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/extend`, { days: editDays });
-                    if (ok) setEditOpen(false);
-                  }}
-                >
-                  تمدید
-                </Button>
+            {quickMode === "extend" ? (
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+                <div className="font-medium">تمدید زمانی (روز)</div>
+                <div className="flex flex-wrap gap-2">
+                  {[7, 30, 90, 180].map((d) => (
+                    <Button key={d} type="button" size="sm" variant={editDays === d ? "primary" : "outline"} onClick={() => setEditDays(d)}>
+                      {d}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input type="number" value={editDays} onChange={(e) => setEditDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <Button
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/extend`, { days: editDays });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اجرا
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
-              <div className="font-medium">افزایش حجم</div>
-              <div className="flex gap-2">
-                <Input type="number" value={editAddGb} onChange={(e) => setEditAddGb(Number(e.target.value) || 0)} />
-                <Button
-                  disabled={busyId === editUser.id || locked}
-                  onClick={async () => {
-                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/add-traffic`, { add_gb: editAddGb });
-                    if (ok) setEditOpen(false);
-                  }}
-                >
-                  افزایش
-                </Button>
+            {quickMode === "add" ? (
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+                <div className="font-medium">افزایش حجم (GB)</div>
+                <div className="flex flex-wrap gap-2">
+                  {[5, 10, 20, 50].map((g) => (
+                    <Button key={g} type="button" size="sm" variant={editAddGb === g ? "primary" : "outline"} onClick={() => setEditAddGb(g)}>
+                      +{g}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input type="number" value={editAddGb} onChange={(e) => setEditAddGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <Button
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/add-traffic`, { add_gb: editAddGb });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اجرا
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
-              <div className="font-medium">کاهش حجم (ریفاند)</div>
-              <div className="flex gap-2">
-                <Input type="number" value={editDecGb} onChange={(e) => setEditDecGb(Number(e.target.value) || 0)} />
-                <Button
-                  variant="outline"
-                  disabled={busyId === editUser.id || locked}
-                  onClick={async () => {
-                    const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/refund`, {
-                      action: "decrease",
-                      decrease_gb: editDecGb,
-                    });
-                    if (ok) setEditOpen(false);
-                  }}
-                >
-                  کاهش + ریفاند
-                </Button>
+            {quickMode === "dec" ? (
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+                <div className="font-medium">کاهش حجم (ریفاند)</div>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 5, 10, 20].map((g) => (
+                    <Button key={g} type="button" size="sm" variant={editDecGb === g ? "primary" : "outline"} onClick={() => setEditDecGb(g)}>
+                      -{g}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input type="number" value={editDecGb} onChange={(e) => setEditDecGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <Button
+                    variant="outline"
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/refund`, {
+                        action: "decrease",
+                        decrease_gb: editDecGb,
+                      });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اجرا
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEditOpen(false)}>{t("common.cancel")}</Button>
@@ -753,7 +763,7 @@ export default function UsersPage() {
         {links ? (
           <div className="space-y-4 text-sm">
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
-              پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک Guardino برای حالت چندنودی مناسب‌تر است.
+              پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
             </div>
             <div className="space-y-2">
               <div className="font-semibold">{t("users.masterSub")}</div>
