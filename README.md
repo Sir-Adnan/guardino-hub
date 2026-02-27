@@ -238,11 +238,8 @@ bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/
 ```
 
 What it does (high level):
-- installs Docker,
-- prepares `.env`,
-- starts the stack,
-- runs migrations,
-- creates superadmin and prints credentials.
+- opens Guardino management menu (`installer/manage.sh`),
+- from menu you can install/update/backup/restore/uninstall.
 
 Optional overrides:
 
@@ -255,6 +252,21 @@ bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/
 
 ```bash
 sudo bash installer/install.sh
+```
+
+### Option D — Management console (recommended after first install)
+
+```bash
+sudo bash installer/manage.sh
+```
+
+Direct actions:
+
+```bash
+sudo bash installer/manage.sh --install
+sudo bash installer/manage.sh --update
+sudo bash installer/manage.sh --backup-now
+sudo bash installer/manage.sh --restore /path/to/guardino_backup_YYYYmmddTHHMMSSZ.tar.gz
 ```
 
 ### Update Existing Deployment
