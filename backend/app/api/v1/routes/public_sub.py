@@ -88,46 +88,117 @@ def _render_sub_page(
     expiry_state = "منقضی شده" if sec_left < 0 else ("نزدیک به انقضا" if days_left <= 3 else "فعال")
     expiry_badge = "err" if sec_left < 0 else ("warn" if days_left <= 3 else "ok")
     usable_links = sum(1 for it in node_links if (it.get("url") or "").strip())
+    total_links = len(node_links)
+    ok_links = sum(1 for it in node_links if (it.get("status") or "").strip() == "ok")
+    missing_links = sum(1 for it in node_links if (it.get("status") or "").strip() == "missing")
+    error_links = max(0, total_links - ok_links - missing_links)
+    availability_percent = 0 if total_links == 0 else int(round((ok_links / total_links) * 100))
+
+    panel_counts = {"marzban": 0, "pasarguard": 0, "wg_dashboard": 0, "unknown": 0}
+    for item in node_links:
+        panel_key = str(item.get("panel_type") or "unknown")
+        panel_counts[panel_key if panel_key in panel_counts else "unknown"] += 1
+
+    panel_rows: list[str] = []
+    for panel_key, panel_label, css in (
+        ("marzban", "Marzban", "panel-marzban"),
+        ("pasarguard", "Pasarguard", "panel-pasarguard"),
+        ("wg_dashboard", "WGDashboard", "panel-wg"),
+        ("unknown", "Other", "panel-unknown"),
+    ):
+        count = panel_counts.get(panel_key, 0)
+        if panel_key == "unknown" and count == 0 and total_links > 0:
+            continue
+        ratio = 0 if total_links == 0 else int(round((count / total_links) * 100))
+        panel_rows.append(
+            f"""
+            <div class="panel-row">
+              <div class="panel-top">
+                <span class="chip {css}">{panel_label}</span>
+                <strong data-number="{count}">{count}</strong>
+              </div>
+              <div class="bar-track"><span class="bar-fill {css}" style="width:{ratio}%"></span></div>
+            </div>
+            """
+        )
+    panel_rows_html = "\n".join(panel_rows) if panel_rows else '<div class="empty">داده‌ای برای نمودار نودها موجود نیست.</div>'
+
+    created_at = user.created_at.astimezone(timezone.utc)
+    updated_at = user.updated_at.astimezone(timezone.utc)
+    expire_at = user.expire_at.astimezone(timezone.utc)
+    life_seconds = max(1, int((expire_at - created_at).total_seconds()))
+    elapsed_seconds = int((now - created_at).total_seconds())
+    if sec_left < 0:
+        elapsed_seconds = life_seconds
+    elapsed_seconds = max(0, min(life_seconds, elapsed_seconds))
+    time_percent = min(100, int(round((elapsed_seconds / life_seconds) * 100)))
+    days_left_display = max(0, days_left)
 
     rows = []
     for idx, item in enumerate(node_links, start=1):
         node_name = html.escape(item.get("node_name") or f"Node #{item.get('node_id')}")
-        panel_type = html.escape(item.get("panel_type") or "unknown")
+        panel_type = str(item.get("panel_type") or "unknown")
+        panel_key = panel_type if panel_type in ("marzban", "pasarguard", "wg_dashboard") else "unknown"
         panel_label = {
             "marzban": "Marzban",
             "pasarguard": "Pasarguard",
             "wg_dashboard": "WGDashboard",
-        }.get(panel_type, panel_type)
-        status = html.escape(item.get("status") or "missing")
+            "unknown": "Unknown",
+        }.get(panel_key, "Unknown")
+        panel_css = {
+            "marzban": "panel-marzban",
+            "pasarguard": "panel-pasarguard",
+            "wg_dashboard": "panel-wg",
+            "unknown": "panel-unknown",
+        }.get(panel_key, "panel-unknown")
+        panel_icon = {"marzban": "M", "pasarguard": "P", "wg_dashboard": "W", "unknown": "?"}.get(panel_key, "?")
+
+        status_raw = str(item.get("status") or "missing")
+        status_badge = "ok" if status_raw == "ok" else ("warn" if status_raw == "missing" else "err")
+        status_label = {"ok": "سالم", "missing": "بدون لینک", "error": "خطا"}.get(status_raw, "خطا")
+
         url = item.get("url") or ""
         url_html = html.escape(url)
         url_js = json.dumps(url)
-        badge = "ok" if status == "ok" else ("warn" if status == "missing" else "err")
-        action_text = "دانلود فایل" if panel_type == "wg_dashboard" else "باز کردن لینک"
+        action_text = "دانلود کانفیگ" if panel_key == "wg_dashboard" else "باز کردن لینک"
         action = (
             f'<a class="btn" href="{url_html}" target="_blank" rel="noopener">{action_text}</a>'
             if url
             else '<span class="muted">بدون لینک</span>'
         )
-        copy_btn = f'<button class="btn btn-outline" onclick="copyText({url_js})">کپی</button>' if url else ""
+        copy_btn = f'<button type="button" class="btn btn-soft" onclick="copyTextSafe({url_js})">کپی</button>' if url else ""
         rows.append(
             f"""
-            <article class="row" style="animation-delay:{min(idx * 0.04, 0.36):.2f}s">
-              <div class="meta">
-                <div class="name">{node_name}</div>
-                <div class="sub">{panel_label}</div>
+            <article class="node-row reveal" style="--delay:{min(idx * 0.05, 0.70):.2f}s">
+              <div class="node-main">
+                <div class="node-icon {panel_css}">{panel_icon}</div>
+                <div class="meta">
+                  <div class="name">{node_name}</div>
+                  <div class="sub">{panel_label}</div>
+                </div>
               </div>
               <div class="url">{url_html or "—"}</div>
-              <div class="status {badge}">{status}</div>
-              <div class="actions">{copy_btn}{action}</div>
+              <div class="status {status_badge}">{status_label}</div>
+              <div class="actions node-actions">{copy_btn}{action}</div>
             </article>
             """
         )
 
     rows_html = "\n".join(rows) if rows else '<div class="empty">لینکی برای این کاربر پیدا نشد.</div>'
     label = html.escape(user.label or f"user-{user.id}")
-    expire_text = html.escape(user.expire_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"))
-    status = html.escape(user.status.value if hasattr(user.status, "value") else str(user.status))
+    status_value = str(user.status.value if hasattr(user.status, "value") else user.status)
+    status_text = html.escape({"active": "فعال", "disabled": "غیرفعال", "deleted": "حذف‌شده"}.get(status_value, status_value))
+    status_class = "ok" if status_value == "active" else ("warn" if status_value == "disabled" else "err")
+    selection_mode = "گروهی" if user.node_selection_mode == NodeSelectionMode.group else "دستی"
+    node_group_text = html.escape(user.node_group or "—")
+    expire_text = html.escape(expire_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    created_text = html.escape(created_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    updated_text = html.escape(updated_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    generated_text = html.escape(now.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    expire_iso = html.escape(expire_at.isoformat())
+    created_iso = html.escape(created_at.isoformat())
+    updated_iso = html.escape(updated_at.isoformat())
+    generated_iso = html.escape(now.isoformat())
     master_link_html = html.escape(master_raw_link)
     master_link_js = json.dumps(master_raw_link)
     token_html = html.escape(token)
@@ -137,110 +208,147 @@ def _render_sub_page(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Guardino Subscription - {label}</title>
+  <title>Guardino Subscription Center - {label}</title>
   <style>
     :root {{
-      --bg-0: #060f1f;
-      --bg-1: #0e1b34;
-      --card: #0f1e38;
-      --line: #223658;
-      --fg: #eaf3ff;
-      --muted: #93a9cc;
+      --bg-0: #f2f6ff;
+      --bg-1: #e8f0ff;
+      --paper: rgba(255, 255, 255, 0.82);
+      --paper-strong: #ffffff;
+      --line: #cad8ef;
+      --fg: #102040;
+      --muted: #5f7398;
+      --ok: #16a34a;
+      --warn: #d97706;
+      --err: #dc2626;
+      --accent: #2563eb;
+      --accent-soft: #0ea5e9;
+      --ring-rest: #dbe8ff;
+      --shadow: 0 16px 34px rgba(9, 37, 88, 0.14);
+    }}
+    html[data-theme="night"] {{
+      --bg-0: #081224;
+      --bg-1: #0f1d39;
+      --paper: rgba(13, 26, 49, 0.86);
+      --paper-strong: #0f1f3a;
+      --line: #2a4266;
+      --fg: #e8f0ff;
+      --muted: #95add3;
       --ok: #22c55e;
       --warn: #f59e0b;
       --err: #ef4444;
-      --btn: #1d4ed8;
+      --accent: #3b82f6;
+      --accent-soft: #06b6d4;
+      --ring-rest: #1a2c4e;
+      --shadow: 0 16px 36px rgba(2, 8, 23, 0.44);
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(900px 620px at 10% -12%, #1e3a8a66 0%, transparent 60%),
-        radial-gradient(720px 520px at 100% 0%, #0891b233 0%, transparent 64%),
-        linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
+      font-family: "Vazirmatn", "IRANSansX", "IRANYekanX", Tahoma, sans-serif;
       color: var(--fg);
+      background:
+        radial-gradient(980px 620px at 6% -10%, #3b82f62b 0%, transparent 60%),
+        radial-gradient(760px 520px at 98% 0%, #06b6d430 0%, transparent 66%),
+        linear-gradient(145deg, var(--bg-0) 0%, var(--bg-1) 100%);
       min-height: 100dvh;
-      padding: 18px;
+      position: relative;
+      overflow-x: hidden;
     }}
-    .container {{ max-width: 1160px; margin: 0 auto; display: grid; gap: 14px; }}
-    .card {{
-      background: linear-gradient(180deg, color-mix(in srgb, var(--card) 88%, #fff 2%), color-mix(in srgb, var(--card) 93%, #000 7%));
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 16px;
-      box-shadow: 0 16px 36px #02081766;
-      backdrop-filter: blur(3px);
-    }}
-    .title {{ font-size: 24px; font-weight: 900; margin: 0 0 8px; letter-spacing: .2px; }}
-    .subtitle {{ color: var(--muted); font-size: 13px; line-height: 1.7; }}
-    .row-head {{ display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }}
-    .pill {{
-      border: 1px solid var(--line);
+    .orb {{
+      position: fixed;
       border-radius: 999px;
-      padding: 6px 10px;
+      filter: blur(40px);
+      opacity: 0.28;
+      pointer-events: none;
+      z-index: 0;
+    }}
+    .orb-a {{
+      width: 320px;
+      height: 320px;
+      background: #3b82f6;
+      top: -80px;
+      right: -60px;
+      animation: drift 13s ease-in-out infinite;
+    }}
+    .orb-b {{
+      width: 280px;
+      height: 280px;
+      background: #0ea5e9;
+      bottom: -120px;
+      left: -80px;
+      animation: drift 16s ease-in-out infinite reverse;
+    }}
+    .page {{
+      position: relative;
+      z-index: 1;
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }}
+    .glass {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }}
+    .hero {{
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }}
+    .hero-top {{
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }}
+    .brand {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }}
+    .brand-icon {{
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      display: grid;
+      place-items: center;
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.34);
+      animation: floaty 4s ease-in-out infinite;
+    }}
+    .brand-icon svg {{
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }}
+    .hero-title {{
+      margin: 0;
+      font-size: clamp(22px, 2.2vw, 31px);
+      font-weight: 900;
+      letter-spacing: 0.2px;
+    }}
+    .hero-subtitle {{
+      margin: 5px 0 0;
       font-size: 12px;
       color: var(--muted);
-      background: #0b1530;
+      line-height: 1.8;
     }}
-    .pill.ok {{ color: #86efac; border-color: #16653488; }}
-    .pill.warn {{ color: #fcd34d; border-color: #92400e88; }}
-    .pill.err {{ color: #fca5a5; border-color: #991b1b88; }}
-    .grid {{ display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }}
-    .stat {{
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 11px 12px;
-      background: linear-gradient(180deg, #0b1833, #0a162d);
+    .top-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }}
-    .k {{ color: var(--muted); font-size: 12px; }}
-    .v {{ margin-top: 5px; font-size: 16px; font-weight: 800; }}
-    .progress {{
-      height: 10px;
-      border-radius: 999px;
-      background: #0a1226;
-      overflow: hidden;
-      margin-top: 10px;
-      border: 1px solid var(--line);
-    }}
-    .progress > span {{
-      display: block;
-      height: 100%;
-      width: {percent}%;
-      background: linear-gradient(90deg, #16a34a 0%, #06b6d4 52%, #2563eb 100%);
-      transition: width .45s ease;
-    }}
-    .row {{
-      display: grid;
-      gap: 10px;
-      align-items: center;
-      grid-template-columns: 230px 1fr 96px 186px;
-      border: 1px solid var(--line);
-      border-radius: 13px;
-      padding: 10px;
-      margin-top: 8px;
-      background: linear-gradient(180deg, #0a1631, #091327);
-      opacity: 0;
-      transform: translateY(8px);
-      animation: fadeUp .45s ease forwards;
-    }}
-    .meta .name {{ font-weight: 700; word-break: break-word; }}
-    .meta .sub {{ font-size: 12px; color: var(--muted); margin-top: 3px; }}
-    .url {{
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-      color: #bfdbfe;
-      word-break: break-all;
-      border: 1px dashed #355083;
-      border-radius: 10px;
-      padding: 6px 8px;
-      background: #08132a;
-    }}
-    .status {{ justify-self: start; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); text-transform: uppercase; }}
-    .status.ok {{ background: color-mix(in srgb, var(--ok) 24%, transparent); color: #86efac; }}
-    .status.warn {{ background: color-mix(in srgb, var(--warn) 22%, transparent); color: #fcd34d; }}
-    .status.err {{ background: color-mix(in srgb, var(--err) 22%, transparent); color: #fca5a5; }}
-    .actions {{ display: flex; gap: 8px; justify-content: end; flex-wrap: wrap; }}
     .btn {{
       border: 0;
       text-decoration: none;
@@ -248,124 +356,820 @@ def _render_sub_page(
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      border-radius: 10px;
-      padding: 8px 10px;
+      border-radius: 12px;
+      padding: 9px 12px;
       font-size: 12px;
+      font-weight: 700;
       color: #fff;
-      background: linear-gradient(135deg, #1d4ed8, #2563eb);
-      transition: transform .18s ease, filter .18s ease;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      transition: transform .2s ease, filter .2s ease, box-shadow .2s ease;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
     }}
-    .btn:hover {{ transform: translateY(-1px); filter: brightness(1.05); }}
-    .btn-outline {{ border: 1px solid var(--line); background: #0a1530; color: var(--fg); }}
-    .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #bfdbfe; word-break: break-all; }}
-    .empty {{ color: var(--muted); font-size: 13px; padding: 8px 0; }}
-    .muted {{ color: var(--muted); font-size: 12px; }}
+    .btn:hover {{
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+    }}
+    .btn-soft {{
+      border: 1px solid var(--line);
+      background: var(--paper-strong);
+      color: var(--fg);
+      box-shadow: none;
+    }}
+    html[data-theme="night"] .btn-soft {{
+      background: #122648;
+    }}
+    .theme-icon {{
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #f59e0b, #facc15);
+      box-shadow: inset 0 0 0 1px #ffffff66;
+      display: inline-block;
+      margin-left: 6px;
+      animation: pulse 2.2s ease-in-out infinite;
+    }}
+    html[data-theme="night"] .theme-icon {{
+      background: linear-gradient(135deg, #64748b, #94a3b8);
+    }}
+    .token-line {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+    }}
+    .mono {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #1e3a8a;
+      word-break: break-all;
+    }}
+    html[data-theme="night"] .mono {{
+      color: #bfdbfe;
+    }}
+    .mini-chips {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .badge {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 5px 10px;
+      background: var(--paper-strong);
+      color: var(--muted);
+    }}
+    .badge.ok {{ color: var(--ok); border-color: #86efac88; }}
+    .badge.warn {{ color: var(--warn); border-color: #fcd34d88; }}
+    .badge.err {{ color: var(--err); border-color: #fca5a588; }}
+    .badge.neutral {{ color: var(--fg); }}
+    .grid-4 {{
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }}
+    .stat-card {{
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }}
+    .stat-top {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }}
+    .k {{
+      font-size: 12px;
+      color: var(--muted);
+    }}
+    .v {{
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1.25;
+      word-break: break-word;
+    }}
+    .v.slim {{
+      font-size: 14px;
+      font-weight: 700;
+    }}
+    .dot {{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      animation: pulse 2.1s ease-in-out infinite;
+    }}
+    .dot.ok {{ background: var(--ok); }}
+    .dot.warn {{ background: var(--warn); }}
+    .dot.err {{ background: var(--err); }}
+    .dot.neutral {{ background: var(--accent); }}
+    .grid-2 {{
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1.2fr .8fr;
+    }}
+    .analytics {{
+      padding: 14px;
+    }}
+    .section-head {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }}
+    .section-title {{
+      margin: 0;
+      font-size: 17px;
+      font-weight: 900;
+    }}
+    .section-sub {{
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .usage-wrap {{
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      align-items: center;
+      gap: 14px;
+    }}
+    .ring {{
+      --value: 0;
+      width: 188px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      margin: 0 auto;
+      position: relative;
+      background: conic-gradient(var(--accent) calc(var(--value) * 1%), var(--accent-soft) calc(var(--value) * 1%), var(--ring-rest) 0);
+      display: grid;
+      place-items: center;
+      box-shadow: inset 0 0 0 1px #ffffff5e;
+      transition: background .35s ease;
+    }}
+    .ring::before {{
+      content: "";
+      width: 66%;
+      height: 66%;
+      border-radius: 50%;
+      background: var(--paper-strong);
+      border: 1px solid var(--line);
+      position: absolute;
+    }}
+    html[data-theme="night"] .ring::before {{
+      background: #10203c;
+    }}
+    .ring .ring-inner {{
+      position: relative;
+      text-align: center;
+      z-index: 1;
+      display: grid;
+      gap: 2px;
+    }}
+    .ring strong {{
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+    }}
+    .ring span {{
+      font-size: 11px;
+      color: var(--muted);
+    }}
+    .ring.ring-sm {{
+      width: 146px;
+      margin-top: 12px;
+    }}
+    .ring.ring-sm strong {{
+      font-size: 23px;
+    }}
+    .progress-list {{
+      display: grid;
+      gap: 9px;
+    }}
+    .progress-item {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 9px 10px;
+      background: var(--paper-strong);
+    }}
+    html[data-theme="night"] .progress-item {{
+      background: #122648;
+    }}
+    .progress-meta {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }}
+    .progress-meta strong {{
+      font-size: 13px;
+      color: var(--fg);
+    }}
+    .track {{
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--ring-rest);
+      border: 1px solid var(--line);
+    }}
+    .track > span {{
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+    }}
+    .health-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .mini {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px;
+      background: var(--paper-strong);
+      text-align: center;
+    }}
+    html[data-theme="night"] .mini {{
+      background: #122648;
+    }}
+    .mini span {{
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+    }}
+    .mini strong {{
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+    }}
+    .panel-list {{
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }}
+    .panel-row {{
+      display: grid;
+      gap: 5px;
+    }}
+    .panel-top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }}
+    .chip {{
+      border-radius: 999px;
+      padding: 3px 9px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 700;
+    }}
+    .panel-marzban {{
+      color: #1d4ed8;
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }}
+    .panel-pasarguard {{
+      color: #0f766e;
+      background: #ccfbf1;
+      border-color: #5eead4;
+    }}
+    .panel-wg {{
+      color: #9333ea;
+      background: #f3e8ff;
+      border-color: #d8b4fe;
+    }}
+    .panel-unknown {{
+      color: #475569;
+      background: #e2e8f0;
+      border-color: #cbd5e1;
+    }}
+    html[data-theme="night"] .panel-marzban {{
+      color: #bfdbfe;
+      background: #1d4ed866;
+      border-color: #60a5fa80;
+    }}
+    html[data-theme="night"] .panel-pasarguard {{
+      color: #99f6e4;
+      background: #0f766e66;
+      border-color: #2dd4bf80;
+    }}
+    html[data-theme="night"] .panel-wg {{
+      color: #e9d5ff;
+      background: #7e22ce66;
+      border-color: #c084fc80;
+    }}
+    html[data-theme="night"] .panel-unknown {{
+      color: #cbd5e1;
+      background: #33415570;
+      border-color: #64748b80;
+    }}
+    .bar-track {{
+      height: 7px;
+      border-radius: 999px;
+      background: var(--ring-rest);
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }}
+    .bar-fill {{
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      transition: width .55s ease;
+    }}
+    .bar-fill.panel-marzban {{ background: linear-gradient(90deg, #1d4ed8, #2563eb); }}
+    .bar-fill.panel-pasarguard {{ background: linear-gradient(90deg, #0f766e, #14b8a6); }}
+    .bar-fill.panel-wg {{ background: linear-gradient(90deg, #7e22ce, #a855f7); }}
+    .bar-fill.panel-unknown {{ background: linear-gradient(90deg, #64748b, #94a3b8); }}
+    .master {{
+      padding: 15px;
+    }}
+    .link-box {{
+      margin-top: 10px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--paper-strong);
+    }}
+    html[data-theme="night"] .link-box {{
+      background: #10203c;
+    }}
+    .node-section {{
+      padding: 14px;
+    }}
+    .node-row {{
+      margin-top: 8px;
+      display: grid;
+      gap: 10px;
+      align-items: center;
+      grid-template-columns: 230px minmax(0, 1fr) 92px 210px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: var(--paper-strong);
+    }}
+    html[data-theme="night"] .node-row {{
+      background: #10203c;
+    }}
+    .node-main {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }}
+    .node-icon {{
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 900;
+      display: grid;
+      place-items: center;
+      animation: pulse 2.5s ease-in-out infinite;
+    }}
+    .meta .name {{
+      font-weight: 800;
+      word-break: break-word;
+    }}
+    .meta .sub {{
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+    }}
+    .url {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      color: var(--accent);
+      background: #f6faff;
+      word-break: break-all;
+    }}
+    html[data-theme="night"] .url {{
+      background: #0d1b34;
+      color: #bfdbfe;
+    }}
+    .status {{
+      justify-self: start;
+      font-size: 11px;
+      font-weight: 800;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      padding: 5px 9px;
+    }}
+    .status.ok {{ color: var(--ok); background: #dcfce7; border-color: #86efac; }}
+    .status.warn {{ color: var(--warn); background: #fef3c7; border-color: #fcd34d; }}
+    .status.err {{ color: var(--err); background: #fee2e2; border-color: #fca5a5; }}
+    html[data-theme="night"] .status.ok {{ background: #14532d66; border-color: #22c55e88; }}
+    html[data-theme="night"] .status.warn {{ background: #78350f66; border-color: #f59e0b88; }}
+    html[data-theme="night"] .status.err {{ background: #7f1d1d66; border-color: #ef444488; }}
+    .actions {{
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }}
+    .node-actions .btn {{
+      padding: 7px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+    }}
+    .empty {{
+      color: var(--muted);
+      font-size: 13px;
+      padding: 10px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      background: var(--paper-strong);
+      margin-top: 10px;
+    }}
+    .muted {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .foot-note {{
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 4px 0 1px;
+    }}
     .toast {{
       position: fixed;
-      left: 16px;
-      bottom: 16px;
-      background: #061225f0;
-      border: 1px solid #334d7f;
-      border-radius: 10px;
+      left: 14px;
+      bottom: 14px;
+      background: #0f1f3aed;
+      border: 1px solid #335489;
+      border-radius: 11px;
       padding: 10px 12px;
       font-size: 13px;
-      color: #e2ecff;
+      color: #e7f0ff;
       opacity: 0;
       transform: translateY(8px);
       transition: opacity .2s ease, transform .2s ease;
       pointer-events: none;
-      z-index: 30;
+      z-index: 60;
+      max-width: min(420px, calc(100vw - 28px));
     }}
-    .toast.show {{ opacity: 1; transform: translateY(0); }}
-    @keyframes fadeUp {{
-      from {{ opacity: 0; transform: translateY(8px); }}
+    .toast.show {{
+      opacity: 1;
+      transform: translateY(0);
+    }}
+    .toast.ok {{ border-color: #22c55e88; }}
+    .toast.warn {{ border-color: #f59e0b88; }}
+    .toast.err {{ border-color: #ef444488; }}
+    .reveal {{
+      opacity: 0;
+      transform: translateY(10px);
+      animation: reveal .55s ease forwards;
+      animation-delay: var(--delay, 0s);
+    }}
+    @keyframes reveal {{
+      from {{ opacity: 0; transform: translateY(10px); }}
       to {{ opacity: 1; transform: translateY(0); }}
     }}
-    @media (max-width: 980px) {{
-      .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-      .row {{ grid-template-columns: 1fr; }}
+    @keyframes floaty {{
+      0%, 100% {{ transform: translateY(0); }}
+      50% {{ transform: translateY(-4px); }}
+    }}
+    @keyframes pulse {{
+      0%, 100% {{ transform: scale(1); opacity: 1; }}
+      50% {{ transform: scale(1.07); opacity: .78; }}
+    }}
+    @keyframes drift {{
+      0%, 100% {{ transform: translate(0, 0); }}
+      50% {{ transform: translate(14px, -12px); }}
+    }}
+    @media (max-width: 1120px) {{
+      .grid-4 {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+      .grid-2 {{ grid-template-columns: 1fr; }}
+      .usage-wrap {{ grid-template-columns: 1fr; }}
+      .node-row {{ grid-template-columns: 1fr; }}
       .actions {{ justify-content: flex-start; }}
     }}
-    @media (max-width: 560px) {{
-      body {{ padding: 10px; }}
-      .card {{ padding: 12px; border-radius: 14px; }}
-      .title {{ font-size: 20px; }}
-      .grid {{ grid-template-columns: 1fr; }}
+    @media (max-width: 760px) {{
+      .page {{ padding: 10px; }}
+      .hero {{ padding: 13px; border-radius: 16px; }}
+      .grid-4 {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .ring {{ width: 160px; }}
+      .ring.ring-sm {{ width: 126px; }}
+    }}
+    @media (max-width: 520px) {{
+      .grid-4 {{ grid-template-columns: 1fr; }}
+      .top-actions {{ width: 100%; }}
+      .top-actions .btn {{ width: 100%; }}
+      .section-head {{ flex-direction: column; align-items: flex-start; }}
+      .health-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
 <body>
-  <div class="container">
-    <section class="card">
-      <div class="row-head">
-        <div>
-          <h1 class="title">اشتراک Guardino</h1>
-          <div class="subtitle">توکن کاربر: <span class="mono">{token_html}</span></div>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <main class="page">
+    <section class="glass hero reveal" style="--delay:.02s">
+      <div class="hero-top">
+        <div class="brand">
+          <div class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 3v18M3 12h18M5 7l14 10M5 17L19 7"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="hero-title">مرکز ساب‌لینک Guardino</h1>
+            <p class="hero-subtitle">داشبورد حرفه‌ای اطلاعات اشتراک، سلامت لینک‌ها، دسترسی سریع به لینک مرکزی و نودها.</p>
+          </div>
         </div>
-        <div class="pill {expiry_badge}">{expiry_state}</div>
+        <div class="top-actions">
+          <button type="button" id="themeToggle" class="btn btn-soft">
+            <span class="theme-icon" aria-hidden="true"></span>
+            <span id="themeLabel">حالت شب</span>
+          </button>
+          <button type="button" class="btn btn-soft" onclick="copyTextSafe({master_link_js})">کپی لینک مرکزی</button>
+          <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک مرکزی</a>
+        </div>
       </div>
-      <div class="grid">
-        <div class="stat"><div class="k">کاربر</div><div class="v">{label}</div></div>
-        <div class="stat"><div class="k">وضعیت</div><div class="v">{status}</div></div>
-        <div class="stat"><div class="k">انقضا</div><div class="v">{expire_text}</div></div>
-        <div class="stat"><div class="k">روز باقی‌مانده</div><div class="v">{days_left}</div></div>
+      <div class="token-line">
+        <span>توکن کاربر:</span>
+        <span class="mono">{token_html}</span>
+        <button type="button" class="btn btn-soft" onclick="copyTextSafe({json.dumps(token)})">کپی توکن</button>
       </div>
-      <div class="grid">
-        <div class="stat"><div class="k">حجم کل</div><div class="v">{total_gb:.1f} GB</div></div>
-        <div class="stat"><div class="k">مصرف‌شده</div><div class="v">{used_gb:.1f} GB</div></div>
-        <div class="stat"><div class="k">باقی‌مانده</div><div class="v">{remain_gb:.1f} GB</div></div>
-        <div class="stat"><div class="k">مصرف</div><div class="v">{percent}%</div></div>
+      <div class="mini-chips">
+        <span class="badge {expiry_badge}">{expiry_state}</span>
+        <span class="badge {status_class}">وضعیت کاربر: {status_text}</span>
+        <span class="badge neutral">مد انتخاب نود: {selection_mode}</span>
+        <span class="badge neutral">گروه نود: {node_group_text}</span>
+        <span class="badge neutral"><span data-number="{usable_links}">{usable_links}</span> لینک فعال</span>
       </div>
-      <div class="progress"><span></span></div>
     </section>
 
-    <section class="card">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
+    <section class="grid-4">
+      <article class="glass stat-card reveal" style="--delay:.03s">
+        <div class="stat-top"><span class="k">کاربر</span><span class="dot neutral"></span></div>
+        <div class="v">{label}</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.06s">
+        <div class="stat-top"><span class="k">روز باقی‌مانده</span><span class="dot {expiry_badge}"></span></div>
+        <div class="v" data-number="{days_left_display}">{days_left_display}</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.09s">
+        <div class="stat-top"><span class="k">انقضا (شمسی)</span><span class="dot {expiry_badge}"></span></div>
+        <div class="v slim jalali" data-jalali="datetime" data-iso="{expire_iso}" data-fallback="{expire_text}">{expire_text}</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.12s">
+        <div class="stat-top"><span class="k">درصد مصرف</span><span class="dot neutral"></span></div>
+        <div class="v"><span data-number="{percent}">{percent}</span>%</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.15s">
+        <div class="stat-top"><span class="k">حجم کل</span><span class="dot neutral"></span></div>
+        <div class="v"><span data-number="{total_gb:.2f}">{total_gb:.2f}</span> GB</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.18s">
+        <div class="stat-top"><span class="k">مصرف شده</span><span class="dot warn"></span></div>
+        <div class="v"><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> GB</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.21s">
+        <div class="stat-top"><span class="k">باقی‌مانده</span><span class="dot ok"></span></div>
+        <div class="v"><span data-number="{remain_gb:.2f}">{remain_gb:.2f}</span> GB</div>
+      </article>
+      <article class="glass stat-card reveal" style="--delay:.24s">
+        <div class="stat-top"><span class="k">آخرین بروزرسانی</span><span class="dot neutral"></span></div>
+        <div class="v slim jalali" data-jalali="datetime" data-iso="{updated_iso}" data-fallback="{updated_text}">{updated_text}</div>
+      </article>
+    </section>
+
+    <section class="grid-2">
+      <article class="glass analytics reveal" style="--delay:.27s">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">تحلیل مصرف و زمان</h2>
+            <p class="section-sub">نمودار مصرف حجم، روند زمانی اشتراک، و جزئیات تخصیص.</p>
+          </div>
+          <span class="badge neutral">شناسه کاربر: <span data-number="{user.id}">{user.id}</span></span>
+        </div>
+        <div class="usage-wrap">
+          <div class="ring" style="--value:{percent}">
+            <div class="ring-inner">
+              <strong data-number="{percent}">{percent}</strong>
+              <span>درصد مصرف</span>
+            </div>
+          </div>
+          <div class="progress-list">
+            <div class="progress-item">
+              <div class="progress-meta">
+                <span>مصرف حجم</span>
+                <strong><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> GB</strong>
+              </div>
+              <div class="track"><span style="width:{percent}%"></span></div>
+            </div>
+            <div class="progress-item">
+              <div class="progress-meta">
+                <span>پیشرفت زمانی اشتراک</span>
+                <strong><span data-number="{time_percent}">{time_percent}</span>%</strong>
+              </div>
+              <div class="track"><span style="width:{time_percent}%"></span></div>
+            </div>
+            <div class="progress-item">
+              <div class="progress-meta">
+                <span>ایجاد اشتراک</span>
+                <strong class="jalali" data-jalali="datetime" data-iso="{created_iso}" data-fallback="{created_text}">{created_text}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="glass analytics reveal" style="--delay:.30s">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">سلامت لینک‌ها و توزیع پنل</h2>
+            <p class="section-sub">وضعیت لینک‌ها به تفکیک پنل و نرخ دسترسی.</p>
+          </div>
+          <span class="badge neutral">نرخ سلامت: <span data-number="{availability_percent}">{availability_percent}</span>%</span>
+        </div>
+        <div class="health-grid">
+          <div class="mini"><span>سالم</span><strong data-number="{ok_links}">{ok_links}</strong></div>
+          <div class="mini"><span>بدون لینک</span><strong data-number="{missing_links}">{missing_links}</strong></div>
+          <div class="mini"><span>خطا</span><strong data-number="{error_links}">{error_links}</strong></div>
+        </div>
+        <div class="ring ring-sm" style="--value:{availability_percent}">
+          <div class="ring-inner">
+            <strong data-number="{availability_percent}">{availability_percent}</strong>
+            <span>دسترسی</span>
+          </div>
+        </div>
+        <div class="panel-list">{panel_rows_html}</div>
+      </article>
+    </section>
+
+    <section class="glass master reveal" style="--delay:.33s">
+      <div class="section-head">
         <div>
-          <div class="title" style="font-size:18px;margin:0;">لینک مرکزی (Raw)</div>
-          <div class="subtitle">برای کلاینت‌ها این لینک را استفاده کنید.</div>
+          <h2 class="section-title">ساب‌لینک مرکزی</h2>
+          <p class="section-sub">این لینک را در کلاینت‌ها قرار دهید تا همه نودهای مجاز یک‌جا خوانده شوند.</p>
         </div>
         <div class="actions">
-          <button class="btn btn-outline" onclick="copyText({master_link_js})">کپی</button>
+          <button type="button" class="btn btn-soft" onclick="copyTextSafe({master_link_js})">کپی</button>
           <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن</a>
         </div>
       </div>
-      <div class="mono" style="margin-top:10px;">{master_link_html}</div>
+      <div class="link-box mono">{master_link_html}</div>
     </section>
 
-    <section class="card">
-      <div class="row-head">
+    <section class="glass node-section reveal" style="--delay:.36s">
+      <div class="section-head">
         <div>
-          <div class="title" style="font-size:18px;margin:0;">لینک‌های هر نود</div>
-          <div class="subtitle">برای نودهای WGDashboard فایل کانفیگ `.conf` ارائه می‌شود.</div>
+          <h2 class="section-title">لینک‌های مستقیم نودها</h2>
+          <p class="section-sub">برای نودهای WGDashboard فایل کانفیگ `.conf` ارائه می‌شود.</p>
         </div>
-        <div class="pill">{usable_links} لینک فعال</div>
+        <span class="badge neutral"><span data-number="{total_links}">{total_links}</span> نود</span>
       </div>
       {rows_html}
     </section>
-  </div>
+
+    <footer class="foot-note">
+      زمان تولید صفحه:
+      <span class="jalali" data-jalali="datetime" data-iso="{generated_iso}" data-fallback="{generated_text}">{generated_text}</span>
+    </footer>
+  </main>
   <div id="toast" class="toast"></div>
   <script>
     let toastTimer = null;
-    function showToast(msg) {{
+    function showToast(msg, tone) {{
       const el = document.getElementById("toast");
       if (!el) return;
+      el.className = "toast";
+      if (tone) el.classList.add(tone);
       el.textContent = msg;
       el.classList.add("show");
       if (toastTimer) clearTimeout(toastTimer);
       toastTimer = setTimeout(() => {{
         el.classList.remove("show");
-      }}, 1500);
+      }}, 1700);
     }}
 
-    async function copyText(t) {{
+    function toFaNumber(value) {{
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      if (Math.floor(n) === n) return n.toLocaleString("fa-IR");
+      return n.toLocaleString("fa-IR", {{ maximumFractionDigits: 2 }});
+    }}
+
+    function renderFaNumbers() {{
+      const nodes = document.querySelectorAll("[data-number]");
+      nodes.forEach((el) => {{
+        const raw = el.getAttribute("data-number");
+        const txt = toFaNumber(raw);
+        if (txt !== null) el.textContent = txt;
+      }});
+    }}
+
+    function renderJalaliDates() {{
+      const dateFmt = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {{ dateStyle: "long" }});
+      const dateTimeFmt = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {{ dateStyle: "long", timeStyle: "short" }});
+      document.querySelectorAll(".jalali[data-iso]").forEach((el) => {{
+        const iso = el.getAttribute("data-iso");
+        const mode = el.getAttribute("data-jalali");
+        const fallback = el.getAttribute("data-fallback") || el.textContent || "";
+        if (!iso) {{
+          el.textContent = fallback;
+          return;
+        }}
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) {{
+          el.textContent = fallback;
+          return;
+        }}
+        try {{
+          el.textContent = mode === "date" ? dateFmt.format(d) : dateTimeFmt.format(d);
+        }} catch (_err) {{
+          el.textContent = fallback;
+        }}
+      }});
+    }}
+
+    function applyTheme(mode) {{
+      const normalized = mode === "night" ? "night" : "day";
+      document.documentElement.dataset.theme = normalized;
+      const label = document.getElementById("themeLabel");
+      if (label) {{
+        label.textContent = normalized === "night" ? "حالت روز" : "حالت شب";
+      }}
       try {{
-        await navigator.clipboard.writeText(t);
-        showToast("کپی شد");
-      }} catch (_e) {{
-        prompt("کپی دستی:", t);
+        localStorage.setItem("guardino-sub-theme", normalized);
+      }} catch (_err) {{
+        // ignore storage errors
       }}
     }}
+
+    function initTheme() {{
+      let saved = "day";
+      try {{
+        const v = localStorage.getItem("guardino-sub-theme");
+        if (v === "night") saved = "night";
+      }} catch (_err) {{
+        saved = "day";
+      }}
+      applyTheme(saved);
+      const toggle = document.getElementById("themeToggle");
+      if (!toggle) return;
+      toggle.addEventListener("click", () => {{
+        const current = document.documentElement.dataset.theme === "night" ? "night" : "day";
+        applyTheme(current === "night" ? "day" : "night");
+      }});
+    }}
+
+    async function copyTextSafe(t) {{
+      const value = String(t ?? "");
+      if (!value.trim()) {{
+        showToast("متنی برای کپی وجود ندارد", "warn");
+        return false;
+      }}
+      try {{
+        if (navigator.clipboard && window.isSecureContext) {{
+          await navigator.clipboard.writeText(value);
+          showToast("با موفقیت کپی شد", "ok");
+          return true;
+        }}
+      }} catch (_err) {{
+        // fallback to legacy copy
+      }}
+      try {{
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        ta.setAttribute("readonly", "true");
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        ta.style.left = "-1000px";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) {{
+          showToast("با موفقیت کپی شد", "ok");
+          return true;
+        }}
+      }} catch (_err) {{
+        // fallback to manual prompt
+      }}
+      window.prompt("کپی دستی:", value);
+      showToast("کپی خودکار در این مرورگر محدود است", "warn");
+      return false;
+    }}
+
+    initTheme();
+    renderFaNumbers();
+    renderJalaliDates();
   </script>
 </body>
 </html>"""
