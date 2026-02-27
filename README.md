@@ -274,6 +274,19 @@ Main environment variables (see `.env.example`):
 Frontend:
 - `NEXT_PUBLIC_API_BASE` (optional for local dev)
 
+### Guardino API Docs
+
+After deployment behind Nginx, Guardino's OpenAPI docs are available at:
+
+- `GET /docs`
+- `GET /openapi.json`
+
+Compatibility aliases are also available:
+
+- `GET /api/docs`
+- `GET /api/openapi.json`
+- `GET /redoc` and `GET /api/redoc`
+
 ---
 
 ## Operations & troubleshooting
