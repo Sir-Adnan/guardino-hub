@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     USAGE_SYNC_SECONDS: int = 60
     EXPIRY_SYNC_SECONDS: int = 60
+    USAGE_SYNC_BATCH_SIZE: int = 2000
+    EXPIRY_SYNC_BATCH_SIZE: int = 500
 
     REFUND_WINDOW_DAYS: int = 10
 
