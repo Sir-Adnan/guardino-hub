@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,39 +88,6 @@ def _render_sub_page(
     expiry_badge = "err" if sec_left < 0 else ("warn" if days_left <= 3 else "ok")
     usable_links = sum(1 for it in node_links if (it.get("url") or "").strip())
     total_links = len(node_links)
-    ok_links = sum(1 for it in node_links if (it.get("status") or "").strip() == "ok")
-    missing_links = sum(1 for it in node_links if (it.get("status") or "").strip() == "missing")
-    error_links = max(0, total_links - ok_links - missing_links)
-    availability_percent = 0 if total_links == 0 else int(round((ok_links / total_links) * 100))
-
-    panel_counts = {"marzban": 0, "pasarguard": 0, "wg_dashboard": 0, "unknown": 0}
-    for item in node_links:
-        panel_key = str(item.get("panel_type") or "unknown")
-        panel_counts[panel_key if panel_key in panel_counts else "unknown"] += 1
-
-    panel_rows: list[str] = []
-    for panel_key, panel_label, css in (
-        ("marzban", "Marzban", "panel-marzban"),
-        ("pasarguard", "Pasarguard", "panel-pasarguard"),
-        ("wg_dashboard", "WGDashboard", "panel-wg"),
-        ("unknown", "Other", "panel-unknown"),
-    ):
-        count = panel_counts.get(panel_key, 0)
-        if panel_key == "unknown" and count == 0 and total_links > 0:
-            continue
-        ratio = 0 if total_links == 0 else int(round((count / total_links) * 100))
-        panel_rows.append(
-            f"""
-            <div class="panel-row">
-              <div class="panel-top">
-                <span class="chip {css}">{panel_label}</span>
-                <strong data-number="{count}">{count}</strong>
-              </div>
-              <div class="bar-track"><span class="bar-fill {css}" style="width:{ratio}%"></span></div>
-            </div>
-            """
-        )
-    panel_rows_html = "\n".join(panel_rows) if panel_rows else '<div class="empty">داده‌ای برای نمودار نودها موجود نیست.</div>'
 
     created_at = user.created_at.astimezone(timezone.utc)
     updated_at = user.updated_at.astimezone(timezone.utc)
@@ -159,14 +125,14 @@ def _render_sub_page(
 
         url = item.get("url") or ""
         url_html = html.escape(url)
-        url_js = json.dumps(url)
+        url_attr = html.escape(url, quote=True)
         action_text = "دانلود کانفیگ" if panel_key == "wg_dashboard" else "باز کردن لینک"
         action = (
             f'<a class="btn" href="{url_html}" target="_blank" rel="noopener">{action_text}</a>'
             if url
             else '<span class="muted">بدون لینک</span>'
         )
-        copy_btn = f'<button type="button" class="btn btn-soft" onclick="copyTextSafe({url_js})">کپی</button>' if url else ""
+        copy_btn = f'<button type="button" class="btn btn-soft copy-btn" data-copy="{url_attr}">کپی</button>' if url else ""
         rows.append(
             f"""
             <article class="node-row reveal" style="--delay:{min(idx * 0.05, 0.70):.2f}s">
@@ -189,8 +155,6 @@ def _render_sub_page(
     status_value = str(user.status.value if hasattr(user.status, "value") else user.status)
     status_text = html.escape({"active": "فعال", "disabled": "غیرفعال", "deleted": "حذف‌شده"}.get(status_value, status_value))
     status_class = "ok" if status_value == "active" else ("warn" if status_value == "disabled" else "err")
-    selection_mode = "گروهی" if user.node_selection_mode == NodeSelectionMode.group else "دستی"
-    node_group_text = html.escape(user.node_group or "—")
     expire_text = html.escape(expire_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
     created_text = html.escape(created_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
     updated_text = html.escape(updated_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
@@ -200,8 +164,9 @@ def _render_sub_page(
     updated_iso = html.escape(updated_at.isoformat())
     generated_iso = html.escape(now.isoformat())
     master_link_html = html.escape(master_raw_link)
-    master_link_js = json.dumps(master_raw_link)
+    master_link_attr = html.escape(master_raw_link, quote=True)
     token_html = html.escape(token)
+    token_attr = html.escape(token, quote=True)
 
     return f"""<!doctype html>
 <html lang="fa" dir="rtl">
@@ -884,7 +849,7 @@ def _render_sub_page(
           </div>
           <div>
             <h1 class="hero-title">مرکز ساب‌لینک Guardino</h1>
-            <p class="hero-subtitle">داشبورد حرفه‌ای اطلاعات اشتراک، سلامت لینک‌ها، دسترسی سریع به لینک مرکزی و نودها.</p>
+            <p class="hero-subtitle">نمای کامل وضعیت اشتراک، لینک مرکزی و لینک‌های مستقیم برای اتصال سریع در کلاینت‌های VPN.</p>
           </div>
         </div>
         <div class="top-actions">
@@ -892,20 +857,18 @@ def _render_sub_page(
             <span class="theme-icon" aria-hidden="true"></span>
             <span id="themeLabel">حالت شب</span>
           </button>
-          <button type="button" class="btn btn-soft" onclick="copyTextSafe({master_link_js})">کپی لینک مرکزی</button>
+          <button type="button" class="btn btn-soft copy-btn" data-copy="{master_link_attr}">کپی لینک مرکزی</button>
           <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک مرکزی</a>
         </div>
       </div>
       <div class="token-line">
         <span>توکن کاربر:</span>
         <span class="mono">{token_html}</span>
-        <button type="button" class="btn btn-soft" onclick="copyTextSafe({json.dumps(token)})">کپی توکن</button>
+        <button type="button" class="btn btn-soft copy-btn" data-copy="{token_attr}">کپی توکن</button>
       </div>
       <div class="mini-chips">
         <span class="badge {expiry_badge}">{expiry_state}</span>
         <span class="badge {status_class}">وضعیت کاربر: {status_text}</span>
-        <span class="badge neutral">مد انتخاب نود: {selection_mode}</span>
-        <span class="badge neutral">گروه نود: {node_group_text}</span>
         <span class="badge neutral"><span data-number="{usable_links}">{usable_links}</span> لینک فعال</span>
       </div>
     </section>
@@ -989,23 +952,34 @@ def _render_sub_page(
       <article class="glass analytics reveal" style="--delay:.30s">
         <div class="section-head">
           <div>
-            <h2 class="section-title">سلامت لینک‌ها و توزیع پنل</h2>
-            <p class="section-sub">وضعیت لینک‌ها به تفکیک پنل و نرخ دسترسی.</p>
+            <h2 class="section-title">راهنمای استفاده سریع</h2>
+            <p class="section-sub">مراحل پیشنهادی برای اتصال پایدار در کلاینت‌های مختلف.</p>
           </div>
-          <span class="badge neutral">نرخ سلامت: <span data-number="{availability_percent}">{availability_percent}</span>%</span>
+          <span class="badge neutral">لینک‌های آماده: <span data-number="{total_links}">{total_links}</span></span>
         </div>
-        <div class="health-grid">
-          <div class="mini"><span>سالم</span><strong data-number="{ok_links}">{ok_links}</strong></div>
-          <div class="mini"><span>بدون لینک</span><strong data-number="{missing_links}">{missing_links}</strong></div>
-          <div class="mini"><span>خطا</span><strong data-number="{error_links}">{error_links}</strong></div>
-        </div>
-        <div class="ring ring-sm" style="--value:{availability_percent}">
-          <div class="ring-inner">
-            <strong data-number="{availability_percent}">{availability_percent}</strong>
-            <span>دسترسی</span>
+        <div class="progress-list">
+          <div class="progress-item">
+            <div class="progress-meta">
+              <span>۱) لینک مرکزی</span>
+              <strong>پیشنهادی</strong>
+            </div>
+            <div class="muted">ابتدا لینک مرکزی را کپی کنید و در کلاینت وارد کنید تا همه نودها یکجا لود شوند.</div>
+          </div>
+          <div class="progress-item">
+            <div class="progress-meta">
+              <span>۲) لینک مستقیم نود</span>
+              <strong>جایگزین</strong>
+            </div>
+            <div class="muted">اگر کلاینت شما با لینک مرکزی سازگار نیست، از لینک‌های مستقیم همین صفحه استفاده کنید.</div>
+          </div>
+          <div class="progress-item">
+            <div class="progress-meta">
+              <span>۳) انقضا و مصرف</span>
+              <strong>پایش روزانه</strong>
+            </div>
+            <div class="muted">تاریخ انقضا و درصد مصرف را بررسی کنید تا پیش از قطع سرویس، تمدید انجام شود.</div>
           </div>
         </div>
-        <div class="panel-list">{panel_rows_html}</div>
       </article>
     </section>
 
@@ -1016,7 +990,7 @@ def _render_sub_page(
           <p class="section-sub">این لینک را در کلاینت‌ها قرار دهید تا همه نودهای مجاز یک‌جا خوانده شوند.</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn btn-soft" onclick="copyTextSafe({master_link_js})">کپی</button>
+          <button type="button" class="btn btn-soft copy-btn" data-copy="{master_link_attr}">کپی</button>
           <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن</a>
         </div>
       </div>
@@ -1167,7 +1141,17 @@ def _render_sub_page(
       return false;
     }}
 
+    function bindCopyButtons() {{
+      document.querySelectorAll(".copy-btn[data-copy]").forEach((btn) => {{
+        btn.addEventListener("click", async () => {{
+          const value = btn.getAttribute("data-copy") || "";
+          await copyTextSafe(value);
+        }});
+      }});
+    }}
+
     initTheme();
+    bindCopyButtons();
     renderFaNumbers();
     renderJalaliDates();
   </script>
