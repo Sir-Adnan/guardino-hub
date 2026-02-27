@@ -133,9 +133,26 @@ async def _sync_usage_async():
                             continue
                         used = wg_usage_map_by_node.get(s.node_id, {}).get(str(s.remote_identifier or "").strip())
                         if used is None:
-                            stats.remote_skipped += 1
-                            total_used += effective_used
-                            continue
+                            # Fallback for partial bulk misses (stale peer index / recent topology changes).
+                            try:
+                                used = await adapter.get_used_bytes(s.remote_identifier)
+                            except Exception as e:
+                                stats.remote_failures += 1
+                                if failure_log_budget > 0:
+                                    logger.warning(
+                                        "sync_usage WG fallback fetch failed user_id=%s node_id=%s remote_identifier=%s err=%s",
+                                        u.id,
+                                        s.node_id,
+                                        s.remote_identifier,
+                                        str(e)[:220],
+                                    )
+                                    failure_log_budget -= 1
+                                total_used += effective_used
+                                continue
+                            if used is None:
+                                stats.remote_skipped += 1
+                                total_used += effective_used
+                                continue
                         effective_used = max(0, int(used))
                         s.used_bytes = effective_used
                         s.last_sync_at = now
