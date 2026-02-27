@@ -12,6 +12,8 @@ BRANCH_DEFAULT="main"
 DEFAULT_INSTALL_DIR="/opt/guardino-hub"
 BACKUP_SCRIPT_PATH="/usr/local/bin/guardino-hub-backup.sh"
 BACKUP_CRON_TAG="# guardino-hub-backup"
+TELEGRAM_CONFIG_FILE="/etc/guardino-hub/telegram-backup.env"
+TELEGRAM_PREFIX_DEFAULT="GuardinoHub"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -30,6 +32,9 @@ BACKUP_DIR_DEFAULT="${BACKUP_DIR:-${INSTALL_DIR}/backups}"
 BACKUP_FILE_GLOB="guardino_backup_*.tar.gz"
 
 SILENT="0"
+BACKUP_MODE="${BACKUP_MODE:-full}"
+TELEGRAM_AUTO_UPLOAD="${TELEGRAM_AUTO_UPLOAD:-0}"
+LAST_BACKUP_ARCHIVE=""
 
 BOLD='\033[1m'
 RED='\033[0;31m'
@@ -92,6 +97,116 @@ ensure_cron_ready() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now cron >/dev/null 2>&1 || true
   fi
+}
+
+sanitize_prefix() {
+  local in="${1:-}"
+  local clean
+  clean="$(printf "%s" "${in}" | tr -cd 'a-zA-Z0-9._-')"
+  if [ -z "${clean}" ]; then
+    clean="${TELEGRAM_PREFIX_DEFAULT}"
+  fi
+  echo "${clean}"
+}
+
+shell_single_quote_escape() {
+  printf "%s" "${1:-}" | sed "s/'/'\"'\"'/g"
+}
+
+load_telegram_config() {
+  TG_BOT_TOKEN="${TG_BOT_TOKEN:-}"
+  TG_CHAT_ID="${TG_CHAT_ID:-}"
+  TG_PREFIX="${TG_PREFIX:-}"
+  TG_MODE="${TG_MODE:-}"
+  if [ -f "${TELEGRAM_CONFIG_FILE}" ]; then
+    # shellcheck disable=SC1090
+    source "${TELEGRAM_CONFIG_FILE}"
+  fi
+  TG_PREFIX="$(sanitize_prefix "${TG_PREFIX:-${TELEGRAM_PREFIX_DEFAULT}}")"
+  TG_MODE="${TG_MODE:-full}"
+}
+
+save_telegram_config() {
+  local token="$1"
+  local chat_id="$2"
+  local prefix="$3"
+  local mode="$4"
+  mkdir -p "$(dirname "${TELEGRAM_CONFIG_FILE}")"
+  local e_token e_chat e_prefix e_mode
+  e_token="$(shell_single_quote_escape "${token}")"
+  e_chat="$(shell_single_quote_escape "${chat_id}")"
+  e_prefix="$(shell_single_quote_escape "$(sanitize_prefix "${prefix}")")"
+  e_mode="$(shell_single_quote_escape "${mode}")"
+  cat > "${TELEGRAM_CONFIG_FILE}" <<EOF
+TG_BOT_TOKEN='${e_token}'
+TG_CHAT_ID='${e_chat}'
+TG_PREFIX='${e_prefix}'
+TG_MODE='${e_mode}'
+EOF
+  chmod 600 "${TELEGRAM_CONFIG_FILE}"
+}
+
+is_telegram_configured() {
+  load_telegram_config
+  [ -n "${TG_BOT_TOKEN}" ] && [ -n "${TG_CHAT_ID}" ]
+}
+
+verify_telegram_connection() {
+  local token="$1"
+  local chat_id="$2"
+  local text="$3"
+  local resp
+  resp="$(curl -fsS --connect-timeout 10 --max-time 20 \
+    -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+    -d "chat_id=${chat_id}" \
+    --data-urlencode "text=${text}" 2>/dev/null || true)"
+  [[ "${resp}" == *"\"ok\":true"* ]]
+}
+
+upload_backup_to_telegram() {
+  local archive="$1"
+  local mode="${2:-full}"
+  load_telegram_config
+  if [ -z "${TG_BOT_TOKEN}" ] || [ -z "${TG_CHAT_ID}" ]; then
+    log_err "Telegram upload requested, but bot config is missing."
+    return 1
+  fi
+  if [ ! -f "${archive}" ]; then
+    log_err "Backup file not found for Telegram upload: ${archive}"
+    return 1
+  fi
+
+  local server_ip date_now size_h file_name caption resp
+  server_ip="$(detect_public_ip)"
+  date_now="$(date -u +'%Y-%m-%d %H:%M UTC')"
+  size_h="$(du -h "${archive}" | awk '{print $1}')"
+  file_name="$(basename "${archive}")"
+  caption="🔐 <b>Guardino Backup (${mode})</b>
+━━━━━━━━━━━━━━━━━━
+🏷 <b>Server:</b> <code>${TG_PREFIX}</code>
+🌍 <b>IP:</b> <code>${server_ip:-n/a}</code>
+📅 <b>Time:</b> <code>${date_now}</code>
+📦 <b>Size:</b> <code>${size_h}</code>
+🗂 <b>File:</b> <code>${file_name}</code>
+━━━━━━━━━━━━━━━━━━
+✅ <i>Backup completed successfully.</i>"
+
+  log_info "Uploading backup to Telegram..."
+  resp="$(curl -sS --connect-timeout 15 --max-time 1800 \
+    -F "chat_id=${TG_CHAT_ID}" \
+    -F "caption=${caption}" \
+    -F "parse_mode=HTML" \
+    -F "document=@${archive}" \
+    "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" || true)"
+  if [[ "${resp}" == *"\"ok\":true"* ]]; then
+    log_ok "Telegram upload completed."
+    return 0
+  fi
+  log_err "Telegram upload failed."
+  if [ -n "${resp}" ]; then
+    log_err "Telegram response: ${resp}"
+  fi
+  return 1
 }
 
 compose_base() {
@@ -216,8 +331,12 @@ draw_dashboard() {
     fi
   fi
 
-  if is_backup_scheduled; then
-    backup_status="${GREEN}scheduled${NC}"
+  if is_backup_scheduled && is_telegram_configured; then
+    backup_status="${GREEN}telegram-scheduled${NC}"
+  elif is_backup_scheduled; then
+    backup_status="${GREEN}local-scheduled${NC}"
+  elif is_telegram_configured; then
+    backup_status="${YELLOW}telegram-ready${NC}"
   else
     backup_status="${GREY}disabled${NC}"
   fi
@@ -272,7 +391,14 @@ create_backup_archive() {
   assert_source_ready_or_fail
   ensure_docker_ready
 
-  local out_dir="${1:-${BACKUP_DIR_DEFAULT}}"
+  local mode="${1:-${BACKUP_MODE}}"
+  local out_dir="${2:-${BACKUP_DIR_DEFAULT}}"
+  mode="$(printf "%s" "${mode}" | tr '[:upper:]' '[:lower:]')"
+  if [ "${mode}" != "full" ] && [ "${mode}" != "essential" ]; then
+    log_warn "Invalid backup mode '${mode}', using full."
+    mode="full"
+  fi
+
   mkdir -p "${out_dir}"
 
   local ts backup_name tmp_root work_dir archive
@@ -290,7 +416,7 @@ create_backup_archive() {
   copy_if_exists "${INSTALL_DIR}/deploy/docker-compose.ssl.yml" "${work_dir}/project/deploy/docker-compose.ssl.yml"
   copy_if_exists "${INSTALL_DIR}/deploy/nginx.conf" "${work_dir}/project/deploy/nginx.conf"
 
-  if [ -d "${INSTALL_DIR}/deploy/certbot" ]; then
+  if [ "${mode}" = "full" ] && [ -d "${INSTALL_DIR}/deploy/certbot" ]; then
     mkdir -p "${work_dir}/project/deploy"
     cp -a "${INSTALL_DIR}/deploy/certbot" "${work_dir}/project/deploy/certbot"
   fi
@@ -323,7 +449,7 @@ create_backup_archive() {
     rm -f "${globals_dump_file}"
   fi
 
-  if [ -d "/etc/letsencrypt" ]; then
+  if [ "${mode}" = "full" ] && [ -d "/etc/letsencrypt" ]; then
     log_info "Archiving LetsEncrypt data..."
     tar -C / -czf "${work_dir}/project/letsencrypt.tar.gz" etc/letsencrypt var/lib/letsencrypt >/dev/null 2>&1 || true
   fi
@@ -338,6 +464,7 @@ PROJECT=${PROJECT_NAME}
 COMMIT=${commit_ref}
 POSTGRES_DB=${db_name}
 POSTGRES_USER=${db_user}
+BACKUP_MODE=${mode}
 EOF
 
   log_info "Creating archive: ${archive}"
@@ -349,6 +476,11 @@ EOF
   log_ok "Backup completed."
   log_ok "File: ${archive}"
   log_ok "Size: ${size_h}"
+  LAST_BACKUP_ARCHIVE="${archive}"
+
+  if [ "${TELEGRAM_AUTO_UPLOAD}" = "1" ]; then
+    upload_backup_to_telegram "${archive}" "${mode}"
+  fi
 }
 
 select_backup_file() {
@@ -470,20 +602,7 @@ restore_backup_archive() {
   log_ok "Restore completed successfully."
 }
 
-write_backup_wrapper() {
-  cat > "${BACKUP_SCRIPT_PATH}" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-INSTALL_DIR="${INSTALL_DIR}" BACKUP_DIR="${BACKUP_DIR_DEFAULT}" bash "${INSTALL_DIR}/installer/manage.sh" --backup-now --silent
-EOF
-  chmod +x "${BACKUP_SCRIPT_PATH}"
-}
-
-set_backup_schedule() {
-  assert_source_ready_or_fail
-  ensure_cron_ready
-  write_backup_wrapper
-
+ask_backup_frequency() {
   echo ""
   echo " [1] Every 30 minutes"
   echo " [2] Every X hours"
@@ -517,20 +636,104 @@ set_backup_schedule() {
       cron_expr="0 3 * * *"
       ;;
   esac
+  echo "${cron_expr}"
+}
 
+write_backup_wrapper() {
+  local mode="${1:-full}"
+  local telegram_upload="${2:-0}"
+  local telegram_flag=""
+  if [ "${telegram_upload}" = "1" ]; then
+    telegram_flag="--telegram-upload"
+  fi
+  cat > "${BACKUP_SCRIPT_PATH}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+INSTALL_DIR="${INSTALL_DIR}" BACKUP_DIR="${BACKUP_DIR_DEFAULT}" BACKUP_MODE="${mode}" TELEGRAM_AUTO_UPLOAD="${telegram_upload}" bash "${INSTALL_DIR}/installer/manage.sh" --backup-now --silent --backup-mode "${mode}" ${telegram_flag}
+EOF
+  chmod +x "${BACKUP_SCRIPT_PATH}"
+}
+
+install_backup_cron() {
+  local cron_expr="$1"
   (crontab -l 2>/dev/null | grep -vF "${BACKUP_SCRIPT_PATH}" | grep -vF "${BACKUP_CRON_TAG}" || true) | crontab -
   (crontab -l 2>/dev/null; echo "${cron_expr} ${BACKUP_SCRIPT_PATH} ${BACKUP_CRON_TAG}") | crontab -
+}
+
+set_backup_schedule() {
+  assert_source_ready_or_fail
+  ensure_cron_ready
+  local cron_expr
+  cron_expr="$(ask_backup_frequency)"
+  write_backup_wrapper "full" "0"
+  install_backup_cron "${cron_expr}"
   log_ok "Backup schedule saved."
 
   log_info "Running a backup test..."
   bash "${BACKUP_SCRIPT_PATH}"
 }
 
+setup_telegram_backup() {
+  local mode="${1:-full}"
+  mode="$(printf "%s" "${mode}" | tr '[:upper:]' '[:lower:]')"
+  if [ "${mode}" != "full" ] && [ "${mode}" != "essential" ]; then
+    mode="full"
+  fi
+
+  assert_source_ready_or_fail
+  ensure_cron_ready
+  need_cmd curl
+  need_cmd tar
+  need_cmd gzip
+
+  load_telegram_config
+  echo ""
+  echo -e "${YELLOW}Telegram Backup Setup (${mode})${NC}"
+  echo -e "${GREY}--------------------------------------------------------------${NC}"
+
+  local token_in chat_in prefix_in
+  read -r -p "Bot Token [current: ${TG_BOT_TOKEN:+set}]: " token_in
+  read -r -p "Chat ID   [current: ${TG_CHAT_ID:-none}]: " chat_in
+  read -r -p "Server Prefix [default: ${TG_PREFIX:-${TELEGRAM_PREFIX_DEFAULT}}]: " prefix_in
+
+  local token chat prefix
+  token="${token_in:-${TG_BOT_TOKEN:-}}"
+  chat="${chat_in:-${TG_CHAT_ID:-}}"
+  prefix="$(sanitize_prefix "${prefix_in:-${TG_PREFIX:-${TELEGRAM_PREFIX_DEFAULT}}}")"
+
+  if [ -z "${token}" ] || [ -z "${chat}" ]; then
+    log_err "Bot token and chat id are required."
+    return 1
+  fi
+
+  log_info "Verifying Telegram connection..."
+  if ! verify_telegram_connection "${token}" "${chat}" "✅ Guardino backup bot connected (${prefix})"; then
+    log_err "Telegram verification failed. Check token/chat id."
+    return 1
+  fi
+  log_ok "Telegram credentials verified."
+
+  local cron_expr
+  cron_expr="$(ask_backup_frequency)"
+
+  save_telegram_config "${token}" "${chat}" "${prefix}" "${mode}"
+  write_backup_wrapper "${mode}" "1"
+  install_backup_cron "${cron_expr}"
+  log_ok "Telegram backup schedule saved."
+
+  TELEGRAM_AUTO_UPLOAD="1"
+  BACKUP_MODE="${mode}"
+  log_info "Running test backup and upload..."
+  create_backup_archive "${mode}" "${BACKUP_DIR_DEFAULT}"
+  log_ok "Test backup completed. Check your Telegram chat."
+}
+
 disable_backup_schedule() {
   ensure_cron_ready
   (crontab -l 2>/dev/null | grep -vF "${BACKUP_SCRIPT_PATH}" | grep -vF "${BACKUP_CRON_TAG}" || true) | crontab -
   rm -f "${BACKUP_SCRIPT_PATH}"
-  log_ok "Backup schedule disabled."
+  rm -f "${TELEGRAM_CONFIG_FILE}"
+  log_ok "Backup schedule disabled (including Telegram config)."
 }
 
 show_stack_logs() {
@@ -609,10 +812,12 @@ menu_loop() {
 
     echo -e "${GREY}--------------------------------------------------------------${NC}"
     echo -e "${YELLOW}BACKUP & RESTORE${NC}"
-    print_item 5 "Backup Now" "Create migration-ready archive"
-    print_item 6 "Schedule Backup" "Cron-based automatic backup"
-    print_item 7 "Restore Backup" "Restore full database + config"
-    print_item 8 "Disable Backup" "Remove cron schedule"
+    print_item 5 "Backup Now" "Create migration-ready archive (full)"
+    print_item 6 "Setup TG (Full)" "Schedule full backup + Telegram upload"
+    print_item 7 "Setup TG (Lite)" "Schedule essential backup + Telegram upload"
+    print_item 8 "Schedule Local" "Cron backup without Telegram"
+    print_item 10 "Restore Backup" "Restore full database + config"
+    print_item 11 "Disable Backup" "Remove schedule and TG config"
 
     echo -e "${GREY}--------------------------------------------------------------${NC}"
     echo -e "${YELLOW}SYSTEM${NC}"
@@ -627,15 +832,17 @@ menu_loop() {
       2) run_update; pause_prompt ;;
       3) show_stack_status; pause_prompt ;;
       4) show_stack_logs ;;
-      5) create_backup_archive; pause_prompt ;;
-      6) set_backup_schedule; pause_prompt ;;
-      7)
+      5) TELEGRAM_AUTO_UPLOAD="0"; create_backup_archive "full" "${BACKUP_DIR_DEFAULT}"; pause_prompt ;;
+      6) setup_telegram_backup "full"; pause_prompt ;;
+      7) setup_telegram_backup "essential"; pause_prompt ;;
+      8) set_backup_schedule; pause_prompt ;;
+      10)
         if file="$(select_backup_file)"; then
           restore_backup_archive "${file}" "1"
         fi
         pause_prompt
         ;;
-      8) disable_backup_schedule; pause_prompt ;;
+      11) disable_backup_schedule; pause_prompt ;;
       0) uninstall_guardino; pause_prompt ;;
       9) clear; exit 0 ;;
       *) ;;
@@ -648,11 +855,25 @@ main() {
 
   local action="menu"
   local restore_file=""
+  local telegram_mode="full"
   while [ "${#}" -gt 0 ]; do
     case "$1" in
       --install) action="install" ;;
       --update) action="update" ;;
       --backup-now) action="backup" ;;
+      --backup-mode)
+        shift
+        BACKUP_MODE="${1:-full}"
+        ;;
+      --telegram-upload) TELEGRAM_AUTO_UPLOAD="1" ;;
+      --setup-telegram-full)
+        action="setup-telegram"
+        telegram_mode="full"
+        ;;
+      --setup-telegram-lite)
+        action="setup-telegram"
+        telegram_mode="essential"
+        ;;
       --restore)
         action="restore"
         shift
@@ -674,7 +895,8 @@ main() {
   case "${action}" in
     install) run_install ;;
     update) run_update ;;
-    backup) create_backup_archive ;;
+    backup) create_backup_archive "${BACKUP_MODE}" "${BACKUP_DIR_DEFAULT}" ;;
+    setup-telegram) setup_telegram_backup "${telegram_mode}" ;;
     restore)
       if [ -z "${restore_file}" ]; then
         log_err "Usage: $0 --restore /path/to/${BACKUP_FILE_GLOB}"
