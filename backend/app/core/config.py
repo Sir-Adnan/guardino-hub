@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     REDIS_URL: str = "redis://localhost:6379/0"
+    USAGE_SYNC_SECONDS: int = 60
+    EXPIRY_SYNC_SECONDS: int = 60
 
     REFUND_WINDOW_DAYS: int = 10
 
