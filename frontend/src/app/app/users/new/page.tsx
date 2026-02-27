@@ -16,7 +16,8 @@ import { useI18n } from "@/components/i18n-context";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useAuth } from "@/components/auth-context";
 import { Badge } from "@/components/ui/badge";
-import { Copy, ExternalLink, Link2 } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { CalendarDays, Copy, ExternalLink, Gauge, Link2, Lock, Sparkles } from "lucide-react";
 
 type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
 type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
@@ -71,12 +72,24 @@ type CreateSummary = {
   issues: CreateIssue[];
 };
 
+type ResellerUserPolicy = {
+  enabled: boolean;
+  allow_custom_days: boolean;
+  allow_custom_traffic: boolean;
+  allow_no_expire: boolean;
+  min_days: number;
+  max_days: number;
+  allowed_duration_presets: string[];
+  allowed_traffic_gb: number[];
+};
+
 const durationPresets = [
   { key: "7d", label: "۷ روز", days: 7 },
   { key: "1m", label: "۱ ماه", days: 30 },
   { key: "3m", label: "۳ ماه", days: 90 },
   { key: "6m", label: "۶ ماه", days: 180 },
   { key: "1y", label: "۱ سال", days: 365 },
+  { key: "unlimited", label: "نامحدود", days: 0 },
 ];
 
 const trafficPresets = [20, 30, 50, 70, 100, 150, 200];
@@ -91,6 +104,40 @@ const EMPTY_DEFAULTS: UserDefaults = {
   username_prefix: "",
   username_suffix: "",
 };
+
+function defaultUserPolicy(): ResellerUserPolicy {
+  return {
+    enabled: false,
+    allow_custom_days: true,
+    allow_custom_traffic: true,
+    allow_no_expire: false,
+    min_days: 1,
+    max_days: 3650,
+    allowed_duration_presets: ["7d", "1m", "3m", "6m", "1y"],
+    allowed_traffic_gb: [...trafficPresets],
+  };
+}
+
+function normalizePolicy(raw: ResellerUserPolicy | null | undefined): ResellerUserPolicy {
+  const base = defaultUserPolicy();
+  if (!raw) return base;
+  const minDays = Math.max(1, Number(raw.min_days) || 1);
+  const maxDays = Math.max(minDays, Number(raw.max_days) || minDays);
+  const allowedDuration = Array.from(new Set((raw.allowed_duration_presets || []).map((x) => String(x).trim().toLowerCase())));
+  const allowedTraffic = Array.from(
+    new Set((raw.allowed_traffic_gb || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+  ).sort((a, b) => a - b);
+  return {
+    enabled: !!raw.enabled,
+    allow_custom_days: !!raw.allow_custom_days,
+    allow_custom_traffic: !!raw.allow_custom_traffic,
+    allow_no_expire: !!raw.allow_no_expire,
+    min_days: minDays,
+    max_days: maxDays,
+    allowed_duration_presets: allowedDuration.length ? allowedDuration : base.allowed_duration_presets,
+    allowed_traffic_gb: allowedTraffic.length ? allowedTraffic : [...trafficPresets],
+  };
+}
 
 function randomLabel() {
   return `u_${Math.random().toString(16).slice(2, 10)}`;
@@ -137,6 +184,7 @@ export default function NewUserPage() {
   const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
 
   const [defaults, setDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
+  const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
   const [defaultsLoaded, setDefaultsLoaded] = React.useState(false);
 
   const [bulkEnabled, setBulkEnabled] = React.useState(false);
@@ -175,6 +223,29 @@ export default function NewUserPage() {
     if (!qq) return nodes || [];
     return (nodes || []).filter((n) => `${n.id} ${n.name} ${n.panel_type}`.toLowerCase().includes(qq));
   }, [nodes, nodePickQ]);
+
+  const effectiveTrafficPresets = React.useMemo(() => {
+    if (!userPolicy.enabled) return [...trafficPresets];
+    const allowed = (userPolicy.allowed_traffic_gb || []).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
+    if (!allowed.length) return [...trafficPresets];
+    if (!userPolicy.allow_custom_traffic) return allowed;
+    return Array.from(new Set([...trafficPresets, ...allowed])).sort((a, b) => a - b);
+  }, [userPolicy]);
+
+  const effectiveDurationPresets = React.useMemo(() => {
+    const all = durationPresets;
+    if (!userPolicy.enabled) return all.filter((p) => p.key !== "unlimited");
+    const allowed = new Set((userPolicy.allowed_duration_presets || []).map((x) => String(x).trim().toLowerCase()));
+    const filtered = all.filter((p) => {
+      if (p.key === "unlimited" && !userPolicy.allow_no_expire) return false;
+      if (!allowed.size) return true;
+      return allowed.has(p.key);
+    });
+    return filtered.length ? filtered : all.filter((p) => p.key !== "unlimited");
+  }, [userPolicy]);
+
+  const customTrafficLocked = userPolicy.enabled && !userPolicy.allow_custom_traffic;
+  const customDaysLocked = userPolicy.enabled && !userPolicy.allow_custom_days;
 
   const allManualSelected = React.useMemo(() => {
     if (!nodes?.length) return false;
@@ -220,16 +291,25 @@ export default function NewUserPage() {
     setNodeGroup(eff.default_node_group || "");
   }
 
+  async function loadPolicy() {
+    const policy = await apiFetch<ResellerUserPolicy>("/api/v1/reseller/settings/user-policy");
+    setUserPolicy(normalizePolicy(policy));
+  }
+
   React.useEffect(() => {
     (async () => {
-      const results = await Promise.allSettled([loadNodes(), loadDefaults()]);
+      const results = await Promise.allSettled([loadNodes(), loadDefaults(), loadPolicy()]);
       const nodeErr = results[0].status === "rejected" ? results[0].reason : null;
       const defaultsErr = results[1].status === "rejected" ? results[1].reason : null;
+      const policyErr = results[2].status === "rejected" ? results[2].reason : null;
       if (nodeErr) {
         push({ title: "Cannot load nodes", desc: String((nodeErr as any)?.message || nodeErr), type: "error" });
       }
       if (defaultsErr) {
         push({ title: "Cannot load defaults", desc: String((defaultsErr as any)?.message || defaultsErr), type: "warning" });
+      }
+      if (policyErr) {
+        push({ title: "Cannot load reseller policy", desc: String((policyErr as any)?.message || policyErr), type: "warning" });
       }
       setDefaultsLoaded(true);
     })();
@@ -241,7 +321,42 @@ export default function NewUserPage() {
     setSelectedNodeIds((prev) => prev.filter((id) => nodes.some((n) => n.id === id)));
   }, [nodes]);
 
+  React.useEffect(() => {
+    if (!effectiveDurationPresets.length) return;
+    const allowedPresetKeys = new Set(effectiveDurationPresets.map((x) => x.key));
+    if (!allowedPresetKeys.has(preset)) {
+      const fallback = effectiveDurationPresets[0];
+      setPreset(fallback.key);
+      setDays(fallback.days);
+      return;
+    }
+    if (days === 0 && !userPolicy.allow_no_expire) {
+      const fallback = effectiveDurationPresets.find((x) => x.days > 0) || effectiveDurationPresets[0];
+      setPreset(fallback.key);
+      setDays(fallback.days);
+      return;
+    }
+    if (days > 0 && userPolicy.enabled) {
+      const minDays = Math.max(1, Number(userPolicy.min_days) || 1);
+      const maxDays = Math.max(minDays, Number(userPolicy.max_days) || minDays);
+      if (days < minDays) setDays(minDays);
+      if (days > maxDays) setDays(maxDays);
+    }
+  }, [days, preset, effectiveDurationPresets, userPolicy]);
+
+  React.useEffect(() => {
+    if (!effectiveTrafficPresets.length) return;
+    if (!customTrafficLocked) return;
+    if (!effectiveTrafficPresets.includes(totalGb)) {
+      setTotalGb(effectiveTrafficPresets[0]);
+    }
+  }, [customTrafficLocked, effectiveTrafficPresets, totalGb]);
+
   function applyDurationPreset(key: string) {
+    if (userPolicy.enabled) {
+      const allowed = new Set(effectiveDurationPresets.map((x) => x.key));
+      if (!allowed.has(key)) return;
+    }
     setPreset(key);
     const found = durationPresets.find((x) => x.key === key);
     if (found) setDays(found.days);
@@ -456,6 +571,39 @@ export default function NewUserPage() {
     copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
   }
 
+  function onTrafficInput(value: string) {
+    if (customTrafficLocked) return;
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+      setTotalGb(0);
+      return;
+    }
+    setTotalGb(Math.max(0, Math.floor(num)));
+  }
+
+  function onDaysInput(value: string) {
+    if (customDaysLocked) return;
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+      setDays(0);
+      setPreset("");
+      return;
+    }
+    const rounded = Math.max(0, Math.floor(num));
+    let next = rounded;
+    if (userPolicy.enabled && rounded > 0) {
+      const minDays = Math.max(1, Number(userPolicy.min_days) || 1);
+      const maxDays = Math.max(minDays, Number(userPolicy.max_days) || minDays);
+      next = Math.min(maxDays, Math.max(minDays, rounded));
+    }
+    if (next === 0 && userPolicy.enabled && !userPolicy.allow_no_expire) {
+      next = Math.max(1, Number(userPolicy.min_days) || 1);
+    }
+    setDays(next);
+    const matched = effectiveDurationPresets.find((p) => p.days === next);
+    setPreset(matched?.key || "");
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -463,15 +611,26 @@ export default function NewUserPage() {
           <div className="text-xl font-semibold">{t("newUser.title")}</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">{t("newUser.subtitle")}</div>
           {defaultsLoaded ? (
-            <div className="text-xs text-[hsl(var(--fg))]/60">
-              پیش‌فرض‌ها اعمال شد: مدل قیمت <span className="font-medium">{pricingMode === "bundle" ? "Bundle" : "Per Node"}</span> • حالت نود <span className="font-medium">{nodeMode}</span>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.5] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+              <div className="flex flex-wrap items-center gap-2">
+                <Sparkles size={14} />
+                <span>
+                  پیش‌فرض‌ها اعمال شد: مدل قیمت <span className="font-medium">{pricingMode === "bundle" ? "Bundle" : "Per Node"}</span> • حالت نود <span className="font-medium">{nodeMode}</span>
+                </span>
+              </div>
+              {userPolicy.enabled ? (
+                <div className="mt-1 text-[11px] text-[hsl(var(--fg))]/65">
+                  سیاست رسیلر فعال است: روز دستی <span className="font-medium">{userPolicy.allow_custom_days ? "روشن" : "خاموش"}</span> • حجم دستی{" "}
+                  <span className="font-medium">{userPolicy.allow_custom_traffic ? "روشن" : "خاموش"}</span>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </CardHeader>
 
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-4">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.label")} <HelpTip text={t("help.label")} />
               </label>
@@ -483,7 +642,7 @@ export default function NewUserPage() {
               ) : null}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-4">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.username")} <HelpTip text={t("help.username")} />
               </label>
@@ -503,34 +662,99 @@ export default function NewUserPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm">حجم (GB)</label>
-            <Input className="max-w-[220px]" type="number" value={totalGb} onChange={(e) => setTotalGb(Number(e.target.value) || 0)} />
-            <div className="flex flex-wrap gap-2">
-              {trafficPresets.map((gb) => (
-                <Button
-                  key={gb}
-                  type="button"
-                  variant={totalGb === gb ? "primary" : "outline"}
-                  onClick={() => setTotalGb(gb)}
-                >
-                  {gb} GB
-                </Button>
-              ))}
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div
+              className={cn(
+                "space-y-3 rounded-2xl border p-4 transition-all",
+                "border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35]",
+                customTrafficLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Gauge size={15} />
+                  حجم کاربر (GB)
+                </label>
+                {customTrafficLocked ? (
+                  <Badge variant="warning" className="gap-1">
+                    <Lock size={12} /> محدود شده
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[220px,1fr] sm:items-center">
+                <Input
+                  className={cn("h-11 rounded-2xl text-base", customTrafficLocked ? "opacity-80" : "")}
+                  type="number"
+                  min={0}
+                  value={totalGb}
+                  disabled={customTrafficLocked}
+                  onChange={(e) => onTrafficInput(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  {effectiveTrafficPresets.map((gb) => (
+                    <Button key={gb} type="button" variant={totalGb === gb ? "primary" : "outline"} size="sm" onClick={() => setTotalGb(gb)}>
+                      {gb} GB
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">
+                {customTrafficLocked
+                  ? "طبق سیاست حساب، فقط حجم‌های مجاز قابل انتخاب هستند."
+                  : "می‌توانید حجم را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید."}
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <label className="text-sm">پکیج زمانی</label>
-            <Input className="max-w-[220px]" type="number" value={days} onChange={(e) => setDays(Number(e.target.value) || 0)} />
-            <div className="flex flex-wrap gap-2">
-              {durationPresets.map((p) => (
-                <Button key={p.key} type="button" variant={preset === p.key ? "primary" : "outline"} onClick={() => applyDurationPreset(p.key)}>
-                  {p.label}
-                </Button>
-              ))}
+            <div
+              className={cn(
+                "space-y-3 rounded-2xl border p-4 transition-all",
+                "border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35]",
+                customDaysLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <CalendarDays size={15} />
+                  مدت زمان (روز)
+                </label>
+                {customDaysLocked ? (
+                  <Badge variant="warning" className="gap-1">
+                    <Lock size={12} /> محدود شده
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[220px,1fr] sm:items-center">
+                <Input
+                  className={cn("h-11 rounded-2xl text-base", customDaysLocked ? "opacity-80" : "")}
+                  type="number"
+                  min={userPolicy.enabled ? (userPolicy.allow_no_expire ? 0 : Math.max(1, userPolicy.min_days)) : 0}
+                  max={userPolicy.enabled ? Math.max(userPolicy.min_days, userPolicy.max_days) : 36500}
+                  value={days}
+                  disabled={customDaysLocked}
+                  onChange={(e) => onDaysInput(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  {effectiveDurationPresets.map((p) => (
+                    <Button
+                      key={p.key}
+                      type="button"
+                      variant={preset === p.key ? "primary" : "outline"}
+                      size="sm"
+                      onClick={() => applyDurationPreset(p.key)}
+                    >
+                      {p.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">
+                {customDaysLocked
+                  ? "روز دستی برای این حساب غیرفعال است و فقط پکیج‌های زمانی مجاز قابل استفاده هستند."
+                  : userPolicy.enabled
+                  ? `بازه روز مجاز: ${userPolicy.min_days} تا ${userPolicy.max_days}${userPolicy.allow_no_expire ? " • نامحدود مجاز" : ""}`
+                  : "می‌توانید روز را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید."}
+              </div>
             </div>
-            <div className="text-xs text-[hsl(var(--fg))]/70">در صورت نیاز می‌توانید تعداد روز را دستی تغییر دهید.</div>
           </div>
 
           <div className="space-y-2">
