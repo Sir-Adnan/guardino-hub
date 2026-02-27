@@ -58,6 +58,7 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 }
 
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
+const AUTO_REFRESH_MS = 30_000;
 
 type StatusFilter = "all" | "active" | "disabled" | "expired";
 type SortMode = "priority" | "expiry" | "usage" | "newest";
@@ -174,6 +175,13 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     load();
+  }, [page, pageSize]);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      load().catch(() => undefined);
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(timer);
   }, [page, pageSize]);
 
   React.useEffect(() => {
