@@ -101,6 +101,28 @@ class WGDashboardAdapter:
             return None
 
     @staticmethod
+    def _as_optional_number(value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return float(int(value))
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            s = str(value).strip().replace(",", "")
+            if not s:
+                return None
+            return float(s)
+        except Exception:
+            m = re.search(r"[-+]?\d*\.?\d+", str(value))
+            if not m:
+                return None
+            try:
+                return float(m.group(0))
+            except Exception:
+                return None
+
+    @staticmethod
     def _as_bool(value: Any, default: bool) -> bool:
         if value is None:
             return default
@@ -433,12 +455,12 @@ class WGDashboardAdapter:
             await self._delete_peer_volume_jobs(remote_identifier)
             return
 
-        value_bytes = safe_total * self.BYTES_PER_GB
+        # WGDashboard schedule jobs for total_data expect GB values.
         await self._upsert_peer_schedule_job(
             remote_identifier,
             field="total_data",
             operator="lgt",
-            value=str(value_bytes),
+            value=str(safe_total),
             action="restrict",
             matcher=self._is_volume_job,
         )
@@ -640,37 +662,86 @@ class WGDashboardAdapter:
 
     @classmethod
     def _extract_peer_used_bytes(cls, peer: dict[str, Any]) -> int | None:
-        def _pick(keys: tuple[str, ...] | list[str]) -> int | None:
+        def _pick(keys: tuple[str, ...] | list[str]) -> float | None:
             for key in keys:
-                parsed = cls._as_optional_int(peer.get(key))
+                parsed = cls._as_optional_number(peer.get(key))
                 if parsed is not None:
-                    return max(0, parsed)
+                    return max(0.0, float(parsed))
             return None
 
+        prefer_gb_units = cls._peer_volume_job_uses_gb(peer)
         direct_total = _pick(cls._TOTAL_USAGE_FIELDS)
         direct_cumu = _pick(cls._CUMU_USAGE_FIELDS)
 
         total_recv = _pick(cls._TOTAL_RECV_FIELDS)
         total_sent = _pick(cls._TOTAL_SENT_FIELDS)
-        total_sum = (total_recv or 0) + (total_sent or 0) if (total_recv is not None or total_sent is not None) else None
+        total_sum = (total_recv or 0.0) + (total_sent or 0.0) if (total_recv is not None or total_sent is not None) else None
 
         cumu_recv = _pick(cls._CUMU_RECV_FIELDS)
         cumu_sent = _pick(cls._CUMU_SENT_FIELDS)
-        cumu_sum = (cumu_recv or 0) + (cumu_sent or 0) if (cumu_recv is not None or cumu_sent is not None) else None
+        cumu_sum = (cumu_recv or 0.0) + (cumu_sent or 0.0) if (cumu_recv is not None or cumu_sent is not None) else None
 
-        total_candidate = direct_total if direct_total is not None else total_sum
-        cumu_candidate = direct_cumu if direct_cumu is not None else cumu_sum
+        def _max_bytes(candidates: list[float | None]) -> int | None:
+            out: list[int] = []
+            for candidate in candidates:
+                b = cls._usage_value_to_bytes(candidate, prefer_gb_units=prefer_gb_units)
+                if b is None:
+                    continue
+                out.append(max(0, int(b)))
+            if not out:
+                return None
+            return max(out)
 
-        if total_candidate is None and cumu_candidate is None:
+        total_bytes = _max_bytes([direct_total, total_sum])
+        cumu_bytes = _max_bytes([direct_cumu, cumu_sum])
+
+        if total_bytes is None and cumu_bytes is None:
             return None
-        if total_candidate is None:
-            return max(0, int(cumu_candidate or 0))
-        if total_candidate > 0:
-            return max(0, int(total_candidate))
-        if cumu_candidate is not None and cumu_candidate > 0:
+
+        if total_bytes is None:
+            return max(0, int(cumu_bytes or 0))
+        if total_bytes > 0:
+            return max(0, int(total_bytes))
+        if cumu_bytes is not None and cumu_bytes > 0:
             # Some builds only update cumulative counters while total_* stays zero.
-            return max(0, int(cumu_candidate))
-        return max(0, int(total_candidate))
+            return max(0, int(cumu_bytes))
+        return max(0, int(total_bytes))
+
+    @classmethod
+    def _peer_volume_job_uses_gb(cls, peer: dict[str, Any]) -> bool:
+        jobs = peer.get("jobs")
+        if not isinstance(jobs, list):
+            return False
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            if cls._job_field(job) != "total_data" or cls._job_action(job) != "restrict":
+                continue
+            val = cls._as_optional_number(job.get("Value"))
+            if val is None or val <= 0:
+                continue
+            # In official WGDashboard docs, total_data schedule jobs are set in GB.
+            # Very large values indicate legacy byte-based jobs from older Guardino versions.
+            if val <= 1_000_000:
+                return True
+        return False
+
+    @classmethod
+    def _usage_value_to_bytes(cls, value: float | None, *, prefer_gb_units: bool) -> int | None:
+        if value is None:
+            return None
+        safe = max(0.0, float(value))
+        if safe <= 0:
+            return 0
+
+        # Fractional counters are treated as GB values.
+        if abs(safe - round(safe)) > 1e-9:
+            return int(safe * cls.BYTES_PER_GB)
+
+        whole = int(round(safe))
+        if prefer_gb_units:
+            return whole * cls.BYTES_PER_GB
+        return whole
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
         peer = await self._get_peer_info(remote_identifier)
@@ -690,9 +761,19 @@ class WGDashboardAdapter:
         if not cleaned:
             return result
         await self._ensure_peer_index()
+        missing: list[str] = []
         for rid in cleaned:
             peer, _config_name, _restricted = await self._get_peer_context(rid, allow_refresh=False)
             if not isinstance(peer, dict):
+                missing.append(rid)
                 continue
             result[rid] = self._extract_peer_used_bytes(peer)
+        # One refresh pass helps after topology changes or stale cached config names.
+        if missing:
+            await self._ensure_peer_index(refresh_config_names=True)
+            for rid in missing:
+                peer, _config_name, _restricted = await self._get_peer_context(rid, allow_refresh=False)
+                if not isinstance(peer, dict):
+                    continue
+                result[rid] = self._extract_peer_used_bytes(peer)
         return result
