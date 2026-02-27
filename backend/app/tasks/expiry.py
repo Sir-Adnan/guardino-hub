@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
@@ -16,10 +17,11 @@ from app.services.task_metrics import TaskRunStats
 
 @celery_app.task(name="app.tasks.expiry.expire_due_users")
 def expire_due_users():
-    with redis_lock("guardino:lock:expire_due_users", ttl_seconds=110) as ok:
+    lock_ttl = max(90, int(getattr(settings, "EXPIRY_SYNC_SECONDS", 60) or 60) * 2)
+    with redis_lock("guardino:lock:expire_due_users", ttl_seconds=lock_ttl) as ok:
         if not ok:
             return
-    asyncio.run(_expire_due_users_async())
+        asyncio.run(_expire_due_users_async())
 
 
 # internal
