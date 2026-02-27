@@ -68,6 +68,10 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable --now docker >/dev/null 2>&1 || true
+fi
+
 if [ "${USE_SSL}" = "yes" ]; then
   log "[3/12] Installing certbot..."
   apt-get install -y certbot
@@ -138,6 +142,8 @@ ensure_kv "SECRET_KEY" "${SECRET_KEY}"
 ensure_kv "REDIS_URL" "redis://redis:6379/0"
 ensure_kv "USAGE_SYNC_SECONDS" "60"
 ensure_kv "EXPIRY_SYNC_SECONDS" "60"
+ensure_kv "USAGE_SYNC_BATCH_SIZE" "2000"
+ensure_kv "EXPIRY_SYNC_BATCH_SIZE" "500"
 ensure_kv "HTTP_TIMEOUT_SECONDS" "20"
 ensure_kv "PANEL_TLS_VERIFY" "true"
 ensure_kv "NEXT_PUBLIC_API_BASE" "/api"
