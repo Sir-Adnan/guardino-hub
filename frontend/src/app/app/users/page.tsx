@@ -18,7 +18,7 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
-import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers, Download } from "lucide-react";
+import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers, Download, QrCode, ExternalLink } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
@@ -36,6 +36,7 @@ type LinksResp = {
     detail?: string;
   }>;
 };
+type NodeLinkOut = LinksResp["node_links"][number];
 type NodeLite = { id: number; name: string; base_url: string };
 
 function normalizeUrl(maybeUrl: string, baseUrl?: string) {
@@ -96,6 +97,17 @@ function computePriority(u: UserOut) {
   return { level: "low" as const, percent, days };
 }
 
+function panelLabel(panelType?: string) {
+  const p = String(panelType || "").toLowerCase();
+  if (p === "wg_dashboard") return "وایرگارد";
+  return "لینک مستقیم";
+}
+
+function qrImageUrl(value: string, size: number = 220) {
+  const s = Math.max(80, Math.min(512, Number(size) || 220));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=8&data=${encodeURIComponent(value)}`;
+}
+
 export default function UsersPage() {
   const router = useRouter();
   const { me, refresh: refreshMe } = useAuth();
@@ -120,6 +132,10 @@ export default function UsersPage() {
   const [linksUser, setLinksUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
   const [linksErr, setLinksErr] = React.useState<string | null>(null);
+  const [qrOpen, setQrOpen] = React.useState(false);
+  const [qrUser, setQrUser] = React.useState<UserOut | null>(null);
+  const [qrLinks, setQrLinks] = React.useState<LinksResp | null>(null);
+  const [qrErr, setQrErr] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
@@ -240,16 +256,16 @@ export default function UsersPage() {
     return await apiFetch<LinksResp>(`/api/v1/reseller/users/${u.id}/links?refresh=${refresh ? "true" : "false"}`);
   }
 
+  function resolveNodeLink(nl: NodeLinkOut) {
+    if (nl.config_download_url) return nl.config_download_url;
+    const node = nodeMap.get(nl.node_id);
+    if (nl.full_url) return nl.full_url;
+    if (nl.direct_url) return normalizeUrl(nl.direct_url, node?.base_url);
+    return "";
+  }
+
   function extractDirectLinks(res: LinksResp) {
-    return (res.node_links || [])
-      .map((nl) => {
-        if (nl.config_download_url) return nl.config_download_url;
-        const node = nodeMap.get(nl.node_id);
-        if (nl.full_url) return nl.full_url;
-        if (nl.direct_url) return normalizeUrl(nl.direct_url, node?.base_url);
-        return "";
-      })
-      .filter(Boolean);
+    return (res.node_links || []).map((nl) => resolveNodeLink(nl)).filter(Boolean);
   }
 
   async function openLinks(u: UserOut) {
@@ -287,6 +303,48 @@ export default function UsersPage() {
     }
   }
 
+  async function openQr(u: UserOut) {
+    setQrUser(u);
+    setQrOpen(true);
+    setQrErr(null);
+    setQrLinks(null);
+    try {
+      const res = await fetchUserLinks(u, true);
+      setQrLinks(res);
+    } catch (e: any) {
+      setQrErr(String(e.message || e));
+    }
+  }
+
+  const qrItems = React.useMemo(() => {
+    if (!qrLinks) return [] as Array<{ key: string; title: string; subtitle: string; url: string; isWg: boolean }>;
+    const out: Array<{ key: string; title: string; subtitle: string; url: string; isWg: boolean }> = [];
+    if (qrLinks.master_link) {
+      out.push({
+        key: "master",
+        title: "اشتراک مرکزی",
+        subtitle: "لینک تجمیعی",
+        url: qrLinks.master_link,
+        isWg: false,
+      });
+    }
+    for (const nl of qrLinks.node_links || []) {
+      const link = resolveNodeLink(nl);
+      if (!link) continue;
+      const node = nodeMap.get(nl.node_id);
+      const title = node?.name || nl.node_name || `Node #${nl.node_id}`;
+      const isWg = (nl.panel_type || "").toLowerCase() === "wg_dashboard";
+      out.push({
+        key: `node-${nl.node_id}`,
+        title,
+        subtitle: `${panelLabel(nl.panel_type)} (#${nl.node_id})`,
+        url: link,
+        isWg,
+      });
+    }
+    return out;
+  }, [nodeMap, qrLinks]);
+
   async function op(userId: number, path: string, body: any) {
     setBusyId(userId);
     try {
@@ -315,6 +373,9 @@ export default function UsersPage() {
     await op(u.id, `/api/v1/reseller/users/${u.id}/revoke`, {});
     if (linksOpen && linksUser?.id === u.id) {
       await openLinks(u);
+    }
+    if (qrOpen && qrUser?.id === u.id) {
+      await openQr(u);
     }
   }
 
@@ -547,6 +608,17 @@ export default function UsersPage() {
                     >
                       <Copy size={16} />
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="h-9 w-9 p-0"
+                      size="sm"
+                      title="QR لینک‌ها"
+                      aria-label="QR لینک‌ها"
+                      disabled={busy}
+                      onClick={() => openQr(u)}
+                    >
+                      <QrCode size={16} />
+                    </Button>
 
                     <Menu
                       trigger={
@@ -581,6 +653,11 @@ export default function UsersPage() {
                           label: "کپی همه لینک‌ها",
                           icon: <Copy size={16} />,
                           onClick: () => copyAllLinksForUser(u),
+                        },
+                        {
+                          label: "نمایش QR لینک‌ها",
+                          icon: <QrCode size={16} />,
+                          onClick: () => openQr(u),
                         },
                         {
                           label: isActive ? t("common.disable") : t("common.enable"),
@@ -752,6 +829,79 @@ export default function UsersPage() {
                 <SquarePen size={16} /> رفتن به جزئیات
               </Button>
             </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        title={qrUser ? `QR لینک‌ها: ${qrUser.label}` : "QR لینک‌ها"}
+        className="max-w-5xl"
+      >
+        {qrErr ? <div className="text-sm text-red-500">{qrErr}</div> : null}
+        {!qrLinks && !qrErr ? <div className="text-sm text-[hsl(var(--fg))]/70">{t("common.loading")}</div> : null}
+
+        {qrLinks ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+              QR کد لینک مرکزی و لینک هر نود نمایش داده می‌شود. با Revoke، لینک مرکزی قبلی هم باطل می‌شود.
+            </div>
+
+            {qrItems.length ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {qrItems.map((item) => (
+                  <article key={item.key} className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-3">
+                    <div>
+                      <div className="font-semibold break-all">{item.title}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{item.subtitle}</div>
+                    </div>
+                    <div className="mx-auto w-fit rounded-xl border border-[hsl(var(--border))] bg-white p-2">
+                      <img src={qrImageUrl(item.url)} alt={`QR ${item.title}`} width={220} height={220} className="h-[220px] w-[220px] object-contain" />
+                    </div>
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/50 p-2 text-[11px] break-all">
+                      {item.url}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          copyText(item.url).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                        }}
+                      >
+                        <Copy size={14} /> {t("common.copy")}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          window.open(item.url, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        <ExternalLink size={14} /> باز کردن
+                      </Button>
+                      {item.isWg ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => {
+                            window.open(item.url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          <Download size={14} /> دانلود .conf
+                        </Button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-[hsl(var(--fg))]/70">لینکی برای ساخت QR یافت نشد.</div>
+            )}
           </div>
         ) : null}
       </Modal>
