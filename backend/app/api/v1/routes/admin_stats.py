@@ -45,6 +45,12 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db), admin=Depends(requ
     price_per_gb_avg = pavg.scalar_one()
     price_per_gb_avg_int = int(price_per_gb_avg) if price_per_gb_avg is not None else None
 
+    ubytes = await db.execute(select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0)))
+    used_bytes_total = int(ubytes.scalar_one() or 0)
+
+    sgb = await db.execute(select(func.coalesce(func.sum(GuardinoUser.total_gb), 0)))
+    sold_gb_total = int(sgb.scalar_one() or 0)
+
     return AdminStats(
         resellers_total=resellers_total,
         users_total=users_total,
@@ -53,4 +59,6 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db), admin=Depends(requ
         ledger_entries_total=ledger_entries_total,
         ledger_net_30d=ledger_net_30d,
         price_per_gb_avg=price_per_gb_avg_int,
+        used_bytes_total=used_bytes_total,
+        sold_gb_total=sold_gb_total,
     )
