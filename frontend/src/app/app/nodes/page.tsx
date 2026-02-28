@@ -277,10 +277,31 @@ export default function NodesPage() {
     }
     router.push(`/app/users/new?node_mode=manual&node_ids=${ids.join(",")}`);
   }
+  const selectClass =
+    "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+  const metricCardClass =
+    "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
 
   return (
     <div className="space-y-6">
-      <Card>
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(110deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_15px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <Network size={13} />
+              Node Routing Studio
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">مدیریت نودها برای فروش</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">انتخاب، فیلتر، قیمت‌گذاری و ارسال سریع نودهای منتخب به فرم ساخت کاربر</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
+            <Sparkles size={14} />
+            {selectedIds.length ? `${fmtNumber(selectedIds.length)} نود انتخاب شده` : "آماده انتخاب نود"}
+          </div>
+        </div>
+      </section>
+
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="text-xl font-semibold">مرکز انتخاب نود</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">
@@ -288,7 +309,7 @@ export default function NodesPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-emerald-300/40 bg-emerald-500/10 p-3 text-xs text-emerald-900 dark:text-emerald-200">
+          <div className="rounded-2xl border border-emerald-300/45 bg-[linear-gradient(145deg,rgba(16,185,129,0.16),rgba(16,185,129,0.07))] p-3 text-xs text-emerald-900 shadow-[0_10px_22px_-20px_rgba(16,185,129,0.9)] dark:text-emerald-200">
             <div className="flex items-center gap-2 font-semibold">
               <Shield size={15} />
               حالت امن فعال است
@@ -299,42 +320,42 @@ export default function NodesPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">کل نودها</div>
                 <Network size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.total}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">پیش‌فرض</div>
                 <Star size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.defaults}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">نمایش در ساب</div>
                 <ShieldCheck size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.visible}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">قیمت اختصاصی</div>
                 <Sparkles size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.withOverride}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">کمترین قیمت/GB</div>
                 <CircleDollarSign size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.cheapest || 0)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">تگ‌های فعال</div>
                 <Tags size={16} className="opacity-60" />
@@ -350,7 +371,7 @@ export default function NodesPage() {
             </div>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={panelFilter}
               onChange={(e) => setPanelFilter(e.target.value)}
             >
@@ -361,7 +382,7 @@ export default function NodesPage() {
             </select>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={visibleFilter}
               onChange={(e) => setVisibleFilter(e.target.value)}
             >
@@ -371,7 +392,7 @@ export default function NodesPage() {
             </select>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}
             >
@@ -384,7 +405,7 @@ export default function NodesPage() {
             </select>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
             >
@@ -395,7 +416,7 @@ export default function NodesPage() {
             </select>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 p-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-18px_hsl(var(--fg)/0.5)]">
             <div className="text-xs text-[hsl(var(--fg))]/75">{selectedIds.length ? `${selectedIds.length} نود انتخاب شده` : "هیچ نودی انتخاب نشده"}</div>
             <div className="ml-auto flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" className="gap-2" onClick={selectAllFiltered}>
@@ -414,7 +435,7 @@ export default function NodesPage() {
           </div>
 
           {advice.length ? (
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3 text-xs text-[hsl(var(--fg))]/80 space-y-1">
+            <div className="space-y-1 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-2)/0.15),hsl(var(--surface-card-1))_85%)] p-3 text-xs text-[hsl(var(--fg))]/80">
               <div className="font-semibold">پیشنهادهای هوشمند فروش</div>
               {advice.map((tip) => (
                 <div key={tip}>• {tip}</div>
@@ -424,7 +445,7 @@ export default function NodesPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex items-center gap-2 text-lg font-semibold">
             <BarChart3 size={18} />
@@ -437,7 +458,7 @@ export default function NodesPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-[170px,1fr,1fr]">
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={estimateMode}
               onChange={(e) => setEstimateMode(e.target.value as EstimateMode)}
             >
@@ -445,7 +466,7 @@ export default function NodesPage() {
               <option value="bundle">مدل Bundle</option>
             </select>
 
-            <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+            <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
               <div className="text-xs text-[hsl(var(--fg))]/70">حجم (GB)</div>
               <div className="flex flex-wrap gap-2">
                 {GB_PRESETS.map((g) => (
@@ -457,7 +478,7 @@ export default function NodesPage() {
               <Input type="number" min={1} value={estimateGb} onChange={(e) => setEstimateGb(Math.max(1, Number(e.target.value) || 1))} />
             </div>
 
-            <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+            <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
               <div className="text-xs text-[hsl(var(--fg))]/70">زمان (روز)</div>
               <div className="flex flex-wrap gap-2">
                 {DAY_PRESETS.map((d) => (
@@ -471,23 +492,23 @@ export default function NodesPage() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="text-xs text-[hsl(var(--fg))]/70">نودهای مبنا</div>
               <div className="mt-1 text-lg font-semibold">{fmtNumber(estimate.nodeCount)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="text-xs text-[hsl(var(--fg))]/70">هزینه ترافیک</div>
               <div className="mt-1 text-lg font-semibold">{fmtNumber(estimate.trafficAmount)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="text-xs text-[hsl(var(--fg))]/70">هزینه زمانی</div>
               <div className="mt-1 text-lg font-semibold">{fmtNumber(estimate.timeAmount)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="text-xs text-[hsl(var(--fg))]/70">جمع کل</div>
               <div className="mt-1 text-lg font-semibold">{fmtNumber(estimate.total)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="text-xs text-[hsl(var(--fg))]/70">موجودی پس از عملیات</div>
               <div className={`mt-1 text-lg font-semibold ${estimate.balanceAfter != null && estimate.balanceAfter < 0 ? "text-red-600" : ""}`}>
                 {estimate.balanceAfter == null ? "—" : fmtNumber(estimate.balanceAfter)}
@@ -495,7 +516,7 @@ export default function NodesPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 p-3 text-xs text-[hsl(var(--fg))]/75">
+          <div className="rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-1)/0.14)_100%)] p-3 text-xs text-[hsl(var(--fg))]/75">
             مدل محاسبه: {estimate.mode === "bundle" ? "Bundle (یک‌بار برای کل نودها)" : "Per-Node (برای هر نود جداگانه)"}
           </div>
         </CardContent>
@@ -507,7 +528,7 @@ export default function NodesPage() {
         </Card>
       ) : null}
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Layers size={18} />
@@ -519,7 +540,7 @@ export default function NodesPage() {
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-2">
+                <div key={i} className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                   <Skeleton className="h-4 w-40" />
                   <Skeleton className="h-3 w-full" />
                   <Skeleton className="h-6 w-32" />
@@ -532,7 +553,12 @@ export default function NodesPage() {
                 const selected = selectedIds.includes(n.id);
                 const hints = suggestUseCases(n.tags || []);
                 return (
-                  <article key={n.id} className={`rounded-2xl border p-3 space-y-3 ${selected ? "border-[hsl(var(--accent))] ring-2 ring-[hsl(var(--accent))]/20" : "border-[hsl(var(--border))]"}`}>
+                  <article
+                    key={n.id}
+                    className={`space-y-3 rounded-2xl border bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] ${
+                      selected ? "border-[hsl(var(--accent))] ring-2 ring-[hsl(var(--accent))]/20" : "border-[hsl(var(--border))]"
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="truncate font-semibold">{n.name}</div>
@@ -555,7 +581,7 @@ export default function NodesPage() {
                       {n.is_visible_in_sub ? <Badge variant="success">نمایش در ساب</Badge> : <Badge variant="warning">مخفی در ساب</Badge>}
                     </div>
 
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 p-2 text-xs">
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-1)/0.12)_100%)] p-2 text-xs">
                       قیمت موثر هر GB: <span className="font-semibold">{fmtNumber(effectivePerGb(n))}</span>
                     </div>
 

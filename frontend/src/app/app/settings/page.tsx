@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
-import { accentOptions, setAccent } from "@/components/theme-provider";
+import { accentOptions, presetOptions, setAccent, setThemePreset } from "@/components/theme-provider";
 import { storage } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
+import { CalendarDays, Palette, Shield, Sparkles } from "lucide-react";
 
 type UserDefaults = {
   default_pricing_mode: "bundle" | "per_node";
@@ -57,6 +58,7 @@ function toggleId(list: number[], id: number, checked: boolean): number[] {
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [accent, setAccentState] = React.useState(storage.get("accent") || "blue");
+  const [preset, setPresetState] = React.useState(storage.get("theme_preset") || "ocean");
   const r = useRouter();
   const { push } = useToast();
   const { me } = useAuth();
@@ -210,47 +212,101 @@ export default function SettingsPage() {
     }
   }
 
+  const todayFa = React.useMemo(
+    () =>
+      new Date().toLocaleDateString("fa-IR-u-ca-persian", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+    []
+  );
+  const selectClass =
+    "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_55%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.32)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.30)]";
+  const choiceCardClass =
+    "rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
+
   return (
     <div className="space-y-6">
-      <Card>
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_14px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <Shield size={13} />
+              امنیت و ظاهر
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">تنظیمات پنل</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">مدیریت ظاهر، پیش‌فرض‌های ساخت کاربر و امنیت حساب</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/75">
+            <CalendarDays size={14} />
+            <span>{todayFa}</span>
+          </div>
+        </div>
+      </section>
+
+      <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">Settings</div>
+          <div className="text-xl font-semibold">تنظیمات</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">تنظیمات ظاهری، پیش‌فرض‌ها و امنیت حساب</div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Theme</div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant={theme === "light" ? "primary" : "outline"} onClick={() => setTheme("light")}>Light</Button>
-              <Button variant={theme === "dark" ? "primary" : "outline"} onClick={() => setTheme("dark")}>Dark</Button>
-              <Button variant={theme === "system" ? "primary" : "outline"} onClick={() => setTheme("system")}>System</Button>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-1)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-1)/0.75)]">
+              <div className="text-sm font-medium flex items-center gap-2"><Sparkles size={15} /> حالت نمایش</div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant={theme === "light" ? "primary" : "outline"} onClick={() => setTheme("light")}>روشن</Button>
+                <Button variant={theme === "dark" ? "primary" : "outline"} onClick={() => setTheme("dark")}>تیره</Button>
+                <Button variant={theme === "system" ? "primary" : "outline"} onClick={() => setTheme("system")}>سیستمی</Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--accent)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--accent)/0.72)]">
+              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> رنگ اصلی</div>
+              <div className="flex flex-wrap gap-2">
+                {accentOptions.map((a) => (
+                  <Button
+                    key={a}
+                    variant={accent === a ? "primary" : "outline"}
+                    onClick={() => {
+                      setAccentState(a);
+                      setAccent(a);
+                    }}
+                  >
+                    {a}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-2)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-2)/0.75)]">
+              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> پریست رنگی</div>
+              <div className="flex flex-wrap gap-2">
+                {presetOptions.map((p) => (
+                  <Button
+                    key={p.key}
+                    variant={preset === p.key ? "primary" : "outline"}
+                    onClick={() => {
+                      setPresetState(p.key);
+                      setThemePreset(p.key);
+                    }}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">
+                preset تم، گرادیانت باکس‌ها و نور پس‌زمینه کل پنل را یک‌جا تغییر می‌دهد.
+              </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Accent</div>
-            <div className="flex flex-wrap gap-2">
-              {accentOptions.map((a) => (
-                <Button
-                  key={a}
-                  variant={accent === a ? "primary" : "outline"}
-                  onClick={() => {
-                    setAccentState(a);
-                    setAccent(a);
-                  }}
-                >
-                  {a}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <Card>
+          <Card className="overflow-hidden">
             <CardHeader>
               <div className="text-sm font-semibold">تغییر رمز عبور</div>
               <div className="text-xs text-[hsl(var(--fg))]/70">برای امنیت بیشتر، رمز جدید حداقل ۸ کاراکتر انتخاب کنید.</div>
             </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-3">
+            <CardContent className="grid gap-3 md:grid-cols-3 bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]">
               <Input type="password" placeholder="رمز فعلی" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
               <Input type="password" placeholder="رمز جدید" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
               <Input type="password" placeholder="تکرار رمز جدید" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
@@ -271,7 +327,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="overflow-hidden">
             <CardHeader>
               <div className="text-sm font-semibold">پیش‌فرض ساخت کاربر (حساب شما)</div>
               <div className="text-xs text-[hsl(var(--fg))]/70">این تنظیمات فرم ساخت کاربر را برای شما آماده می‌کند.</div>
@@ -282,7 +338,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <div className="text-xs text-[hsl(var(--fg))]/70">مدل قیمت پیش‌فرض</div>
                   <select
-                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                    className={selectClass}
                     value={resellerDefaults.default_pricing_mode}
                     onChange={(e) =>
                       setResellerDefaults((v) => ({ ...v, default_pricing_mode: e.target.value as UserDefaults["default_pricing_mode"] }))
@@ -295,7 +351,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <div className="text-xs text-[hsl(var(--fg))]/70">حالت نود پیش‌فرض</div>
                   <select
-                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                    className={selectClass}
                     value={resellerDefaults.default_node_mode}
                     onChange={(e) =>
                       setResellerDefaults((v) => ({ ...v, default_node_mode: e.target.value as UserDefaults["default_node_mode"] }))
@@ -308,7 +364,7 @@ export default function SettingsPage() {
                 </div>
 
                 {resellerDefaults.default_node_mode === "manual" ? (
-                  <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] p-3">
+                  <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                     <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب نودهای پیش‌فرض (حالت دستی)</div>
                     <div className="flex flex-wrap gap-2">
                       <Input placeholder="جستجوی نود" value={resellerNodeQ} onChange={(e) => setResellerNodeQ(e.target.value)} />
@@ -317,7 +373,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
                       {resellerFilteredNodes.map((n) => (
-                        <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-sm">
+                        <label key={n.id} className={`flex items-center gap-2 ${choiceCardClass}`}>
                           <input
                             type="checkbox"
                             checked={(resellerDefaults.default_node_ids || []).includes(n.id)}
@@ -339,7 +395,7 @@ export default function SettingsPage() {
                   <div className="space-y-2 md:col-span-2">
                     <div className="text-xs text-[hsl(var(--fg))]/70">Tag پیش‌فرض (فقط حالت گروهی)</div>
                     <select
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                      className={selectClass}
                       value={resellerDefaults.default_node_group || ""}
                       onChange={(e) => setResellerDefaults((v) => ({ ...v, default_node_group: e.target.value }))}
                     >
@@ -376,7 +432,7 @@ export default function SettingsPage() {
           </Card>
 
           {me?.role === "admin" ? (
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader>
                 <div className="text-sm font-semibold">پیش‌فرض سراسری برای همه رسیلرها (ادمین)</div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">رسیلرهایی که تنظیم اختصاصی ندارند از این مقادیر استفاده می‌کنند.</div>
@@ -386,7 +442,7 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <div className="text-xs text-[hsl(var(--fg))]/70">مدل قیمت پیش‌فرض</div>
                     <select
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                      className={selectClass}
                       value={globalDefaults.default_pricing_mode}
                       onChange={(e) =>
                         setGlobalDefaults((v) => ({ ...v, default_pricing_mode: e.target.value as UserDefaults["default_pricing_mode"] }))
@@ -399,7 +455,7 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <div className="text-xs text-[hsl(var(--fg))]/70">حالت نود پیش‌فرض</div>
                     <select
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                      className={selectClass}
                       value={globalDefaults.default_node_mode}
                       onChange={(e) =>
                         setGlobalDefaults((v) => ({ ...v, default_node_mode: e.target.value as UserDefaults["default_node_mode"] }))
@@ -412,7 +468,7 @@ export default function SettingsPage() {
                   </div>
 
                   {globalDefaults.default_node_mode === "manual" ? (
-                    <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] p-3">
+                    <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب نودهای پیش‌فرض (سراسری)</div>
                       <div className="flex flex-wrap gap-2">
                         <Input placeholder="جستجوی نود" value={globalNodeQ} onChange={(e) => setGlobalNodeQ(e.target.value)} />
@@ -421,7 +477,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="grid gap-2 md:grid-cols-2">
                         {globalFilteredNodes.map((n) => (
-                          <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-sm">
+                          <label key={n.id} className={`flex items-center gap-2 ${choiceCardClass}`}>
                             <input
                               type="checkbox"
                               checked={(globalDefaults.default_node_ids || []).includes(n.id)}
@@ -443,7 +499,7 @@ export default function SettingsPage() {
                     <div className="space-y-2 md:col-span-2">
                       <div className="text-xs text-[hsl(var(--fg))]/70">Tag پیش‌فرض (سراسری)</div>
                       <select
-                        className="w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                        className={selectClass}
                         value={globalDefaults.default_node_group || ""}
                         onChange={(e) => setGlobalDefaults((v) => ({ ...v, default_node_group: e.target.value }))}
                       >
@@ -481,7 +537,7 @@ export default function SettingsPage() {
           ) : null}
 
           <div className="pt-2">
-            <Button variant="outline" onClick={onLogout}>Logout</Button>
+            <Button variant="outline" onClick={onLogout}>خروج از حساب</Button>
           </div>
         </CardContent>
       </Card>

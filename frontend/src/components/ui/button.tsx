@@ -16,7 +16,7 @@ export function Button({
     ghost:
       "border border-transparent bg-transparent text-[hsl(var(--fg))] hover:-translate-y-0.5 hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),transparent)]",
     outline:
-      "border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] text-[hsl(var(--fg))] hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),hsl(var(--card)))]",
+      "border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] text-[hsl(var(--fg))] hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),hsl(var(--surface-card-1)))]",
   };
   const sizes: Record<string, string> = {
     sm: "px-3 py-1.5 text-xs",

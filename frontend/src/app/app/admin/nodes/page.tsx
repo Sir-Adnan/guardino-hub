@@ -337,6 +337,10 @@ export default function AdminNodesPage() {
     const testedOk = Object.values(tests).filter((x) => x.ok).length;
     return { enabledCount, visibleCount, wgCount, testedOk };
   }, [nodes, tests]);
+  const selectClass =
+    "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+  const metricCardClass =
+    "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
 
   React.useEffect(() => {
     load(page, pageSize);
@@ -345,12 +349,29 @@ export default function AdminNodesPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(110deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_15px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <Shield size={13} />
+              Node Infrastructure
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("adminNodes.title")}</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{t("adminNodes.subtitle")}</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
+            <Activity size={14} />
+            {total} نود ثبت‌شده
+          </div>
+        </div>
+      </section>
+
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xl font-semibold">{t("adminNodes.title")}</div>
-              <div className="text-sm text-[hsl(var(--fg))]/70">{t("adminNodes.subtitle")}</div>
+              <div className="text-xl font-semibold">کنترل سریع نودها</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">فیلتر، وضعیت لحظه‌ای و مدیریت نمایش نودها در ساب</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" className="gap-2" onClick={() => load(page, pageSize)} disabled={loading}>
@@ -366,28 +387,28 @@ export default function AdminNodesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">کل نودها</div>
                 <Layers size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{total}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">فعال</div>
                 <Shield size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.enabledCount}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">نمایش در ساب</div>
                 <Globe size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.visibleCount}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3">
+            <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">وایرگارد / تست سالم</div>
                 <Activity size={16} className="opacity-60" />
@@ -405,7 +426,7 @@ export default function AdminNodesPage() {
             </div>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={panelFilter}
               onChange={(e) => setPanelFilter(e.target.value)}
             >
@@ -416,7 +437,7 @@ export default function AdminNodesPage() {
             </select>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -426,7 +447,7 @@ export default function AdminNodesPage() {
             </select>
 
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={visibleFilter}
               onChange={(e) => setVisibleFilter(e.target.value)}
             >
@@ -438,7 +459,7 @@ export default function AdminNodesPage() {
 
           <div className="grid gap-2 sm:grid-cols-[220px,1fr]">
             <select
-              className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+              className={selectClass}
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}
             >
@@ -449,14 +470,14 @@ export default function AdminNodesPage() {
                 </option>
               ))}
             </select>
-            <div className="text-xs text-[hsl(var(--fg))]/70 flex items-center">
+            <div className="flex items-center rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-2)/0.12)_100%)] px-3 text-xs text-[hsl(var(--fg))]/70">
               فیلترها روی داده‌های همین صفحه اعمال می‌شوند. برای کل لیست از صفحه‌بندی استفاده کنید.
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex items-center gap-2 text-lg font-semibold">
             <Wrench size={18} />
@@ -480,7 +501,7 @@ export default function AdminNodesPage() {
                 {t("adminNodes.panelType")} <HelpTip text={t("adminNodes.help.panelType")} />
               </label>
               <select
-                className="h-10 w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                className={`w-full ${selectClass}`}
                 value={panelType}
                 onChange={(e) => {
                   const next = e.target.value;
@@ -511,7 +532,7 @@ export default function AdminNodesPage() {
                   <button
                     key={tg}
                     type="button"
-                    className="rounded-lg border border-[hsl(var(--border))] px-2 py-1 text-xs hover:bg-[hsl(var(--muted))]"
+                    className="rounded-lg border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-2 py-1 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]"
                     onClick={() => addTag(tg)}
                   >
                     + {tg}
@@ -525,7 +546,7 @@ export default function AdminNodesPage() {
                 {t("adminNodes.credentials")} <HelpTip text={t("adminNodes.help.credentials")} />
               </label>
               <textarea
-                className="min-h-[150px] w-full rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                className="min-h-[150px] w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.32)]"
                 value={creds}
                 onChange={(e) => setCreds(e.target.value)}
                 spellCheck={false}
@@ -542,7 +563,7 @@ export default function AdminNodesPage() {
 
             <div className="space-y-2">
               <label className="text-sm">{t("adminNodes.enabled")}</label>
-              <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] p-3">
+              <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
                 <div className="text-sm text-[hsl(var(--fg))]/80">در صورت غیرفعال بودن، روی این نود کاربری ساخته یا مدیریت نمی‌شود.</div>
               </div>
@@ -550,7 +571,7 @@ export default function AdminNodesPage() {
 
             <div className="space-y-2">
               <label className="text-sm">{t("adminNodes.visibleInSub")}</label>
-              <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] p-3">
+              <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                 <Switch checked={visibleInSub} onCheckedChange={setVisibleInSub} />
                 <div className="text-sm text-[hsl(var(--fg))]/80">اگر خاموش باشد، لینک این نود در ساب کاربران نمایش داده نمی‌شود.</div>
               </div>
@@ -574,7 +595,7 @@ export default function AdminNodesPage() {
         </Card>
       ) : null}
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="text-lg font-semibold">لیست نودها</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">چیدمان کارت‌ها کاملا واکنش‌گراست و در موبایل/دسکتاپ بهینه نمایش داده می‌شود.</div>
@@ -583,7 +604,7 @@ export default function AdminNodesPage() {
           {loading ? (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-2">
+                <div key={i} className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-full" />
                   <Skeleton className="h-3 w-2/3" />
@@ -597,7 +618,7 @@ export default function AdminNodesPage() {
                 const test = tests[n.id];
                 const busy = actionBusyId === n.id;
                 return (
-                  <article key={n.id} className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-3">
+                  <article key={n.id} className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="truncate font-semibold">{n.name}</div>
@@ -609,14 +630,14 @@ export default function AdminNodesPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 p-2 text-xs break-all">{n.base_url}</div>
+                    <div className="break-all rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-1)/0.14)_100%)] p-2 text-xs">{n.base_url}</div>
 
                     <div className="flex flex-wrap gap-1">
                       {(n.tags || []).length ? (n.tags || []).map((tg) => <Badge key={tg} variant="muted">{tg}</Badge>) : <Badge variant="muted">بدون تگ</Badge>}
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="rounded-xl border border-[hsl(var(--border))] p-2">
+                      <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
                         <div className="text-[11px] text-[hsl(var(--fg))]/65">وضعیت نود</div>
                         <div className="mt-1 flex items-center justify-between">
                           <div className="text-xs">{n.is_enabled ? "فعال" : "خاموش"}</div>
@@ -624,7 +645,7 @@ export default function AdminNodesPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-[hsl(var(--border))] p-2">
+                      <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
                         <div className="text-[11px] text-[hsl(var(--fg))]/65">نمایش در ساب</div>
                         <div className="mt-1 flex items-center justify-between">
                           <div className="text-xs">{n.is_visible_in_sub ? "نمایش" : "مخفی"}</div>
