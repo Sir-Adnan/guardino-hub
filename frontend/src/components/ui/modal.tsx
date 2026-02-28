@@ -30,7 +30,7 @@ export function Modal({
       <div className="absolute inset-0 bg-black/55 backdrop-blur-[2.5px]" onClick={onClose} />
       <div
         className={cn(
-          "relative my-4 w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_62%,hsl(var(--muted)/0.20)_100%)] shadow-2xl shadow-slate-900/20 max-h-[92dvh] overflow-hidden sm:my-0",
+          "relative my-4 w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_52%,hsl(var(--muted))_100%)] shadow-2xl shadow-slate-900/20 max-h-[92dvh] overflow-hidden sm:my-0",
           className
         )}
       >
