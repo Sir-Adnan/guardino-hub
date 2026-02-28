@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Activity, ChartNoAxesCombined, ShoppingCart, UserRound } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -127,15 +128,76 @@ export default function OrdersPage() {
     const q = resellerQuery.toLowerCase();
     return resellers.filter((r) => (`${r.id} ${r.username}`).toLowerCase().includes(q)).slice(0, 200);
   }, [resellers, resellerQuery]);
+  const selectClass =
+    "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+  const metricCardClass =
+    "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
+  const stats = React.useMemo(() => {
+    const completed = items.filter((x) => (x.status || "").toLowerCase() === "completed").length;
+    const pending = items.filter((x) => (x.status || "").toLowerCase() === "pending").length;
+    const failed = items.filter((x) => {
+      const s = (x.status || "").toLowerCase();
+      return s === "failed" || s === "rolled_back";
+    }).length;
+    return { total: items.length, completed, pending, failed };
+  }, [items]);
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="text-xl font-semibold">سفارشات</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">
-            {isAdmin ? "تاریخچه سفارشات تمام رسیلرها" : "تاریخچه سفارشات حساب شما"}
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(112deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_15px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <ShoppingCart size={13} />
+              Orders Analytics
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">سفارشات</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">
+              {isAdmin ? "تاریخچه سفارشات تمام رسیلرها" : "تاریخچه سفارشات حساب شما"}
+            </p>
           </div>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
+            <Activity size={14} />
+            {loading ? "در حال بروزرسانی..." : "پایش سفارش"}
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={metricCardClass}>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-[hsl(var(--fg))]/70">تعداد سفارشات</div>
+            <ChartNoAxesCombined size={16} className="opacity-60" />
+          </div>
+          <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.total)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-[hsl(var(--fg))]/70">تکمیل‌شده</div>
+            <ShoppingCart size={16} className="opacity-60" />
+          </div>
+          <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.completed)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-[hsl(var(--fg))]/70">در انتظار</div>
+            <UserRound size={16} className="opacity-60" />
+          </div>
+          <div className="mt-1 text-lg font-semibold text-amber-600">{fmtNumber(stats.pending)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-[hsl(var(--fg))]/70">ناموفق/برگشتی</div>
+            <Activity size={16} className="opacity-60" />
+          </div>
+          <div className="mt-1 text-lg font-semibold text-red-600">{fmtNumber(stats.failed)}</div>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader>
+          <div className="text-xl font-semibold">جزئیات سفارشات</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">فیلتر و مشاهده وضعیت سفارش‌ها</div>
         </CardHeader>
         <CardContent className="space-y-3">
           {isAdmin ? (
@@ -146,7 +208,7 @@ export default function OrdersPage() {
                 onChange={(e) => setResellerQuery(e.target.value)}
               />
               <select
-                className="h-10 rounded-xl border border-[hsl(var(--border))] bg-transparent px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                className={selectClass}
                 value={resellerId}
                 onChange={(e) => setResellerId(e.target.value)}
               >
@@ -162,7 +224,7 @@ export default function OrdersPage() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+            <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
               <span>سفارشات شخصی شما</span>
               <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
                 {loading ? "..." : "به‌روزرسانی"}
@@ -175,7 +237,7 @@ export default function OrdersPage() {
               const tm = orderTypeMeta(o.type);
               const sm = orderStatusMeta(o.status);
               return (
-                <div key={o.id} className="rounded-xl border border-[hsl(var(--border))] p-3 text-xs space-y-2">
+                <div key={o.id} className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold">#{o.id}</div>
                     <div className="flex items-center gap-1">
@@ -196,7 +258,7 @@ export default function OrdersPage() {
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
-                <tr className="border-b border-[hsl(var(--border))]">
+                <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
                   <th className="text-right py-2">شناسه</th>
                   <th className="text-right py-2">ریسیلر</th>
                   <th className="text-right py-2">کاربر</th>
@@ -211,7 +273,7 @@ export default function OrdersPage() {
                   const tm = orderTypeMeta(o.type);
                   const sm = orderStatusMeta(o.status);
                   return (
-                    <tr key={o.id} className="border-b border-[hsl(var(--border))]">
+                    <tr key={o.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                       <td className="py-2">{o.id}</td>
                       <td className="py-2">{isAdmin ? resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : o.reseller_id : o.reseller_id}</td>
                       <td className="py-2">
