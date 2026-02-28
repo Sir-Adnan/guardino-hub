@@ -488,7 +488,7 @@ export default function UserDetailPage() {
               </div>
 
               {opMode === "extend" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[7, 30, 90, 180, 365].map((d) => (
@@ -530,7 +530,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "traffic_up" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">افزایش حجم کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 20, 50, 100].map((g) => (
@@ -552,7 +552,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "traffic_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش حجم (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 5, 10, 20, 50].map((g) => (
@@ -577,7 +577,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "time_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 3, 7, 15, 30, 60].map((d) => (
@@ -620,7 +620,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "controls" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.3_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.3)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">عملیات کنترلی</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("reset")}>
