@@ -8,11 +8,15 @@ export function Button({
   size = "md",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "outline"; size?: "sm" | "md" | "lg" }) {
-  const base = "inline-flex items-center justify-center rounded-xl font-medium transition";
+  const base =
+    "inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent)/0.45)] disabled:cursor-not-allowed disabled:opacity-60";
   const variants: Record<string, string> = {
-    primary: "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] hover:opacity-90 shadow-soft",
-    ghost: "hover:bg-[hsl(var(--muted))]",
-    outline: "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]",
+    primary:
+      "border border-[hsl(var(--accent)/0.35)] bg-[linear-gradient(135deg,hsl(var(--accent))_0%,hsl(var(--accent)/0.84)_100%)] text-[hsl(var(--accent-fg))] shadow-[0_10px_22px_-14px_hsl(var(--accent)/0.8)] hover:-translate-y-0.5 hover:brightness-95 active:translate-y-0",
+    ghost:
+      "border border-transparent bg-transparent text-[hsl(var(--fg))] hover:-translate-y-0.5 hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),transparent)]",
+    outline:
+      "border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] text-[hsl(var(--fg))] hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),hsl(var(--card)))]",
   };
   const sizes: Record<string, string> = {
     sm: "px-3 py-1.5 text-xs",
