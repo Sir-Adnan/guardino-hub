@@ -16,6 +16,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!t) r.push("/login");
   }, [r]);
 
+  React.useEffect(() => {
+    if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [sidebarOpen]);
+
   return (
     <AuthProvider>
       <div className="min-h-screen flex bg-[hsl(var(--bg))]">
@@ -27,8 +36,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile sidebar drawer */}
         {sidebarOpen ? (
           <div className="fixed inset-0 z-50 md:hidden">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-            <div className="absolute inset-y-0 right-0 w-[86vw] max-w-[300px]">
+            <div className="absolute inset-0 bg-black/55 backdrop-blur-[1.5px]" onClick={() => setSidebarOpen(false)} />
+            <div className="absolute inset-y-0 right-0 w-[88vw] max-w-[320px] border-l border-[hsl(var(--border))] bg-[hsl(var(--sidebar-bg))] shadow-2xl">
               <Sidebar className="!static !w-full h-full min-h-0 max-h-[100dvh]" onNavigate={() => setSidebarOpen(false)} />
             </div>
           </div>
