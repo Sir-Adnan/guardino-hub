@@ -73,15 +73,15 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "relative sticky top-0 shrink-0 border-r border-[hsl(var(--border))] bg-[linear-gradient(175deg,hsl(var(--sidebar-bg))_0%,hsl(var(--muted))/0.62_100%)] flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden transition-all",
+        "relative sticky top-0 shrink-0 border-r border-[hsl(var(--border))] bg-[linear-gradient(182deg,hsl(var(--sidebar-bg))_0%,hsl(var(--sidebar-bg))_68%,hsl(var(--muted))_100%)] shadow-[inset_-1px_0_0_hsl(var(--border))] flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden transition-all",
         collapsed ? "w-16" : "w-72",
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(95%_55%_at_0%_0%,hsl(var(--accent))/0.10,transparent_62%),radial-gradient(85%_50%_at_100%_100%,hsl(var(--accent))/0.08,transparent_68%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(95%_55%_at_0%_0%,hsl(var(--accent)/0.08),transparent_62%),radial-gradient(85%_50%_at_100%_100%,hsl(var(--accent)/0.05),transparent_68%)]" />
       <div
         className={cn(
-          "relative z-[1] flex items-center justify-between border-b border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--accent))/0.12_0%,transparent_70%)] p-3",
+          "relative z-[1] flex items-center justify-between border-b border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--accent)/0.12)_0%,transparent_70%)] p-3",
           collapsed ? "flex-col gap-2" : "px-4"
         )}
       >
@@ -112,8 +112,8 @@ export function Sidebar({
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200",
                   active
-                    ? "bg-[linear-gradient(120deg,hsl(var(--accent))/0.22_0%,hsl(var(--accent))/0.08_100%)] text-[hsl(var(--accent))] shadow-soft ring-1 ring-[hsl(var(--accent))/0.22]"
-                    : "text-[hsl(var(--fg))]/85 hover:-translate-y-0.5 hover:bg-[linear-gradient(125deg,hsl(var(--accent))/0.10,transparent)] hover:text-[hsl(var(--fg))]"
+                    ? "bg-[linear-gradient(120deg,hsl(var(--accent)/0.22)_0%,hsl(var(--accent)/0.08)_100%)] text-[hsl(var(--accent))] shadow-soft ring-1 ring-[hsl(var(--accent)/0.22)]"
+                    : "text-[hsl(var(--fg))]/85 hover:-translate-y-0.5 hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.10),transparent)] hover:text-[hsl(var(--fg))]"
                 )}
               >
                 <Icon size={18} className={cn("shrink-0", active ? "opacity-100" : "opacity-85 group-hover:opacity-100")} />
@@ -123,7 +123,7 @@ export function Sidebar({
           })}
       </nav>
 
-      <div className="relative z-[1] mt-auto border-t border-[hsl(var(--border))] bg-[linear-gradient(180deg,transparent_0%,hsl(var(--muted))/0.34_100%)] p-3">
+      <div className="relative z-[1] mt-auto border-t border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--sidebar-bg))_0%,hsl(var(--muted)/0.88)_100%)] p-3">
         <div className="mb-3">
           {!collapsed ? (
             <>
@@ -155,7 +155,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => setLang("fa")}
                 className={cn(
-                  "flex-1 rounded-xl border px-3 py-2 text-xs transition-all duration-200",
+                  "flex-1 rounded-xl border px-3 py-2 text-xs transition-all duration-200 sm:py-2 py-1.5",
                   lang === "fa"
                     ? "border-[hsl(var(--accent)/0.35)] bg-[hsl(var(--accent)/0.14)] text-[hsl(var(--accent))]"
                     : "border-[hsl(var(--border))] hover:-translate-y-0.5 hover:bg-[hsl(var(--muted))]"
@@ -167,7 +167,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => setLang("en")}
                 className={cn(
-                  "flex-1 rounded-xl border px-3 py-2 text-xs transition-all duration-200",
+                  "flex-1 rounded-xl border px-3 py-2 text-xs transition-all duration-200 sm:py-2 py-1.5",
                   lang === "en"
                     ? "border-[hsl(var(--accent)/0.35)] bg-[hsl(var(--accent)/0.14)] text-[hsl(var(--accent))]"
                     : "border-[hsl(var(--border))] hover:-translate-y-0.5 hover:bg-[hsl(var(--muted))]"
@@ -180,16 +180,22 @@ export function Sidebar({
         ) : null}
 
         {!collapsed ? (
-          <div className="mb-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent))/0.12_0%,transparent_85%)] px-3 py-2 text-xs">
-            <div className="mb-1 flex items-center gap-1.5 text-[hsl(var(--fg))]/70">
-              <CalendarDays size={13} />
-              تاریخ شمسی
+          <>
+            <div className="mb-3 hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,transparent_85%)] px-3 py-2 text-xs sm:block">
+              <div className="mb-1 flex items-center gap-1.5 text-[hsl(var(--fg))]/70">
+                <CalendarDays size={13} />
+                تاریخ شمسی
+              </div>
+              <div className="font-semibold">{jalaliDateLabel}</div>
             </div>
-            <div className="font-semibold">{jalaliDateLabel}</div>
-          </div>
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.55)] px-2.5 py-1.5 text-[11px] sm:hidden">
+              <CalendarDays size={13} className="shrink-0 text-[hsl(var(--fg))]/70" />
+              <span className="truncate font-medium">{jalaliDateLabel}</span>
+            </div>
+          </>
         ) : (
           <div className="mb-2 flex justify-center">
-            <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.45]" title={jalaliDateLabel}>
+            <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.45)]" title={jalaliDateLabel}>
               <CalendarDays size={14} />
             </div>
           </div>
