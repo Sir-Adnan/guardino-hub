@@ -13,6 +13,8 @@ class ResellerStats(BaseModel):
     users_total: int
     users_active: int
     users_disabled: int
+    used_bytes_total: int
+    sold_gb_total: int
 
     nodes_allowed: int
 
