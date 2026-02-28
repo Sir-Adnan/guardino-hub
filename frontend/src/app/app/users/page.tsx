@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
+import { formatJalaliDateTime, parseJalaliDateTime } from "@/lib/jalali";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth-context";
@@ -40,7 +41,13 @@ import {
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
-type ResellerStatsOut = { users_total: number; users_active: number; users_disabled: number };
+type ResellerStatsOut = {
+  users_total: number;
+  users_active: number;
+  users_disabled: number;
+  used_bytes_total: number;
+  sold_gb_total: number;
+};
 type LinksResp = {
   user_id: number;
   master_link: string;
@@ -137,7 +144,7 @@ function fmtGig(value: number) {
 function progressTone(percent: number) {
   if (percent >= 90) return "from-rose-500 via-red-500 to-orange-500";
   if (percent >= 70) return "from-amber-500 via-orange-500 to-yellow-500";
-  return "from-emerald-500 via-teal-500 to-sky-500";
+  return "from-[hsl(var(--accent))] via-[hsl(var(--accent)/0.82)] to-[hsl(var(--accent)/0.6)]";
 }
 
 export default function UsersPage() {
@@ -176,10 +183,12 @@ export default function UsersPage() {
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
   const [editUser, setEditUser] = React.useState<UserOut | null>(null);
-  const [quickMode, setQuickMode] = React.useState<"extend" | "add" | "dec">("extend");
+  const [quickMode, setQuickMode] = React.useState<"extend" | "add" | "dec" | "time_dec">("extend");
   const [editDays, setEditDays] = React.useState(30);
+  const [editDecDays, setEditDecDays] = React.useState(7);
   const [editAddGb, setEditAddGb] = React.useState(10);
   const [editDecGb, setEditDecGb] = React.useState(5);
+  const [editJalaliTarget, setEditJalaliTarget] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(50);
   const [copyHint, setCopyHint] = React.useState<{ text: string; x: number; y: number; id: number } | null>(null);
@@ -315,8 +324,11 @@ export default function UsersPage() {
     const total = resellerStats?.users_total ?? data?.total ?? rawItems.length;
     const active = resellerStats?.users_active ?? rawItems.filter((u) => (u.status || "").toLowerCase() === "active").length;
     const disabled = resellerStats?.users_disabled ?? rawItems.filter((u) => (u.status || "").toLowerCase() === "disabled").length;
-    const inPage = rawItems.length;
-    return { total, active, disabled, inPage };
+    const pageUsedBytes = rawItems.reduce((sum, u) => sum + Number(u.used_bytes || 0), 0);
+    const pageSoldGb = rawItems.reduce((sum, u) => sum + Number(u.total_gb || 0), 0);
+    const usedBytes = resellerStats?.used_bytes_total ?? pageUsedBytes;
+    const soldGb = resellerStats?.sold_gb_total ?? pageSoldGb;
+    return { total, active, disabled, usedGb: bytesToGb(usedBytes), soldGb };
   }, [rawItems, data?.total, resellerStats]);
 
   function showCopyHint(ev?: React.MouseEvent<HTMLElement> | null, text: string = t("common.copied")) {
@@ -479,9 +491,21 @@ export default function UsersPage() {
     setEditUser(u);
     setQuickMode("extend");
     setEditDays(30);
+    setEditDecDays(7);
     setEditAddGb(10);
     setEditDecGb(5);
+    setEditJalaliTarget(formatJalaliDateTime(new Date(u.expire_at)));
     setEditOpen(true);
+  }
+
+  function computeDaysDeltaFromJalali(currentExpireAt: string, targetJalali: string) {
+    const target = parseJalaliDateTime(targetJalali);
+    if (!target) return { ok: false as const, reason: "format" };
+    const current = new Date(currentExpireAt);
+    if (Number.isNaN(current.getTime())) return { ok: false as const, reason: "current" };
+    const diffMs = target.getTime() - current.getTime();
+    const diffDays = Math.ceil(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+    return { ok: true as const, direction: diffMs >= 0 ? "up" : "down", diffDays };
   }
 
   function FilterButton({ value, label }: { value: StatusFilter; label: string }) {
@@ -520,7 +544,7 @@ export default function UsersPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(59,130,246,0.10),rgba(14,165,233,0.06))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{t("users.statsTotal")}</div>
@@ -544,10 +568,17 @@ export default function UsersPage() {
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(249,115,22,0.05))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">نمایش این صفحه</div>
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">حجم مصرف کل کاربران</div>
                 <Gauge size={18} className="text-amber-600" />
               </div>
-              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.inPage)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.usedGb)} گیگ</div>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(129,140,248,0.14),rgba(56,189,248,0.06))] p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">مجموع حجم فروخته‌شده</div>
+                <Layers size={18} className="text-indigo-600" />
+              </div>
+              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.soldGb)} گیگ</div>
             </div>
           </div>
 
@@ -662,6 +693,8 @@ export default function UsersPage() {
             const StatusIcon = sb.Icon;
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
+            const isSingle = viewMode === "single";
+            const actionSize = isSingle ? "h-11 w-11" : "h-10 w-10";
 
             return (
               <Card
@@ -678,13 +711,13 @@ export default function UsersPage() {
                 className="group relative cursor-pointer overflow-hidden rounded-xl border-[hsl(var(--border))]/85 transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-2xl hover:shadow-sky-500/10"
               >
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_100%_0%,rgba(14,165,233,0.16),transparent_55%),radial-gradient(50%_90%_at_0%_100%,rgba(16,185,129,0.14),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                <CardContent className="relative space-y-4 p-5">
+                <CardContent className={"relative " + (isSingle ? "space-y-3 p-4" : "space-y-4 p-5")}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="text-lg font-bold break-all leading-relaxed">{u.label}</div>
+                        <div className={(isSingle ? "text-base" : "text-lg") + " font-bold break-all leading-relaxed"}>{u.label}</div>
                       </div>
-                      <div className="mt-1.5 text-sm text-[hsl(var(--fg))]/75">{expText}</div>
+                      <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " text-[hsl(var(--fg))]/75"}>{expText}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={sb.v} className="gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold">
@@ -699,10 +732,9 @@ export default function UsersPage() {
 
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/80">
-                      <div className="font-semibold">{t("users.usage")}</div>
+                      <div className="font-semibold">{percent}٪ مصرف</div>
                       <div className="font-semibold">
                         {fmtGig(usedGb)} / {fmtGig(u.total_gb)} گیگ
-                        <span className="mr-1 text-xs text-[hsl(var(--fg))]/65">({percent}٪)</span>
                       </div>
                     </div>
                     <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--muted))]">
@@ -720,7 +752,7 @@ export default function UsersPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
-                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-400/60 hover:bg-sky-500/10"
+                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-400/60 hover:bg-sky-500/10`}
                       size="sm"
                       title={t("users.links")}
                       aria-label={t("users.links")}
@@ -734,7 +766,7 @@ export default function UsersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:bg-indigo-500/10"
+                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:bg-indigo-500/10`}
                       size="sm"
                       title={t("users.details")}
                       aria-label={t("users.details")}
@@ -748,7 +780,7 @@ export default function UsersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10"
+                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10`}
                       size="sm"
                       title="کپی لینک اصلی اشتراک"
                       aria-label="کپی لینک اصلی اشتراک"
@@ -762,7 +794,7 @@ export default function UsersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10"
+                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10`}
                       size="sm"
                       title="کپی همه لینک‌ها"
                       aria-label="کپی همه لینک‌ها"
@@ -776,7 +808,7 @@ export default function UsersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-fuchsia-400/60 hover:bg-fuchsia-500/10"
+                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-fuchsia-400/60 hover:bg-fuchsia-500/10`}
                       size="sm"
                       title="QR لینک‌ها"
                       aria-label="QR لینک‌ها"
@@ -788,13 +820,45 @@ export default function UsersPage() {
                     >
                       <QrCode size={18} />
                     </Button>
+                    {isSingle ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-400/60 hover:bg-amber-500/10`}
+                          size="sm"
+                          title={t("users.resetUsage")}
+                          aria-label={t("users.resetUsage")}
+                          disabled={busy || locked}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ask("reset", u);
+                          }}
+                        >
+                          <Gauge size={18} />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-400/60 hover:bg-rose-500/10`}
+                          size="sm"
+                          title={t("users.revoke")}
+                          aria-label={t("users.revoke")}
+                          disabled={busy || locked}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ask("revoke", u);
+                          }}
+                        >
+                          <Trash2 size={18} />
+                        </Button>
+                      </>
+                    ) : null}
 
                     <div onClick={(e) => e.stopPropagation()}>
                       <Menu
                         trigger={
                           <Button
                             variant="outline"
-                            className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.6)] hover:bg-[hsl(var(--accent)/0.12)]"
+                            className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.6)] hover:bg-[hsl(var(--accent)/0.12)]`}
                             size="sm"
                             title={t("users.actions")}
                             disabled={busy}
@@ -913,7 +977,7 @@ export default function UsersPage() {
       >
         {editUser ? (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
                 تمدید
               </Button>
@@ -923,10 +987,13 @@ export default function UsersPage() {
               <Button type="button" size="sm" variant={quickMode === "dec" ? "primary" : "outline"} onClick={() => setQuickMode("dec")}>
                 کاهش حجم
               </Button>
+              <Button type="button" size="sm" variant={quickMode === "time_dec" ? "primary" : "outline"} onClick={() => setQuickMode("time_dec")}>
+                کاهش زمان
+              </Button>
             </div>
 
             {quickMode === "extend" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-3">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 30, 90, 180].map((d) => (
@@ -945,6 +1012,38 @@ export default function UsersPage() {
                     }}
                   >
                     اجرا
+                  </Button>
+                </div>
+                <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-2.5 space-y-2">
+                  <div className="text-xs text-[hsl(var(--fg))]/80">
+                    انتخاب تاریخ پایان (شمسی) | فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  </div>
+                  <Input
+                    dir="rtl"
+                    value={editJalaliTarget}
+                    onChange={(e) => setEditJalaliTarget(e.target.value)}
+                    placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const delta = computeDaysDeltaFromJalali(editUser.expire_at, editJalaliTarget);
+                      if (!delta.ok) {
+                        push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
+                        return;
+                      }
+                      if (delta.direction !== "up" || delta.diffDays <= 0) {
+                        push({ title: "تاریخ انتخابی باید بعد از زمان فعلی باشد", type: "warning" });
+                        return;
+                      }
+                      const days = Math.max(1, Math.min(3650, delta.diffDays));
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/extend`, { days });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اعمال بر اساس تاریخ شمسی
                   </Button>
                 </div>
               </div>
@@ -1003,6 +1102,94 @@ export default function UsersPage() {
                 </div>
               </div>
             ) : null}
+
+            {quickMode === "time_dec" ? (
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-3">
+                <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 3, 7, 15, 30].map((d) => (
+                    <Button key={d} type="button" size="sm" variant={editDecDays === d ? "primary" : "outline"} onClick={() => setEditDecDays(d)}>
+                      -{d} روز
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input type="number" min={1} value={editDecDays} onChange={(e) => setEditDecDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <Button
+                    variant="outline"
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/decrease-time`, { days: editDecDays });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اجرا
+                  </Button>
+                </div>
+                <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-2.5 space-y-2">
+                  <div className="text-xs text-[hsl(var(--fg))]/80">
+                    انتخاب تاریخ پایان (شمسی) | فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  </div>
+                  <Input
+                    dir="rtl"
+                    value={editJalaliTarget}
+                    onChange={(e) => setEditJalaliTarget(e.target.value)}
+                    placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const delta = computeDaysDeltaFromJalali(editUser.expire_at, editJalaliTarget);
+                      if (!delta.ok) {
+                        push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
+                        return;
+                      }
+                      if (delta.direction !== "down" || delta.diffDays <= 0) {
+                        push({ title: "برای کاهش زمان، تاریخ شمسی باید قبل از زمان فعلی باشد", type: "warning" });
+                        return;
+                      }
+                      const days = Math.max(1, Math.min(3650, delta.diffDays));
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/decrease-time`, { days });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    کاهش زمان بر اساس تاریخ شمسی
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-3 space-y-2">
+              <div className="font-medium">کنترل سریع</div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={busyId === editUser.id || locked}
+                  onClick={() => {
+                    setEditOpen(false);
+                    ask("reset", editUser);
+                  }}
+                >
+                  <Gauge size={15} /> ریست مصرف
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={busyId === editUser.id || locked}
+                  onClick={() => {
+                    setEditOpen(false);
+                    ask("revoke", editUser);
+                  }}
+                >
+                  <Trash2 size={15} /> بازسازی لینک
+                </Button>
+              </div>
+            </div>
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEditOpen(false)}>{t("common.cancel")}</Button>
