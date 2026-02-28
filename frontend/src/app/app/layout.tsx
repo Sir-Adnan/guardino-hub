@@ -45,8 +45,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         <div className="flex-1 min-w-0 flex flex-col">
           <AppHeader onMenuClick={() => setSidebarOpen(true)} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} sidebarCollapsed={sidebarCollapsed} />
-          <main className="flex-1 p-3 sm:p-4 lg:p-6">
-            {children}
+          <main className="relative flex-1 overflow-x-hidden p-3 sm:p-4 lg:p-6">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_35%_at_0%_0%,hsl(var(--accent)/0.08),transparent_60%),radial-gradient(60%_38%_at_100%_100%,hsl(var(--accent)/0.06),transparent_62%)]" />
+            <div className="relative z-[1] mx-auto w-full max-w-[1700px]">
+              {children}
+            </div>
           </main>
         </div>
       </div>
