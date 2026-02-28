@@ -257,7 +257,7 @@ export default function UserDetailPage() {
       </div>
 
       {locked ? (
-        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
           {t("users.balanceZero")}
         </div>
       ) : null}
@@ -331,15 +331,15 @@ export default function UserDetailPage() {
               ) : user ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">حجم کل</div>
                       <div className="mt-1 text-lg font-semibold">{fmtNumber(user.total_gb)} گیگ</div>
                     </div>
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">مصرف‌شده</div>
                       <div className="mt-1 text-lg font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)} گیگ</div>
                     </div>
-                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">روز باقی‌مانده</div>
                       <div className="mt-1 text-lg font-semibold">{daysLeft == null ? "—" : fmtNumber(daysLeft)}</div>
                     </div>
@@ -488,7 +488,7 @@ export default function UserDetailPage() {
               </div>
 
               {opMode === "extend" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[7, 30, 90, 180, 365].map((d) => (
@@ -530,7 +530,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "traffic_up" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">افزایش حجم کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 20, 50, 100].map((g) => (
@@ -552,7 +552,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "traffic_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش حجم (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 5, 10, 20, 50].map((g) => (
@@ -577,7 +577,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "time_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 3, 7, 15, 30, 60].map((d) => (
@@ -620,7 +620,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "controls" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.3)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.3)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">عملیات کنترلی</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("reset")}>

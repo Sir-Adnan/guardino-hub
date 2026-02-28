@@ -689,10 +689,10 @@ export default function NewUserPage() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 shadow-[0_14px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_14px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <UserPlus2 size={13} />
               ساخت کاربر جدید
             </div>
@@ -726,7 +726,7 @@ export default function NewUserPage() {
           <div className="text-lg font-semibold">مشخصات کاربر</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">اطلاعات پایه، پلن، نودها و پیش‌فاکتور</div>
           {defaultsLoaded ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--card))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--surface-card-1))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
               <div className="flex flex-wrap items-center gap-2">
                 <Sparkles size={14} />
                 <span>
@@ -745,7 +745,7 @@ export default function NewUserPage() {
 
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.label")} <HelpTip text={t("help.label")} />
               </label>
@@ -757,7 +757,7 @@ export default function NewUserPage() {
               ) : null}
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.username")} <HelpTip text={t("help.username")} />
               </label>
@@ -781,7 +781,7 @@ export default function NewUserPage() {
             <div
               className={cn(
                 "space-y-3 rounded-2xl border p-4 transition-all",
-                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)]",
+                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]",
                 customTrafficLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
               )}
             >
@@ -823,7 +823,7 @@ export default function NewUserPage() {
             <div
               className={cn(
                 "space-y-3 rounded-2xl border p-4 transition-all",
-                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)]",
+                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]",
                 customDaysLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
               )}
             >
@@ -872,7 +872,7 @@ export default function NewUserPage() {
                 </div>
               </div>
               {targetExpireAt ? (
-                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-[11px] text-[hsl(var(--fg))]/75">
+                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-[11px] text-[hsl(var(--fg))]/75">
                   تاریخ پایان انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetExpireAt)}</span>
                   <span className="mx-1">•</span>
                   معادل: <span className="font-semibold">{fmtNumber(days)} روز</span>
@@ -888,7 +888,7 @@ export default function NewUserPage() {
             </div>
           </div>
 
-          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4">
+          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
             <label className="text-sm flex items-center gap-2">
               {t("newUser.pricingMode")} <HelpTip text={t("help.pricingMode")} />
             </label>
@@ -899,7 +899,7 @@ export default function NewUserPage() {
             <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.bundleHelp")}</div>
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4">
+          <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
             <label className="text-sm flex items-center gap-2">
               {t("newUser.nodeSelect")} <HelpTip text={t("help.nodeIds")} />
             </label>
@@ -953,7 +953,7 @@ export default function NewUserPage() {
             ) : null}
 
             {nodeMode === "manual" ? (
-              <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-2">
+              <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Input value={nodePickQ} onChange={(e) => setNodePickQ(e.target.value)} placeholder={t("common.search")} />
                   <div className="flex gap-2">
@@ -972,7 +972,7 @@ export default function NewUserPage() {
 
                 <div className="grid gap-2 md:grid-cols-2">
                   {filteredNodes.map((n) => (
-                    <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
+                    <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                       <input
                         type="checkbox"
                         checked={selectedNodeIds.includes(n.id)}
@@ -987,7 +987,7 @@ export default function NewUserPage() {
             ) : null}
           </div>
 
-          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3">
+          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
             <div className="flex items-center gap-2">
               <Switch checked={bulkEnabled} onCheckedChange={setBulkEnabled} />
               <div className="text-sm font-medium">{t("newUser.bulk")}</div>
@@ -1015,7 +1015,7 @@ export default function NewUserPage() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
             <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
             <Button type="button" disabled={loading} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
             {creating ? (
@@ -1025,7 +1025,7 @@ export default function NewUserPage() {
           </div>
 
           {creating ? (
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-2">
+            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <div className="font-medium">در حال ساخت کاربران...</div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">
@@ -1056,7 +1056,7 @@ export default function NewUserPage() {
               <CardContent className="text-sm space-y-1">
                 <div>هزینه زمان: {fmtNumber(quote.time_amount)}</div>
                 <div className="text-[hsl(var(--fg))]/70">جزئیات per-node (اگر per_node باشد):</div>
-                <pre className="text-xs bg-[hsl(var(--muted))] rounded-xl p-3 overflow-auto">{JSON.stringify(quote.per_node_amount, null, 2)}</pre>
+                <pre className="text-xs bg-[hsl(var(--surface-card-3))] rounded-xl p-3 overflow-auto">{JSON.stringify(quote.per_node_amount, null, 2)}</pre>
               </CardContent>
             </Card>
           ) : null}
@@ -1075,13 +1075,13 @@ export default function NewUserPage() {
       >
         <div className="space-y-4 text-sm">
           {createSummary ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
               کل: {createSummary.total} • انجام‌شده: {createSummary.done} • موفق: {createSummary.success} • ناموفق: {createSummary.failed}
               {createSummary.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
             پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.
           </div>
 

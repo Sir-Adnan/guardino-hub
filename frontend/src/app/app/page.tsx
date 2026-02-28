@@ -235,10 +235,10 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 shadow-[0_16px_30px_-20px_hsl(var(--fg)/0.35)] sm:p-6">
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_16px_30px_-20px_hsl(var(--fg)/0.35)] sm:p-6">
         <div className="grid gap-4 xl:grid-cols-[1.2fr,0.8fr] xl:items-center">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <Gauge size={13} />
               {me.role === "admin" ? "نمای کلی پنل مدیریت" : "نمای کلی پنل فروش"}
             </div>
@@ -338,7 +338,7 @@ export default function Dashboard() {
             <CardContent>
               <div className="space-y-2">
                 {nodes.slice(0, 10).map((n) => (
-                  <div key={n.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
+                  <div key={n.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{n.name}</div>
                       <div className="text-xs text-[hsl(var(--fg))]/70">#{n.id} • {n.panel_type || "—"}</div>
@@ -404,7 +404,7 @@ export default function Dashboard() {
               <CardContent>
                 <div className="space-y-2">
                   {nodes.slice(0, 8).map((n) => (
-                    <div key={n.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
+                    <div key={n.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{n.name}</div>
                         <div className="text-xs text-[hsl(var(--fg))]/70">#{n.id} • {n.panel_type || "—"}</div>
@@ -426,7 +426,7 @@ export default function Dashboard() {
                 <div className="space-y-2">
                   {recentUsers.map((u) => (
                     <Link key={u.id} href={`/app/users/${u.id}`} className="block">
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.08),hsl(var(--card)))]">
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[linear-gradient(125deg,hsl(var(--accent)/0.08),hsl(var(--surface-card-1)))]">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">{u.label}</div>
                           <div className="text-xs text-[hsl(var(--fg))]/70">#{u.id}</div>

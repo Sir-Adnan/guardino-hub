@@ -519,7 +519,7 @@ export default function UsersPage() {
           "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-200 " +
           (active
             ? "border-transparent bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] shadow-soft"
-            : "border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--muted))]")
+            : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--surface-card-3))]")
         }
       >
         {label}
@@ -604,7 +604,7 @@ export default function UsersPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="inline-flex items-center overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+              <div className="inline-flex items-center overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
                 <button
                   type="button"
                   onClick={() => setViewMode("single")}
@@ -612,7 +612,7 @@ export default function UsersPage() {
                     "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-semibold transition-all duration-200 " +
                     (viewMode === "single"
                       ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
-                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--muted))]")
+                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--surface-card-3))]")
                   }
                   title="نمایش تک‌ستونه"
                 >
@@ -626,7 +626,7 @@ export default function UsersPage() {
                     "inline-flex h-10 items-center gap-1.5 border-r border-[hsl(var(--border))] px-3 text-xs font-semibold transition-all duration-200 " +
                     (viewMode === "grid2"
                       ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
-                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--muted))]")
+                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--surface-card-3))]")
                   }
                   title="نمایش دو ستونه"
                 >
@@ -652,7 +652,7 @@ export default function UsersPage() {
           </div>
 
           {locked ? (
-            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs">
+            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs">
               {t("users.balanceZero")}
             </div>
           ) : null}
@@ -738,7 +738,7 @@ export default function UsersPage() {
                         {fmtGig(usedGb)} / {fmtGig(u.total_gb)} گیگ
                       </div>
                     </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--muted))]">
+                    <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--surface-card-3))]">
                       <div
                         className={"h-full rounded-md bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
                         style={{ width: `${percent}%` }}
@@ -994,7 +994,7 @@ export default function UsersPage() {
             </div>
 
             {quickMode === "extend" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 30, 90, 180].map((d) => (
@@ -1039,7 +1039,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "add" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">افزایش حجم (گیگ)</div>
                 <div className="flex flex-wrap gap-2">
                   {[5, 10, 20, 50].map((g) => (
@@ -1064,7 +1064,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش حجم (ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 5, 10, 20].map((g) => (
@@ -1093,7 +1093,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "time_dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 3, 7, 15, 30].map((d) => (
@@ -1138,7 +1138,7 @@ export default function UsersPage() {
               </div>
             ) : null}
 
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--card))_0%,hsl(var(--muted)/0.3)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.3)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
               <div className="font-medium">کنترل سریع</div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -1189,7 +1189,7 @@ export default function UsersPage() {
 
         {qrLinks ? (
           <div className="space-y-4">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
               QR کد لینک مرکزی و لینک هر نود نمایش داده می‌شود. با Revoke، لینک مرکزی قبلی هم باطل می‌شود.
             </div>
 
@@ -1204,7 +1204,7 @@ export default function UsersPage() {
                     <div className="mx-auto w-fit rounded-xl border border-[hsl(var(--border))] bg-white p-2">
                       <img src={qrImageUrl(item.url)} alt={`QR ${item.title}`} width={220} height={220} className="h-[220px] w-[220px] object-contain" />
                     </div>
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/50 p-2 text-[11px] break-all">
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/50 p-2 text-[11px] break-all">
                       {item.url}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1257,12 +1257,12 @@ export default function UsersPage() {
 
         {links ? (
           <div className="space-y-4 text-sm">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
               پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
             </div>
             <div className="space-y-2">
               <div className="font-semibold">{t("users.masterSub")}</div>
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 break-all">{links.master_link}</div>
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 break-all">{links.master_link}</div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
