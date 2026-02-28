@@ -1,11 +1,12 @@
 const JALALI_BREAKS = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
 
 function div(a: number, b: number) {
-  return Math.floor(a / b);
+  // Jalali conversion formulas require truncation toward zero (not floor).
+  return Math.trunc(a / b);
 }
 
 function mod(a: number, b: number) {
-  return a - Math.floor(a / b) * b;
+  return a - div(a, b) * b;
 }
 
 function g2d(gy: number, gm: number, gd: number) {
