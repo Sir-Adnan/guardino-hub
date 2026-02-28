@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
-import { formatJalaliDateTime, parseJalaliDateTime } from "@/lib/jalali";
+import { formatJalaliDateTime } from "@/lib/jalali";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth-context";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
+import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
@@ -188,7 +189,7 @@ export default function UsersPage() {
   const [editDecDays, setEditDecDays] = React.useState(7);
   const [editAddGb, setEditAddGb] = React.useState(10);
   const [editDecGb, setEditDecGb] = React.useState(5);
-  const [editJalaliTarget, setEditJalaliTarget] = React.useState("");
+  const [editTargetDate, setEditTargetDate] = React.useState<Date | null>(null);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(50);
   const [copyHint, setCopyHint] = React.useState<{ text: string; x: number; y: number; id: number } | null>(null);
@@ -494,13 +495,13 @@ export default function UsersPage() {
     setEditDecDays(7);
     setEditAddGb(10);
     setEditDecGb(5);
-    setEditJalaliTarget(formatJalaliDateTime(new Date(u.expire_at)));
+    const exp = new Date(u.expire_at);
+    setEditTargetDate(Number.isNaN(exp.getTime()) ? new Date() : exp);
     setEditOpen(true);
   }
 
-  function computeDaysDeltaFromJalali(currentExpireAt: string, targetJalali: string) {
-    const target = parseJalaliDateTime(targetJalali);
-    if (!target) return { ok: false as const, reason: "format" };
+  function computeDaysDeltaFromTarget(currentExpireAt: string, target: Date | null) {
+    if (!target || Number.isNaN(target.getTime())) return { ok: false as const, reason: "format" };
     const current = new Date(currentExpireAt);
     if (Number.isNaN(current.getTime())) return { ok: false as const, reason: "current" };
     const diffMs = target.getTime() - current.getTime();
@@ -993,7 +994,7 @@ export default function UsersPage() {
             </div>
 
             {quickMode === "extend" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-3">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 30, 90, 180].map((d) => (
@@ -1002,8 +1003,20 @@ export default function UsersPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Input type="number" value={editDays} onChange={(e) => setEditDays(Math.max(1, Number(e.target.value) || 1))} />
+                <div className="flex flex-wrap gap-2">
+                  <Input className="min-w-[130px] flex-1" type="number" value={editDays} onChange={(e) => setEditDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <JalaliDateTimePicker
+                    mode="icon"
+                    value={editTargetDate}
+                    onChange={(d) => {
+                      setEditTargetDate(d);
+                      if (!editUser) return;
+                      const delta = computeDaysDeltaFromTarget(editUser.expire_at, d);
+                      if (delta.ok && delta.direction === "up" && delta.diffDays > 0) {
+                        setEditDays(Math.max(1, Math.min(3650, delta.diffDays)));
+                      }
+                    }}
+                  />
                   <Button
                     disabled={busyId === editUser.id || locked}
                     onClick={async () => {
@@ -1014,43 +1027,19 @@ export default function UsersPage() {
                     اجرا
                   </Button>
                 </div>
-                <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-2.5 space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/80">
-                    انتخاب تاریخ پایان (شمسی) | فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
-                  </div>
-                  <Input
-                    dir="rtl"
-                    value={editJalaliTarget}
-                    onChange={(e) => setEditJalaliTarget(e.target.value)}
-                    placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={busyId === editUser.id || locked}
-                    onClick={async () => {
-                      const delta = computeDaysDeltaFromJalali(editUser.expire_at, editJalaliTarget);
-                      if (!delta.ok) {
-                        push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
-                        return;
-                      }
-                      if (delta.direction !== "up" || delta.diffDays <= 0) {
-                        push({ title: "تاریخ انتخابی باید بعد از زمان فعلی باشد", type: "warning" });
-                        return;
-                      }
-                      const days = Math.max(1, Math.min(3650, delta.diffDays));
-                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/extend`, { days });
-                      if (ok) setEditOpen(false);
-                    }}
-                  >
-                    اعمال بر اساس تاریخ شمسی
-                  </Button>
+                <div className="text-xs text-[hsl(var(--fg))]/75">
+                  تاریخ پایان فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  {editTargetDate ? (
+                    <span className="mr-2">
+                      | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ) : null}
 
             {quickMode === "add" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">افزایش حجم (گیگ)</div>
                 <div className="flex flex-wrap gap-2">
                   {[5, 10, 20, 50].map((g) => (
@@ -1059,8 +1048,8 @@ export default function UsersPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Input type="number" value={editAddGb} onChange={(e) => setEditAddGb(Math.max(1, Number(e.target.value) || 1))} />
+                <div className="flex flex-wrap gap-2">
+                  <Input className="min-w-[130px] flex-1" type="number" value={editAddGb} onChange={(e) => setEditAddGb(Math.max(1, Number(e.target.value) || 1))} />
                   <Button
                     disabled={busyId === editUser.id || locked}
                     onClick={async () => {
@@ -1075,7 +1064,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش حجم (ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 5, 10, 20].map((g) => (
@@ -1084,8 +1073,8 @@ export default function UsersPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Input type="number" value={editDecGb} onChange={(e) => setEditDecGb(Math.max(1, Number(e.target.value) || 1))} />
+                <div className="flex flex-wrap gap-2">
+                  <Input className="min-w-[130px] flex-1" type="number" value={editDecGb} onChange={(e) => setEditDecGb(Math.max(1, Number(e.target.value) || 1))} />
                   <Button
                     variant="outline"
                     disabled={busyId === editUser.id || locked}
@@ -1104,7 +1093,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "time_dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-3">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 3, 7, 15, 30].map((d) => (
@@ -1113,8 +1102,20 @@ export default function UsersPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Input type="number" min={1} value={editDecDays} onChange={(e) => setEditDecDays(Math.max(1, Number(e.target.value) || 1))} />
+                <div className="flex flex-wrap gap-2">
+                  <Input className="min-w-[130px] flex-1" type="number" min={1} value={editDecDays} onChange={(e) => setEditDecDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <JalaliDateTimePicker
+                    mode="icon"
+                    value={editTargetDate}
+                    onChange={(d) => {
+                      setEditTargetDate(d);
+                      if (!editUser) return;
+                      const delta = computeDaysDeltaFromTarget(editUser.expire_at, d);
+                      if (delta.ok && delta.direction === "down" && delta.diffDays > 0) {
+                        setEditDecDays(Math.max(1, Math.min(3650, delta.diffDays)));
+                      }
+                    }}
+                  />
                   <Button
                     variant="outline"
                     disabled={busyId === editUser.id || locked}
@@ -1126,42 +1127,18 @@ export default function UsersPage() {
                     اجرا
                   </Button>
                 </div>
-                <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-2.5 space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/80">
-                    انتخاب تاریخ پایان (شمسی) | فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
-                  </div>
-                  <Input
-                    dir="rtl"
-                    value={editJalaliTarget}
-                    onChange={(e) => setEditJalaliTarget(e.target.value)}
-                    placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={busyId === editUser.id || locked}
-                    onClick={async () => {
-                      const delta = computeDaysDeltaFromJalali(editUser.expire_at, editJalaliTarget);
-                      if (!delta.ok) {
-                        push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
-                        return;
-                      }
-                      if (delta.direction !== "down" || delta.diffDays <= 0) {
-                        push({ title: "برای کاهش زمان، تاریخ شمسی باید قبل از زمان فعلی باشد", type: "warning" });
-                        return;
-                      }
-                      const days = Math.max(1, Math.min(3650, delta.diffDays));
-                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/decrease-time`, { days });
-                      if (ok) setEditOpen(false);
-                    }}
-                  >
-                    کاهش زمان بر اساس تاریخ شمسی
-                  </Button>
+                <div className="text-xs text-[hsl(var(--fg))]/75">
+                  تاریخ پایان فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  {editTargetDate ? (
+                    <span className="mr-2">
+                      | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ) : null}
 
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-3 space-y-2">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--card))_0%,hsl(var(--muted))/0.3_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
               <div className="font-medium">کنترل سریع</div>
               <div className="flex flex-wrap gap-2">
                 <Button
