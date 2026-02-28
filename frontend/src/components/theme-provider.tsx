@@ -32,6 +32,33 @@ type PresetPalette = {
 };
 
 const PRESETS: Record<string, PresetPalette> = {
+  guardino: {
+    label: "Guardino",
+    light: {
+      sidebarBg: "213 32% 95%",
+      surfaceCard1: "0 0% 100%",
+      surfaceCard2: "211 45% 97%",
+      surfaceCard3: "206 52% 93%",
+      surfaceInput1: "0 0% 100%",
+      surfaceInput2: "210 40% 97%",
+      surfaceInput3: "208 46% 93%",
+      surfaceHeaderAccent: "23 95% 53%",
+      pageGlow1: "217 91% 60%",
+      pageGlow2: "23 95% 53%",
+    },
+    dark: {
+      sidebarBg: "219 35% 11%",
+      surfaceCard1: "221 45% 14%",
+      surfaceCard2: "218 38% 17%",
+      surfaceCard3: "213 32% 21%",
+      surfaceInput1: "221 46% 13%",
+      surfaceInput2: "218 39% 16%",
+      surfaceInput3: "213 31% 20%",
+      surfaceHeaderAccent: "24 95% 62%",
+      pageGlow1: "217 91% 63%",
+      pageGlow2: "24 95% 60%",
+    },
+  },
   ocean: {
     label: "Ocean",
     light: {
@@ -122,7 +149,7 @@ function applyAccent(accent: string) {
 }
 
 function applyPreset(preset: string, isDark: boolean) {
-  const key = PRESETS[preset] ? preset : "ocean";
+  const key = PRESETS[preset] ? preset : "guardino";
   const vars = isDark ? PRESETS[key].dark : PRESETS[key].light;
   document.documentElement.style.setProperty("--sidebar-bg", vars.sidebarBg);
   document.documentElement.style.setProperty("--surface-card-1", vars.surfaceCard1);
@@ -141,7 +168,7 @@ function ThemeSync() {
 
   React.useEffect(() => {
     const accent = storage.get("accent") || "blue";
-    const preset = storage.get("theme_preset") || "ocean";
+    const preset = storage.get("theme_preset") || "guardino";
     applyAccent(accent);
     applyPreset(preset, resolvedTheme === "dark");
   }, [resolvedTheme]);
@@ -165,7 +192,7 @@ export function setAccent(accent: string) {
 }
 
 export function setThemePreset(preset: string) {
-  const p = PRESETS[preset] ? preset : "ocean";
+  const p = PRESETS[preset] ? preset : "guardino";
   const isDark = document.documentElement.classList.contains("dark");
   applyPreset(p, isDark);
   storage.set("theme_preset", p);
