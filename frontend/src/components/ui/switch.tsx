@@ -26,7 +26,7 @@ export function Switch({ checked, onCheckedChange, disabled, className }: { chec
     >
       <span
         className={cn(
-          "absolute top-[2px] h-5 w-5 rounded-full bg-[hsl(var(--card))] shadow transition-transform duration-200",
+          "absolute top-[4px] h-4 w-4 rounded-full bg-[hsl(var(--card))] shadow-sm transition-transform duration-200",
           isRTL ? "right-[2px]" : "left-[2px]",
           checked ? (isRTL ? "-translate-x-5" : "translate-x-5") : "translate-x-0"
         )}
