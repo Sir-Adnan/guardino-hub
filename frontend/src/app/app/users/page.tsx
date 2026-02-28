@@ -11,17 +11,36 @@ import { useAuth } from "@/components/auth-context";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-context";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
-import { ArrowDownUp, Copy, Pencil, Power, Trash2, Clock3, Flame, Users, Link2, SquarePen, Layers, Download, QrCode, ExternalLink } from "lucide-react";
+import {
+  ArrowDownUp,
+  Copy,
+  Pencil,
+  Power,
+  Trash2,
+  Users,
+  Link2,
+  SquarePen,
+  Layers,
+  Download,
+  QrCode,
+  ExternalLink,
+  Ban,
+  CheckCircle2,
+  LayoutGrid,
+  List,
+  Sparkles,
+  Gauge,
+} from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type UsersPage = { items: UserOut[]; total: number };
+type ResellerStatsOut = { users_total: number; users_active: number; users_disabled: number };
 type LinksResp = {
   user_id: number;
   master_link: string;
@@ -62,6 +81,7 @@ const AUTO_REFRESH_MS = 30_000;
 
 type StatusFilter = "all" | "active" | "disabled" | "expired";
 type SortMode = "priority" | "expiry" | "usage" | "newest";
+type ViewMode = "grid2" | "single";
 
 function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
@@ -79,10 +99,10 @@ function safeDaysLeft(expire_at: string): number | null {
 
 function statusBadge(status: string) {
   const s = (status || "").toLowerCase();
-  if (s === "active") return { v: "success" as const, label: "Active" };
-  if (s === "disabled") return { v: "muted" as const, label: "Disabled" };
-  if (s === "expired") return { v: "danger" as const, label: "Expired" };
-  return { v: "default" as const, label: status || "—" };
+  if (s === "active") return { v: "success" as const, label: "فعال", Icon: CheckCircle2 };
+  if (s === "disabled") return { v: "muted" as const, label: "غیرفعال", Icon: Ban };
+  if (s === "expired") return { v: "danger" as const, label: "منقضی", Icon: Ban };
+  return { v: "default" as const, label: status || "—", Icon: Sparkles };
 }
 
 function computePriority(u: UserOut) {
@@ -109,6 +129,17 @@ function qrImageUrl(value: string, size: number = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=8&data=${encodeURIComponent(value)}`;
 }
 
+function fmtGig(value: number) {
+  const n = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(n);
+}
+
+function progressTone(percent: number) {
+  if (percent >= 90) return "from-rose-500 via-red-500 to-orange-500";
+  if (percent >= 70) return "from-amber-500 via-orange-500 to-yellow-500";
+  return "from-emerald-500 via-teal-500 to-sky-500";
+}
+
 export default function UsersPage() {
   const router = useRouter();
   const { me, refresh: refreshMe } = useAuth();
@@ -118,9 +149,11 @@ export default function UsersPage() {
 
   const [q, setQ] = React.useState("");
   const [data, setData] = React.useState<UsersPage | null>(null);
+  const [resellerStats, setResellerStats] = React.useState<ResellerStatsOut | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<StatusFilter>("all");
   const [sortMode, setSortMode] = React.useState<SortMode>("newest");
+  const [viewMode, setViewMode] = React.useState<ViewMode>("grid2");
 
   const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
   const nodeMap = React.useMemo(() => {
@@ -149,6 +182,8 @@ export default function UsersPage() {
   const [editDecGb, setEditDecGb] = React.useState(5);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(50);
+  const [copyHint, setCopyHint] = React.useState<{ text: string; x: number; y: number; id: number } | null>(null);
+  const copyHintTimerRef = React.useRef<number | null>(null);
 
   async function load() {
     setErr(null);
@@ -156,6 +191,12 @@ export default function UsersPage() {
       const offset = (page - 1) * pageSize;
       const res = await apiFetch<UsersPage>(`/api/v1/reseller/users?offset=${offset}&limit=${pageSize}`);
       setData(res);
+      try {
+        const statsRes = await apiFetch<ResellerStatsOut>("/api/v1/reseller/stats");
+        setResellerStats(statsRes);
+      } catch {
+        // Keep users list functional even if stats endpoint is temporarily unavailable.
+      }
     } catch (e: any) {
       setErr(String(e.message || e));
     }
@@ -186,6 +227,29 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     loadNodes().catch(() => undefined);
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      const saved = (window.localStorage.getItem("users_view_mode") || "").trim();
+      if (saved === "single" || saved === "grid2") setViewMode(saved);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem("users_view_mode", viewMode);
+    } catch {
+      // ignore
+    }
+  }, [viewMode]);
+
+  React.useEffect(() => {
+    return () => {
+      if (copyHintTimerRef.current) window.clearTimeout(copyHintTimerRef.current);
+    };
   }, []);
 
   function applyFilter(items: UserOut[]) {
@@ -248,16 +312,23 @@ export default function UsersPage() {
   const items = applySort(filtered);
 
   const stats = React.useMemo(() => {
-    const total = data?.total ?? rawItems.length;
-    const active = rawItems.filter((u) => (u.status || "").toLowerCase() === "active").length;
-    const expiringSoon = rawItems.filter((u) => {
-      const d = safeDaysLeft(u.expire_at);
-      const s = (u.status || "").toLowerCase();
-      return s === "active" && d !== null && d >= 0 && d <= 7;
-    }).length;
-    const highUsage = rawItems.filter((u) => computePriority(u).percent >= 80 && (u.status || "").toLowerCase() === "active").length;
-    return { total, active, expiringSoon, highUsage };
-  }, [rawItems, data?.total]);
+    const total = resellerStats?.users_total ?? data?.total ?? rawItems.length;
+    const active = resellerStats?.users_active ?? rawItems.filter((u) => (u.status || "").toLowerCase() === "active").length;
+    const disabled = resellerStats?.users_disabled ?? rawItems.filter((u) => (u.status || "").toLowerCase() === "disabled").length;
+    const inPage = rawItems.length;
+    return { total, active, disabled, inPage };
+  }, [rawItems, data?.total, resellerStats]);
+
+  function showCopyHint(ev?: React.MouseEvent<HTMLElement> | null, text: string = t("common.copied")) {
+    const x = ev ? ev.clientX : window.innerWidth / 2;
+    const y = ev ? ev.clientY : window.innerHeight / 2;
+    const id = Date.now();
+    setCopyHint({ text, x, y, id });
+    if (copyHintTimerRef.current) window.clearTimeout(copyHintTimerRef.current);
+    copyHintTimerRef.current = window.setTimeout(() => {
+      setCopyHint((prev) => (prev?.id === id ? null : prev));
+    }, 1100);
+  }
 
   async function fetchUserLinks(u: UserOut, refresh = false) {
     await loadNodes();
@@ -289,23 +360,25 @@ export default function UsersPage() {
     }
   }
 
-  async function copyMaster(u: UserOut) {
+  async function copyMaster(u: UserOut, ev?: React.MouseEvent<HTMLElement>) {
     try {
       const res = await fetchUserLinks(u, true);
       const ok = await copyText(res.master_link);
-      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+      if (ok) showCopyHint(ev || null, t("common.copied"));
+      else push({ title: t("common.failed"), type: "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
   }
 
-  async function copyAllLinksForUser(u: UserOut) {
+  async function copyAllLinksForUser(u: UserOut, ev?: React.MouseEvent<HTMLElement>) {
     try {
       const res = await fetchUserLinks(u, true);
       const direct = extractDirectLinks(res);
       const lines = [...direct, res.master_link].filter(Boolean).join("\n");
       const ok = await copyText(lines);
-      push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+      if (ok) showCopyHint(ev || null, "همه لینک‌ها کپی شد");
+      else push({ title: t("common.failed"), type: "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -418,10 +491,10 @@ export default function UsersPage() {
         type="button"
         onClick={() => setFilter(value)}
         className={
-          "px-3 py-1.5 text-xs rounded-xl border transition " +
+          "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-200 " +
           (active
-            ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] border-transparent shadow-soft"
-            : "bg-[hsl(var(--card))] border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]")
+            ? "border-transparent bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] shadow-soft"
+            : "border-[hsl(var(--border))] bg-[hsl(var(--card))] hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--muted))]")
         }
       >
         {label}
@@ -431,50 +504,50 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="overflow-hidden rounded-xl border-[hsl(var(--border))]/80">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xl font-semibold">{t("users.title")}</div>
-              <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.subtitle")}</div>
+              <div className="text-2xl font-bold tracking-tight">{t("users.title")}</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.subtitle")} • بروزرسانی خودکار هر ۳۰ ثانیه</div>
             </div>
             <a
               href="/app/users/new"
-              className="rounded-xl px-4 py-2 text-sm font-medium bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] shadow-soft"
+              className="rounded-lg bg-[hsl(var(--accent))] px-4 py-2 text-sm font-semibold text-[hsl(var(--accent-fg))] shadow-soft transition-all duration-200 hover:translate-y-[-1px] hover:brightness-95"
             >
               {t("users.create")}
             </a>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(59,130,246,0.10),rgba(14,165,233,0.06))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsTotal")}</div>
-                <Users size={16} className="opacity-60" />
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{t("users.statsTotal")}</div>
+                <Users size={18} className="opacity-70" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.total)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.total)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(5,150,105,0.06))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsActive")}</div>
-                <div className="h-2 w-2 rounded-full bg-emerald-500/70" />
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{t("users.statsActive")}</div>
+                <CheckCircle2 size={18} className="text-emerald-600" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.active)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.active)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(251,113,133,0.06))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsExpiringSoon")}</div>
-                <Clock3 size={16} className="opacity-60" />
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">غیرفعال</div>
+                <Ban size={18} className="text-rose-600" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.expiringSoon)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.disabled)}</div>
             </div>
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(249,115,22,0.05))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">{t("users.statsHighUsage")}</div>
-                <Flame size={16} className="opacity-60" />
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">نمایش این صفحه</div>
+                <Gauge size={18} className="text-amber-600" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.highUsage)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.inPage)}</div>
             </div>
           </div>
 
@@ -483,9 +556,9 @@ export default function UsersPage() {
               placeholder={t("users.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="max-w-md"
+              className="h-11 max-w-lg rounded-lg"
             />
-            <div className="text-xs text-[hsl(var(--fg))]/70">
+            <div className="text-sm text-[hsl(var(--fg))]/75">
               {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
             </div>
           </div>
@@ -498,24 +571,56 @@ export default function UsersPage() {
               <FilterButton value="expired" label={t("users.filterExpired")} />
             </div>
 
-            <Menu
-              trigger={
-                <Button variant="outline" className="gap-2">
-                  <ArrowDownUp size={16} />
-                  {t("users.sort")}
-                </Button>
-              }
-              items={[
-                { label: t("users.sortPriority"), onClick: () => setSortMode("priority") },
-                { label: t("users.sortExpirySoon"), onClick: () => setSortMode("expiry") },
-                { label: t("users.sortUsageHigh"), onClick: () => setSortMode("usage") },
-                { label: t("users.sortNewest"), onClick: () => setSortMode("newest") },
-              ]}
-            />
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("single")}
+                  className={
+                    "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-semibold transition-all duration-200 " +
+                    (viewMode === "single"
+                      ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
+                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--muted))]")
+                  }
+                  title="نمایش تک‌ستونه"
+                >
+                  <List size={15} />
+                  تک‌ستونه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid2")}
+                  className={
+                    "inline-flex h-10 items-center gap-1.5 border-r border-[hsl(var(--border))] px-3 text-xs font-semibold transition-all duration-200 " +
+                    (viewMode === "grid2"
+                      ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
+                      : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--muted))]")
+                  }
+                  title="نمایش دو ستونه"
+                >
+                  <LayoutGrid size={15} />
+                  دو ستونه
+                </button>
+              </div>
+              <Menu
+                trigger={
+                  <Button variant="outline" className="h-10 gap-2 rounded-lg">
+                    <ArrowDownUp size={16} />
+                    {t("users.sort")}
+                  </Button>
+                }
+                items={[
+                  { label: t("users.sortPriority"), onClick: () => setSortMode("priority") },
+                  { label: t("users.sortExpirySoon"), onClick: () => setSortMode("expiry") },
+                  { label: t("users.sortUsageHigh"), onClick: () => setSortMode("usage") },
+                  { label: t("users.sortNewest"), onClick: () => setSortMode("newest") },
+                ]}
+              />
+            </div>
           </div>
 
           {locked ? (
-            <div className="text-xs rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3">
+            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs">
               {t("users.balanceZero")}
             </div>
           ) : null}
@@ -524,9 +629,9 @@ export default function UsersPage() {
       </Card>
 
       {!data ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className={"grid gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
           {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i}>
+            <Card key={i} className="rounded-xl">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 space-y-2">
@@ -542,158 +647,217 @@ export default function UsersPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className={"grid gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
           {items.map((u) => {
             const totalBytes = (u.total_gb || 0) * 1024 * 1024 * 1024;
             const usedGb = bytesToGb(u.used_bytes || 0);
             const pct = totalBytes > 0 ? clamp01((u.used_bytes || 0) / totalBytes) : 0;
             const percent = Math.round(pct * 100);
+            const remainingGb = Math.max((u.total_gb || 0) - usedGb, 0);
 
             const pr = computePriority(u);
             const expText = pr.days === null ? "—" : pr.days >= 0 ? t("users.expiresIn").replace("{days}", String(pr.days)) : t("users.expired");
 
             const sb = statusBadge(u.status);
+            const StatusIcon = sb.Icon;
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
 
             return (
-              <Card key={u.id} className="overflow-hidden">
-                <CardContent className="p-4 space-y-3">
+              <Card
+                key={u.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openQuickEdit(u)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openQuickEdit(u);
+                  }
+                }}
+                className="group relative cursor-pointer overflow-hidden rounded-xl border-[hsl(var(--border))]/85 transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-2xl hover:shadow-sky-500/10"
+              >
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_100%_0%,rgba(14,165,233,0.16),transparent_55%),radial-gradient(50%_90%_at_0%_100%,rgba(16,185,129,0.14),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <CardContent className="relative space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="text-base font-semibold break-all leading-relaxed">{u.label}</div>
+                        <div className="text-lg font-bold break-all leading-relaxed">{u.label}</div>
                       </div>
-                      <div className="mt-1 text-xs text-[hsl(var(--fg))]/70">{expText}</div>
+                      <div className="mt-1.5 text-sm text-[hsl(var(--fg))]/75">{expText}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={sb.v}>{sb.label}</Badge>
-                      <Switch checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
+                      <Badge variant={sb.v} className="gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold">
+                        <StatusIcon size={14} />
+                        {sb.label}
+                      </Badge>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Switch className="h-5 w-10" checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-[hsl(var(--fg))]/70">
-                      <div>{t("users.usage")}</div>
-                      <div>
-                        <span className="font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)}</span> / {fmtNumber(u.total_gb)} GB ({percent}%)
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/80">
+                      <div className="font-semibold">{t("users.usage")}</div>
+                      <div className="font-semibold">
+                        {fmtGig(usedGb)} / {fmtGig(u.total_gb)} گیگ
+                        <span className="mr-1 text-xs text-[hsl(var(--fg))]/65">({percent}٪)</span>
                       </div>
                     </div>
-                    <Progress value={percent} />
+                    <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--muted))]">
+                      <div
+                        className={"h-full rounded-md bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
+                      <div>مجموع مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(usedGb)} گیگ</span></div>
+                      <div>باقی‌مانده: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb)} گیگ</span></div>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
-                      className="h-9 w-9 p-0"
+                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-400/60 hover:bg-sky-500/10"
                       size="sm"
                       title={t("users.links")}
                       aria-label={t("users.links")}
                       disabled={busy}
-                      onClick={() => openLinks(u)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openLinks(u);
+                      }}
                     >
-                      <Layers size={16} />
+                      <Layers size={18} />
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-9 w-9 p-0"
+                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:bg-indigo-500/10"
                       size="sm"
                       title={t("users.details")}
                       aria-label={t("users.details")}
                       disabled={busy}
-                      onClick={() => router.push(`/app/users/${u.id}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/app/users/${u.id}`);
+                      }}
                     >
-                      <SquarePen size={16} />
+                      <SquarePen size={18} />
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-9 w-9 p-0"
+                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10"
                       size="sm"
                       title="کپی لینک اصلی اشتراک"
                       aria-label="کپی لینک اصلی اشتراک"
                       disabled={busy}
-                      onClick={() => copyMaster(u)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyMaster(u, e);
+                      }}
                     >
-                      <Copy size={16} />
+                      <Copy size={18} />
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-9 w-9 p-0"
+                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10"
+                      size="sm"
+                      title="کپی همه لینک‌ها"
+                      aria-label="کپی همه لینک‌ها"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyAllLinksForUser(u, e);
+                      }}
+                    >
+                      <Link2 size={18} />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-fuchsia-400/60 hover:bg-fuchsia-500/10"
                       size="sm"
                       title="QR لینک‌ها"
                       aria-label="QR لینک‌ها"
                       disabled={busy}
-                      onClick={() => openQr(u)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openQr(u);
+                      }}
                     >
-                      <QrCode size={16} />
+                      <QrCode size={18} />
                     </Button>
 
-                    <Menu
-                      trigger={
-                        <Button
-                          variant="outline"
-                          className="h-9 w-9 p-0"
-                          size="sm"
-                          title={t("users.actions")}
-                          disabled={busy}
-                          aria-label={t("users.actions")}
-                        >
-                          ⋯
-                        </Button>
-                      }
-                      items={[
-                        {
-                          label: t("users.details"),
-                          icon: <Pencil size={16} />,
-                          onClick: () => router.push(`/app/users/${u.id}`),
-                        },
-                        {
-                          label: "ویرایش سریع",
-                          icon: <SquarePen size={16} />,
-                          onClick: () => openQuickEdit(u),
-                        },
-                        {
-                          label: "کپی لینک اصلی اشتراک",
-                          icon: <Copy size={16} />,
-                          onClick: () => copyMaster(u),
-                        },
-                        {
-                          label: "کپی همه لینک‌ها",
-                          icon: <Copy size={16} />,
-                          onClick: () => copyAllLinksForUser(u),
-                        },
-                        {
-                          label: "نمایش QR لینک‌ها",
-                          icon: <QrCode size={16} />,
-                          onClick: () => openQr(u),
-                        },
-                        {
-                          label: isActive ? t("common.disable") : t("common.enable"),
-                          icon: <Power size={16} />,
-                          disabled: locked || busy,
-                          onClick: () => setStatus(u, !isActive),
-                        },
-                        {
-                          label: t("users.resetUsage"),
-                          icon: <Flame size={16} />,
-                          disabled: locked || busy,
-                          onClick: () => ask("reset", u),
-                        },
-                        {
-                          label: t("users.revoke"),
-                          icon: <Trash2 size={16} />,
-                          disabled: locked || busy,
-                          danger: true,
-                          onClick: () => ask("revoke", u),
-                        },
-                        {
-                          label: t("users.delete"),
-                          icon: <Trash2 size={16} />,
-                          disabled: locked || busy,
-                          danger: true,
-                          onClick: () => ask("delete", u),
-                        },
-                      ]} />
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Menu
+                        trigger={
+                          <Button
+                            variant="outline"
+                            className="h-10 w-10 rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.6)] hover:bg-[hsl(var(--accent)/0.12)]"
+                            size="sm"
+                            title={t("users.actions")}
+                            disabled={busy}
+                            aria-label={t("users.actions")}
+                          >
+                            ⋯
+                          </Button>
+                        }
+                        items={[
+                          {
+                            label: t("users.details"),
+                            icon: <Pencil size={16} />,
+                            onClick: () => router.push(`/app/users/${u.id}`),
+                          },
+                          {
+                            label: "ویرایش سریع",
+                            icon: <SquarePen size={16} />,
+                            onClick: () => openQuickEdit(u),
+                          },
+                          {
+                            label: "کپی لینک اصلی اشتراک",
+                            icon: <Copy size={16} />,
+                            onClick: () => copyMaster(u),
+                          },
+                          {
+                            label: "کپی همه لینک‌ها",
+                            icon: <Copy size={16} />,
+                            onClick: () => copyAllLinksForUser(u),
+                          },
+                          {
+                            label: "نمایش QR لینک‌ها",
+                            icon: <QrCode size={16} />,
+                            onClick: () => openQr(u),
+                          },
+                          {
+                            label: isActive ? t("common.disable") : t("common.enable"),
+                            icon: <Power size={16} />,
+                            disabled: locked || busy,
+                            onClick: () => setStatus(u, !isActive),
+                          },
+                          {
+                            label: t("users.resetUsage"),
+                            icon: <Gauge size={16} />,
+                            disabled: locked || busy,
+                            onClick: () => ask("reset", u),
+                          },
+                          {
+                            label: t("users.revoke"),
+                            icon: <Trash2 size={16} />,
+                            disabled: locked || busy,
+                            danger: true,
+                            onClick: () => ask("revoke", u),
+                          },
+                          {
+                            label: t("users.delete"),
+                            icon: <Trash2 size={16} />,
+                            disabled: locked || busy,
+                            danger: true,
+                            onClick: () => ask("delete", u),
+                          },
+                        ]}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -713,6 +877,15 @@ export default function UsersPage() {
             setPage(1);
           }}
         />
+      ) : null}
+
+      {copyHint ? (
+        <div
+          className="pointer-events-none fixed z-[70] rounded-md border border-emerald-400/35 bg-emerald-500/90 px-2.5 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur-sm"
+          style={{ left: copyHint.x + 12, top: copyHint.y - 10 }}
+        >
+          {copyHint.text}
+        </div>
       ) : null}
 
       <Modal
@@ -779,7 +952,7 @@ export default function UsersPage() {
 
             {quickMode === "add" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] p-3 space-y-2">
-                <div className="font-medium">افزایش حجم (GB)</div>
+                <div className="font-medium">افزایش حجم (گیگ)</div>
                 <div className="flex flex-wrap gap-2">
                   {[5, 10, 20, 50].map((g) => (
                     <Button key={g} type="button" size="sm" variant={editAddGb === g ? "primary" : "outline"} onClick={() => setEditAddGb(g)}>
