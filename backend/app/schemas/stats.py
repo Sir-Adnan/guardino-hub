@@ -32,3 +32,5 @@ class AdminStats(BaseModel):
 
     ledger_net_30d: int
     price_per_gb_avg: int | None = None
+    used_bytes_total: int = 0
+    sold_gb_total: int = 0
