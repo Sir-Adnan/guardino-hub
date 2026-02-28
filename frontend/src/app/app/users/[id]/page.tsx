@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
+import { formatJalaliDateTime, parseJalaliDateTime } from "@/lib/jalali";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type LinksResp = {
@@ -36,7 +37,7 @@ type LinksResp = {
 };
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 type NodeLite = { id: number; name: string; base_url: string };
-type OpMode = "extend" | "traffic_up" | "traffic_down" | "controls";
+type OpMode = "extend" | "traffic_up" | "traffic_down" | "time_down" | "controls";
 const AUTO_REFRESH_MS = 30_000;
 
 function bytesToGb(bytes: number) {
@@ -100,8 +101,10 @@ export default function UserDetailPage() {
 
   const [opMode, setOpMode] = React.useState<OpMode>("extend");
   const [extendDays, setExtendDays] = React.useState(30);
+  const [decreaseDays, setDecreaseDays] = React.useState(7);
   const [addGb, setAddGb] = React.useState(10);
   const [decreaseGb, setDecreaseGb] = React.useState(5);
+  const [jalaliTarget, setJalaliTarget] = React.useState("");
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
@@ -135,6 +138,7 @@ export default function UserDetailPage() {
       const lr = await apiFetch<LinksResp>(`/api/v1/reseller/users/${userId}/links?refresh=true`);
       setUser(u || null);
       setLinks(lr || null);
+      if (u?.expire_at) setJalaliTarget(formatJalaliDateTime(new Date(u.expire_at)));
     } catch (e: any) {
       setErr(String(e.message || e));
     } finally {
@@ -203,6 +207,16 @@ export default function UserDetailPage() {
     const text = [links.master_link, ...direct].filter(Boolean).join("\n");
     const ok = await copyText(text);
     push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
+  }
+
+  function computeDaysDeltaFromJalali(currentExpireAt: string, target: string) {
+    const parsed = parseJalaliDateTime(target);
+    if (!parsed) return { ok: false as const };
+    const current = new Date(currentExpireAt);
+    if (Number.isNaN(current.getTime())) return { ok: false as const };
+    const diffMs = parsed.getTime() - current.getTime();
+    const diffDays = Math.ceil(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+    return { ok: true as const, direction: diffMs >= 0 ? "up" : "down", diffDays };
   }
 
   const status = statusMeta(user?.status || "");
@@ -316,11 +330,11 @@ export default function UserDetailPage() {
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">حجم کل</div>
-                      <div className="mt-1 text-lg font-semibold">{fmtNumber(user.total_gb)} GB</div>
+                      <div className="mt-1 text-lg font-semibold">{fmtNumber(user.total_gb)} گیگ</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">مصرف‌شده</div>
-                      <div className="mt-1 text-lg font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)} GB</div>
+                      <div className="mt-1 text-lg font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)} گیگ</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">روز باقی‌مانده</div>
@@ -335,7 +349,7 @@ export default function UserDetailPage() {
                     <Progress value={usagePct} />
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/70">
-                    تاریخ انقضا: {new Date(user.expire_at).toLocaleString()}
+                    تاریخ انقضا: {formatJalaliDateTime(new Date(user.expire_at))}
                   </div>
                 </>
               ) : null}
@@ -452,7 +466,7 @@ export default function UserDetailPage() {
               <div className="text-sm text-[hsl(var(--fg))]/70">برای سرعت بالاتر، ابتدا نوع عملیات را انتخاب کنید.</div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Button variant={opMode === "extend" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("extend")} type="button">
                   <CalendarDays size={15} /> تمدید
                 </Button>
@@ -461,6 +475,9 @@ export default function UserDetailPage() {
                 </Button>
                 <Button variant={opMode === "traffic_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_down")} type="button">
                   <Sparkles size={15} /> کاهش حجم
+                </Button>
+                <Button variant={opMode === "time_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("time_down")} type="button">
+                  <CalendarDays size={15} /> کاهش زمان
                 </Button>
                 <Button variant={opMode === "controls" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("controls")} type="button">
                   <ShieldAlert size={15} /> کنترل سرویس
@@ -486,6 +503,38 @@ export default function UserDetailPage() {
                       اجرا
                     </Button>
                   </div>
+                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-3 space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/80">
+                      یا انتخاب تاریخ پایان (شمسی) | فعلی: {user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}
+                    </div>
+                    <Input
+                      dir="rtl"
+                      value={jalaliTarget}
+                      onChange={(e) => setJalaliTarget(e.target.value)}
+                      placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={locked || busy || !user}
+                      onClick={async () => {
+                        if (!user) return;
+                        const delta = computeDaysDeltaFromJalali(user.expire_at, jalaliTarget);
+                        if (!delta.ok) {
+                          push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
+                          return;
+                        }
+                        if (delta.direction !== "up" || delta.diffDays <= 0) {
+                          push({ title: "تاریخ انتخابی باید بعد از زمان فعلی باشد", type: "warning" });
+                          return;
+                        }
+                        const days = Math.max(1, Math.min(3650, delta.diffDays));
+                        await runOp(`/api/v1/reseller/users/${userId}/extend`, { days }, "تمدید انجام شد");
+                      }}
+                    >
+                      اعمال تاریخ شمسی
+                    </Button>
+                  </div>
                 </div>
               ) : null}
 
@@ -495,7 +544,7 @@ export default function UserDetailPage() {
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 20, 50, 100].map((g) => (
                       <Button key={g} type="button" size="sm" variant={addGb === g ? "primary" : "outline"} onClick={() => setAddGb(g)}>
-                        +{g} GB
+                        +{g} گیگ
                       </Button>
                     ))}
                   </div>
@@ -517,7 +566,7 @@ export default function UserDetailPage() {
                   <div className="flex flex-wrap gap-2">
                     {[1, 5, 10, 20, 50].map((g) => (
                       <Button key={g} type="button" size="sm" variant={decreaseGb === g ? "primary" : "outline"} onClick={() => setDecreaseGb(g)}>
-                        -{g} GB
+                        -{g} گیگ
                       </Button>
                     ))}
                   </div>
@@ -531,6 +580,61 @@ export default function UserDetailPage() {
                       }
                     >
                       اجرا
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {opMode === "time_down" ? (
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                  <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 3, 7, 15, 30, 60].map((d) => (
+                      <Button key={d} type="button" size="sm" variant={decreaseDays === d ? "primary" : "outline"} onClick={() => setDecreaseDays(d)}>
+                        -{d} روز
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input type="number" min={1} value={decreaseDays} onChange={(e) => setDecreaseDays(Math.max(1, Number(e.target.value) || 1))} />
+                    <Button
+                      variant="outline"
+                      disabled={locked || busy}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/decrease-time`, { days: decreaseDays }, "کاهش زمان انجام شد")}
+                    >
+                      اجرا
+                    </Button>
+                  </div>
+                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-3 space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/80">
+                      یا انتخاب تاریخ پایان (شمسی) | فعلی: {user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}
+                    </div>
+                    <Input
+                      dir="rtl"
+                      value={jalaliTarget}
+                      onChange={(e) => setJalaliTarget(e.target.value)}
+                      placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={locked || busy || !user}
+                      onClick={async () => {
+                        if (!user) return;
+                        const delta = computeDaysDeltaFromJalali(user.expire_at, jalaliTarget);
+                        if (!delta.ok) {
+                          push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
+                          return;
+                        }
+                        if (delta.direction !== "down" || delta.diffDays <= 0) {
+                          push({ title: "برای کاهش زمان، تاریخ شمسی باید قبل از زمان فعلی باشد", type: "warning" });
+                          return;
+                        }
+                        const days = Math.max(1, Math.min(3650, delta.diffDays));
+                        await runOp(`/api/v1/reseller/users/${userId}/decrease-time`, { days }, "کاهش زمان انجام شد");
+                      }}
+                    >
+                      کاهش زمان با تاریخ شمسی
                     </Button>
                   </div>
                 </div>
