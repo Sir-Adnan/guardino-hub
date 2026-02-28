@@ -58,7 +58,7 @@ function toggleId(list: number[], id: number, checked: boolean): number[] {
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [accent, setAccentState] = React.useState(storage.get("accent") || "blue");
-  const [preset, setPresetState] = React.useState(storage.get("theme_preset") || "ocean");
+  const [preset, setPresetState] = React.useState(storage.get("theme_preset") || "guardino");
   const r = useRouter();
   const { push } = useToast();
   const { me } = useAuth();
