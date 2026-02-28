@@ -15,10 +15,11 @@ import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
-import { formatJalaliDateTime, parseJalaliDateTime } from "@/lib/jalali";
+import { formatJalaliDateTime } from "@/lib/jalali";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type LinksResp = {
@@ -104,7 +105,7 @@ export default function UserDetailPage() {
   const [decreaseDays, setDecreaseDays] = React.useState(7);
   const [addGb, setAddGb] = React.useState(10);
   const [decreaseGb, setDecreaseGb] = React.useState(5);
-  const [jalaliTarget, setJalaliTarget] = React.useState("");
+  const [targetDate, setTargetDate] = React.useState<Date | null>(null);
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<"reset" | "revoke" | "delete" | null>(null);
@@ -138,7 +139,10 @@ export default function UserDetailPage() {
       const lr = await apiFetch<LinksResp>(`/api/v1/reseller/users/${userId}/links?refresh=true`);
       setUser(u || null);
       setLinks(lr || null);
-      if (u?.expire_at) setJalaliTarget(formatJalaliDateTime(new Date(u.expire_at)));
+      if (u?.expire_at) {
+        const exp = new Date(u.expire_at);
+        setTargetDate(Number.isNaN(exp.getTime()) ? new Date() : exp);
+      }
     } catch (e: any) {
       setErr(String(e.message || e));
     } finally {
@@ -209,12 +213,11 @@ export default function UserDetailPage() {
     push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
   }
 
-  function computeDaysDeltaFromJalali(currentExpireAt: string, target: string) {
-    const parsed = parseJalaliDateTime(target);
-    if (!parsed) return { ok: false as const };
+  function computeDaysDeltaFromTarget(currentExpireAt: string, target: Date | null) {
+    if (!target || Number.isNaN(target.getTime())) return { ok: false as const };
     const current = new Date(currentExpireAt);
     if (Number.isNaN(current.getTime())) return { ok: false as const };
-    const diffMs = parsed.getTime() - current.getTime();
+    const diffMs = target.getTime() - current.getTime();
     const diffDays = Math.ceil(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
     return { ok: true as const, direction: diffMs >= 0 ? "up" : "down", diffDays };
   }
@@ -485,7 +488,7 @@ export default function UserDetailPage() {
               </div>
 
               {opMode === "extend" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[7, 30, 90, 180, 365].map((d) => (
@@ -494,8 +497,20 @@ export default function UserDetailPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Input type="number" min={1} value={extendDays} onChange={(e) => setExtendDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <div className="flex flex-wrap gap-2">
+                    <Input className="min-w-[130px] flex-1" type="number" min={1} value={extendDays} onChange={(e) => setExtendDays(Math.max(1, Number(e.target.value) || 1))} />
+                    <JalaliDateTimePicker
+                      mode="icon"
+                      value={targetDate}
+                      onChange={(d) => {
+                        setTargetDate(d);
+                        if (!user) return;
+                        const delta = computeDaysDeltaFromTarget(user.expire_at, d);
+                        if (delta.ok && delta.direction === "up" && delta.diffDays > 0) {
+                          setExtendDays(Math.max(1, Math.min(3650, delta.diffDays)));
+                        }
+                      }}
+                    />
                     <Button
                       disabled={locked || busy}
                       onClick={() => runOp(`/api/v1/reseller/users/${userId}/extend`, { days: extendDays }, "تمدید انجام شد")}
@@ -503,43 +518,19 @@ export default function UserDetailPage() {
                       اجرا
                     </Button>
                   </div>
-                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-3 space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/80">
-                      یا انتخاب تاریخ پایان (شمسی) | فعلی: {user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}
-                    </div>
-                    <Input
-                      dir="rtl"
-                      value={jalaliTarget}
-                      onChange={(e) => setJalaliTarget(e.target.value)}
-                      placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={locked || busy || !user}
-                      onClick={async () => {
-                        if (!user) return;
-                        const delta = computeDaysDeltaFromJalali(user.expire_at, jalaliTarget);
-                        if (!delta.ok) {
-                          push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
-                          return;
-                        }
-                        if (delta.direction !== "up" || delta.diffDays <= 0) {
-                          push({ title: "تاریخ انتخابی باید بعد از زمان فعلی باشد", type: "warning" });
-                          return;
-                        }
-                        const days = Math.max(1, Math.min(3650, delta.diffDays));
-                        await runOp(`/api/v1/reseller/users/${userId}/extend`, { days }, "تمدید انجام شد");
-                      }}
-                    >
-                      اعمال تاریخ شمسی
-                    </Button>
+                  <div className="text-xs text-[hsl(var(--fg))]/75">
+                    تاریخ پایان فعلی: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
+                    {targetDate ? (
+                      <span className="mr-2">
+                        | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
 
               {opMode === "traffic_up" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">افزایش حجم کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 20, 50, 100].map((g) => (
@@ -548,8 +539,8 @@ export default function UserDetailPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Input type="number" min={1} value={addGb} onChange={(e) => setAddGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <div className="flex flex-wrap gap-2">
+                    <Input className="min-w-[130px] flex-1" type="number" min={1} value={addGb} onChange={(e) => setAddGb(Math.max(1, Number(e.target.value) || 1))} />
                     <Button
                       disabled={locked || busy}
                       onClick={() => runOp(`/api/v1/reseller/users/${userId}/add-traffic`, { add_gb: addGb }, "افزایش حجم انجام شد")}
@@ -561,7 +552,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "traffic_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش حجم (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 5, 10, 20, 50].map((g) => (
@@ -570,8 +561,8 @@ export default function UserDetailPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Input type="number" min={1} value={decreaseGb} onChange={(e) => setDecreaseGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <div className="flex flex-wrap gap-2">
+                    <Input className="min-w-[130px] flex-1" type="number" min={1} value={decreaseGb} onChange={(e) => setDecreaseGb(Math.max(1, Number(e.target.value) || 1))} />
                     <Button
                       variant="outline"
                       disabled={locked || busy}
@@ -586,7 +577,7 @@ export default function UserDetailPage() {
               ) : null}
 
               {opMode === "time_down" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 3, 7, 15, 30, 60].map((d) => (
@@ -595,8 +586,20 @@ export default function UserDetailPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Input type="number" min={1} value={decreaseDays} onChange={(e) => setDecreaseDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <div className="flex flex-wrap gap-2">
+                    <Input className="min-w-[130px] flex-1" type="number" min={1} value={decreaseDays} onChange={(e) => setDecreaseDays(Math.max(1, Number(e.target.value) || 1))} />
+                    <JalaliDateTimePicker
+                      mode="icon"
+                      value={targetDate}
+                      onChange={(d) => {
+                        setTargetDate(d);
+                        if (!user) return;
+                        const delta = computeDaysDeltaFromTarget(user.expire_at, d);
+                        if (delta.ok && delta.direction === "down" && delta.diffDays > 0) {
+                          setDecreaseDays(Math.max(1, Math.min(3650, delta.diffDays)));
+                        }
+                      }}
+                    />
                     <Button
                       variant="outline"
                       disabled={locked || busy}
@@ -605,43 +608,19 @@ export default function UserDetailPage() {
                       اجرا
                     </Button>
                   </div>
-                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35] p-3 space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/80">
-                      یا انتخاب تاریخ پایان (شمسی) | فعلی: {user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}
-                    </div>
-                    <Input
-                      dir="rtl"
-                      value={jalaliTarget}
-                      onChange={(e) => setJalaliTarget(e.target.value)}
-                      placeholder="۱۴۰۴/۱۲/۲۲ ۰۵:۱۵"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={locked || busy || !user}
-                      onClick={async () => {
-                        if (!user) return;
-                        const delta = computeDaysDeltaFromJalali(user.expire_at, jalaliTarget);
-                        if (!delta.ok) {
-                          push({ title: "فرمت تاریخ شمسی نامعتبر است", desc: "نمونه صحیح: ۱۴۰۴/۱۲/۲۲ ۰۵:۱۵", type: "warning" });
-                          return;
-                        }
-                        if (delta.direction !== "down" || delta.diffDays <= 0) {
-                          push({ title: "برای کاهش زمان، تاریخ شمسی باید قبل از زمان فعلی باشد", type: "warning" });
-                          return;
-                        }
-                        const days = Math.max(1, Math.min(3650, delta.diffDays));
-                        await runOp(`/api/v1/reseller/users/${userId}/decrease-time`, { days }, "کاهش زمان انجام شد");
-                      }}
-                    >
-                      کاهش زمان با تاریخ شمسی
-                    </Button>
+                  <div className="text-xs text-[hsl(var(--fg))]/75">
+                    تاریخ پایان فعلی: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
+                    {targetDate ? (
+                      <span className="mr-2">
+                        | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
 
               {opMode === "controls" ? (
-                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] p-3">
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.3_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">عملیات کنترلی</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("reset")}>
