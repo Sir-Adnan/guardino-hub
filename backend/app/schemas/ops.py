@@ -5,6 +5,9 @@ from datetime import datetime
 class ExtendRequest(BaseModel):
     days: int = Field(gt=0, le=3650)
 
+class DecreaseTimeRequest(BaseModel):
+    days: int = Field(gt=0, le=3650)
+
 class AddTrafficRequest(BaseModel):
     add_gb: int = Field(gt=0, le=100000)
 
