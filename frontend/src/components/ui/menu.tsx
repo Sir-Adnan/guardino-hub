@@ -94,10 +94,10 @@ export function Menu({
 
   const panel = open && pos
     ? createPortal(
-        <div
-          ref={menuRef}
-          className={cn(
-            "fixed z-[9999] min-w-[180px] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-lg",
+          <div
+            ref={menuRef}
+            className={cn(
+            "fixed z-[9999] min-w-[180px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(160deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-1 shadow-2xl shadow-slate-900/10",
             className
           )}
           style={{
@@ -113,8 +113,8 @@ export function Menu({
               role="menuitem"
               disabled={item.disabled}
               onClick={() => handle(item)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[hsl(var(--fg))] hover:bg-[hsl(var(--muted))]/60",
+                className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[hsl(var(--fg))] transition-all duration-150 hover:-translate-y-0.5 hover:bg-[linear-gradient(125deg,hsl(var(--accent))/0.14,transparent)]",
                 item.disabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
                 item.danger && "text-[hsl(var(--danger))]"
               )}
