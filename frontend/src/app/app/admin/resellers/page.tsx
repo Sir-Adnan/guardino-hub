@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
 import { Pagination } from "@/components/ui/pagination";
-import { MoreHorizontal, Pencil, Trash2, Wallet, Power } from "lucide-react";
+import { Activity, MoreHorizontal, Pencil, Trash2, Wallet, Power, Users } from "lucide-react";
 
 type ResellerOut = {
   id: number;
@@ -394,10 +394,61 @@ async function assignAllNodesForReseller(resellerId: number) {
   React.useEffect(() => {
     setTrafficInput((userPolicy.allowed_traffic_gb || []).join(", "));
   }, [userPolicy.allowed_traffic_gb]);
+  const selectClass =
+    "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+  const metricCardClass =
+    "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
+  const stats = React.useMemo(() => {
+    const active = items.filter((x) => x.status === "active").length;
+    const disabled = items.filter((x) => x.status === "disabled").length;
+    const totalBalance = items.reduce((acc, x) => acc + Number(x.balance || 0), 0);
+    return {
+      count: items.length,
+      active,
+      disabled,
+      totalBalance,
+    };
+  }, [items]);
 
   return (
     <div className="space-y-6">
-      <Card>
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(112deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_15px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <Users size={13} />
+              Reseller Operations
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("adminResellers.title")}</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{t("adminResellers.subtitle")}</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
+            <Activity size={14} />
+            مدیریت سریع نماینده‌ها
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={metricCardClass}>
+          <div className="text-xs text-[hsl(var(--fg))]/70">نماینده‌های صفحه</div>
+          <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.count)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="text-xs text-[hsl(var(--fg))]/70">فعال</div>
+          <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.active)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="text-xs text-[hsl(var(--fg))]/70">غیرفعال</div>
+          <div className="mt-1 text-lg font-semibold text-amber-600">{fmtNumber(stats.disabled)}</div>
+        </div>
+        <div className={metricCardClass}>
+          <div className="text-xs text-[hsl(var(--fg))]/70">موجودی کل (صفحه)</div>
+          <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.totalBalance)}</div>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="text-xl font-semibold">{t("adminResellers.title")}</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">{t("adminResellers.subtitle")}</div>
@@ -424,26 +475,26 @@ async function assignAllNodesForReseller(resellerId: number) {
               <Input value={parentId} onChange={(e) => setParentId(e.target.value === "" ? "" : Number(e.target.value))} type="number" placeholder="(optional)" />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm flex items-center gap-2">
-                {t("adminResellers.canCreateSub")} <HelpTip text={t("adminResellers.help.canCreateSub")} />
-              </label>
-              <div className="flex items-center gap-2">
-                <Switch checked={canCreateSub} onCheckedChange={setCanCreateSub} />
-                <span className="text-sm text-[hsl(var(--fg))]/75">{canCreateSub ? t("common.yes") : t("common.no")}</span>
-              </div>
-            </div>
+	            <div className="space-y-2">
+	              <label className="text-sm flex items-center gap-2">
+	                {t("adminResellers.canCreateSub")} <HelpTip text={t("adminResellers.help.canCreateSub")} />
+	              </label>
+	              <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2">
+	                <Switch checked={canCreateSub} onCheckedChange={setCanCreateSub} />
+	                <span className="text-sm text-[hsl(var(--fg))]/75">{canCreateSub ? t("common.yes") : t("common.no")}</span>
+	              </div>
+	            </div>
 
 {editingId == null && (
   <div className="space-y-2">
     <label className="text-sm flex items-center gap-2">
       {t("adminResellers.assignAllNodes")} <HelpTip text={t("adminResellers.help.assignAllNodes")} />
     </label>
-    <div className="flex items-center gap-2">
-      <Switch checked={assignAllNodes} onCheckedChange={setAssignAllNodes} />
-      <span className="text-sm text-[hsl(var(--fg))]/75">{assignAllNodes ? t("common.yes") : t("common.no")}</span>
-    </div>
-  </div>
+	    <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2">
+	      <Switch checked={assignAllNodes} onCheckedChange={setAssignAllNodes} />
+	      <span className="text-sm text-[hsl(var(--fg))]/75">{assignAllNodes ? t("common.yes") : t("common.no")}</span>
+	    </div>
+	  </div>
 )}
 
 <div className="space-y-2 md:col-span-2">
@@ -473,7 +524,7 @@ async function assignAllNodesForReseller(resellerId: number) {
 <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.pricingNote")}</div>
             </div>
 
-            <div className="space-y-3 md:col-span-2 rounded-2xl border border-[hsl(var(--border))] p-4">
+	            <div className="space-y-3 md:col-span-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium">سیاست ساخت کاربر برای رسیلر</div>
@@ -511,7 +562,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                                     ? "۱ سال"
                                     : "نامحدود";
                         return (
-                          <label key={preset} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+	                          <label key={preset} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                             <input
                               type="checkbox"
                               checked={checked}
@@ -536,7 +587,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                     <div className="text-xs text-[hsl(var(--fg))]/70">حجم‌های مجاز (GB)</div>
                     <div className="flex flex-wrap gap-2">
                       {TRAFFIC_PRESET_OPTIONS.map((g) => (
-                        <label key={g} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+	                        <label key={g} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                           <input
                             type="checkbox"
                             checked={(userPolicy.allowed_traffic_gb || []).includes(g)}
@@ -566,7 +617,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                     />
                   </div>
 
-                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+	                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                     <div className="text-xs text-[hsl(var(--fg))]/70">کنترل روز و مدت‌زمان</div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs">اجازه روز دستی</span>
@@ -591,7 +642,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                     </div>
                   </div>
 
-                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] p-3">
+	                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                     <div className="text-xs text-[hsl(var(--fg))]/70">تنظیمات تکمیلی</div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs">اجازه حجم دستی</span>
@@ -629,11 +680,11 @@ async function assignAllNodesForReseller(resellerId: number) {
             ) : null}
           </div>
 
-          <Card>
-            <CardHeader>
-              <div className="text-sm font-medium">{t("adminResellers.creditTitle")}</div>
-              <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.creditSubtitle")}</div>
-            </CardHeader>
+	          <Card className="overflow-hidden">
+	            <CardHeader>
+	              <div className="text-sm font-medium">{t("adminResellers.creditTitle")}</div>
+	              <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.creditSubtitle")}</div>
+	            </CardHeader>
             <CardContent className="grid gap-2 md:grid-cols-4">
   <div className="md:col-span-2 grid gap-2 sm:grid-cols-2">
     <Input
@@ -641,11 +692,11 @@ async function assignAllNodesForReseller(resellerId: number) {
       value={creditQuery}
       onChange={(e) => setCreditQuery(e.target.value)}
     />
-    <select
-      className="h-10 rounded-xl border border-[hsl(var(--border))] bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-      value={creditId}
-      onChange={(e) => setCreditId(e.target.value === "" ? "" : Number(e.target.value))}
-    >
+	    <select
+	      className={selectClass}
+	      value={creditId}
+	      onChange={(e) => setCreditId(e.target.value === "" ? "" : Number(e.target.value))}
+	    >
       <option value="">{t("adminResellers.selectReseller")}</option>
       {creditOptions
         .filter((r) => `${r.id} ${r.username} ${r.role || ""}`.toLowerCase().includes(creditQuery.toLowerCase()))
@@ -669,14 +720,14 @@ async function assignAllNodesForReseller(resellerId: number) {
 </CardContent>
           </Card>
 
-          <div className="flex items-center gap-2">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("common.search")} />
-          </div>
+	          <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
+	            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("common.search")} />
+	          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-[hsl(var(--fg))]/70">
-                <tr className="border-b border-[hsl(var(--border))]">
+	          <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
+	            <table className="w-full text-sm">
+	              <thead className="text-[hsl(var(--fg))]/70">
+	                <tr className="border-b border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]">
                   <th className="text-[start] py-2">ID</th>
                   <th className="text-[start] py-2">{t("adminResellers.username")}</th>
                   <th className="text-[start] py-2">{t("adminResellers.status")}</th>
@@ -690,7 +741,7 @@ async function assignAllNodesForReseller(resellerId: number) {
               </thead>
               <tbody>
                 {filtered.map((x) => (
-                  <tr key={x.id} className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/40">
+	                  <tr key={x.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                     <td className="py-2">{x.id}</td>
                     <td className="py-2">
                       <div className="font-medium">{x.username}</div>
