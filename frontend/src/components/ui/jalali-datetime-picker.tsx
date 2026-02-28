@@ -208,7 +208,7 @@ export function JalaliDateTimePicker({
       ? createPortal(
           <div
             ref={panelRef}
-            className="fixed z-[9999] w-[340px] rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--muted))/0.38_100%)] p-3 shadow-2xl backdrop-blur"
+            className="fixed z-[9999] w-[340px] rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_60%,hsl(var(--muted)/0.18)_100%)] p-3 shadow-2xl"
             style={{ top: pos.top, left: pos.left }}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -384,7 +384,7 @@ export function JalaliDateTimePicker({
           title={value ? `تاریخ انتخابی: ${formatJalaliDateTime(value)}` : placeholder}
           aria-label="انتخاب تاریخ شمسی"
           className={cn(
-            "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--card))_0%,hsl(var(--muted))/0.34_100%)] text-[hsl(var(--fg))]/80 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.45)] hover:text-[hsl(var(--accent))] hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-60",
+            "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--card))_0%,hsl(var(--muted)/0.34)_100%)] text-[hsl(var(--fg))]/80 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.45)] hover:text-[hsl(var(--accent))] hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-60",
             triggerClassName
           )}
         >
@@ -396,7 +396,7 @@ export function JalaliDateTimePicker({
           disabled={disabled}
           onClick={() => !disabled && setOpen((v) => !v)}
           className={cn(
-            "flex h-10 w-full items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(160deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--muted))/0.45] disabled:cursor-not-allowed disabled:opacity-60",
+            "flex h-10 w-full items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(160deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--muted)/0.45)] disabled:cursor-not-allowed disabled:opacity-60",
             triggerClassName
           )}
         >
