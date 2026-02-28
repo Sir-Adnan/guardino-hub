@@ -213,34 +213,42 @@ def _render_sub_page(
     master_link_attr = html.escape(master_raw_link, quote=True)
 
     return f"""<!doctype html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-theme="day" data-preset="guardino">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>داشبورد اشتراک - {label}</title>
   <style>
     :root {{
-      --bg-0: #f2f6ff;
-      --bg-1: #e8f0ff;
-      --paper: rgba(255, 255, 255, 0.82);
+      --bg-0: #f4f8ff;
+      --bg-1: #eaf1ff;
+      --paper: #ffffff;
       --paper-strong: #ffffff;
-      --line: #cad8ef;
-      --fg: #102040;
-      --muted: #5f7398;
+      --line: #cfdcf0;
+      --fg: #11223f;
+      --muted: #5d7398;
       --ok: #16a34a;
       --warn: #d97706;
       --err: #dc2626;
       --accent: #2563eb;
       --accent-soft: #0ea5e9;
       --ring-rest: #dbe8ff;
+      --surface-card-1: #ffffff;
+      --surface-card-2: #f5f9ff;
+      --surface-card-3: #e8f1ff;
+      --surface-input-1: #ffffff;
+      --surface-input-2: #f5f8ff;
+      --surface-input-3: #e8f1ff;
+      --glow-1: #3b82f633;
+      --glow-2: #06b6d43b;
       --shadow: 0 16px 34px rgba(9, 37, 88, 0.14);
     }}
     html[data-theme="night"] {{
-      --bg-0: #081224;
-      --bg-1: #0f1d39;
-      --paper: rgba(13, 26, 49, 0.86);
-      --paper-strong: #0f1f3a;
-      --line: #2a4266;
+      --bg-0: #0a172d;
+      --bg-1: #111f3d;
+      --paper: #122648;
+      --paper-strong: #122648;
+      --line: #2d4468;
       --fg: #e8f0ff;
       --muted: #95add3;
       --ok: #22c55e;
@@ -249,7 +257,39 @@ def _render_sub_page(
       --accent: #3b82f6;
       --accent-soft: #06b6d4;
       --ring-rest: #1a2c4e;
+      --surface-card-1: #122648;
+      --surface-card-2: #132a4d;
+      --surface-card-3: #173058;
+      --surface-input-1: #112443;
+      --surface-input-2: #13294b;
+      --surface-input-3: #173156;
+      --glow-1: #3b82f64d;
+      --glow-2: #06b6d44d;
       --shadow: 0 16px 36px rgba(2, 8, 23, 0.44);
+    }}
+    html[data-preset="guardino"] {{
+      --accent: #2563eb;
+      --accent-soft: #0ea5e9;
+      --glow-1: #3b82f633;
+      --glow-2: #06b6d43b;
+    }}
+    html[data-preset="ocean"] {{
+      --accent: #0284c7;
+      --accent-soft: #06b6d4;
+      --glow-1: #0284c733;
+      --glow-2: #06b6d438;
+    }}
+    html[data-preset="aurora"] {{
+      --accent: #7c3aed;
+      --accent-soft: #14b8a6;
+      --glow-1: #7c3aed33;
+      --glow-2: #14b8a63b;
+    }}
+    html[data-preset="sunset"] {{
+      --accent: #ea580c;
+      --accent-soft: #eab308;
+      --glow-1: #ea580c33;
+      --glow-2: #eab3083b;
     }}
     body[data-account-state="warning"] {{
       --accent: #d97706;
@@ -275,8 +315,8 @@ def _render_sub_page(
       font-family: "Vazirmatn", "IRANSansX", "IRANYekanX", Tahoma, sans-serif;
       color: var(--fg);
       background:
-        radial-gradient(980px 620px at 6% -10%, #3b82f62b 0%, transparent 60%),
-        radial-gradient(760px 520px at 98% 0%, #06b6d430 0%, transparent 66%),
+        radial-gradient(980px 620px at 6% -10%, var(--glow-1) 0%, transparent 60%),
+        radial-gradient(760px 520px at 98% 0%, var(--glow-2) 0%, transparent 66%),
         linear-gradient(145deg, var(--bg-0) 0%, var(--bg-1) 100%);
       min-height: 100dvh;
       position: relative;
@@ -293,7 +333,7 @@ def _render_sub_page(
     .orb-a {{
       width: 320px;
       height: 320px;
-      background: #3b82f6;
+      background: var(--accent);
       top: -80px;
       right: -60px;
       animation: drift 13s ease-in-out infinite;
@@ -301,7 +341,7 @@ def _render_sub_page(
     .orb-b {{
       width: 280px;
       height: 280px;
-      background: #0ea5e9;
+      background: var(--accent-soft);
       bottom: -120px;
       left: -80px;
       animation: drift 16s ease-in-out infinite reverse;
@@ -316,11 +356,10 @@ def _render_sub_page(
       gap: 12px;
     }}
     .glass {{
-      background: var(--paper);
+      background: linear-gradient(160deg, var(--surface-card-1) 0%, var(--surface-card-2) 55%, var(--surface-card-3) 100%);
       border: 1px solid var(--line);
       border-radius: 20px;
       box-shadow: var(--shadow);
-      backdrop-filter: blur(8px);
     }}
     .hero {{
       padding: 18px;
@@ -412,12 +451,12 @@ def _render_sub_page(
     }}
     .btn-soft {{
       border: 1px solid var(--line);
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-input-1) 0%, var(--surface-input-2) 55%, var(--surface-input-3) 100%);
       color: var(--fg);
-      box-shadow: none;
+      box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
     }}
     html[data-theme="night"] .btn-soft {{
-      background: #122648;
+      background: linear-gradient(155deg, var(--surface-input-1) 0%, var(--surface-input-2) 55%, var(--surface-input-3) 100%);
     }}
     .theme-icon {{
       width: 16px;
@@ -445,6 +484,34 @@ def _render_sub_page(
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+    }}
+    .preset-switch {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }}
+    .preset-btn {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      background: linear-gradient(155deg, var(--surface-input-1) 0%, var(--surface-input-2) 55%, var(--surface-input-3) 100%);
+      transition: all .2s ease;
+      cursor: pointer;
+    }}
+    .preset-btn:hover {{
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      color: var(--fg);
+    }}
+    .preset-btn.active {{
+      color: #fff;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.26);
     }}
     .state-hero {{
       display: grid;
@@ -642,10 +709,10 @@ def _render_sub_page(
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 9px 10px;
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
     }}
     html[data-theme="night"] .progress-item {{
-      background: #122648;
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
     }}
     .progress-meta {{
       display: flex;
@@ -685,11 +752,11 @@ def _render_sub_page(
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 8px;
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
       text-align: center;
     }}
     html[data-theme="night"] .mini {{
-      background: #122648;
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
     }}
     .mini span {{
       display: block;
@@ -789,10 +856,10 @@ def _render_sub_page(
       border: 1px dashed var(--line);
       border-radius: 12px;
       padding: 10px;
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-input-1) 0%, var(--surface-input-3) 100%);
     }}
     html[data-theme="night"] .link-box {{
-      background: #10203c;
+      background: linear-gradient(155deg, var(--surface-input-1) 0%, var(--surface-input-3) 100%);
     }}
     .node-section {{
       padding: 14px;
@@ -806,10 +873,16 @@ def _render_sub_page(
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 10px;
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
     }}
     html[data-theme="night"] .node-row {{
-      background: #10203c;
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
+    }}
+    .node-row:hover {{
+      transform: translateY(-1px);
+      border-color: #93c5fd;
+      box-shadow: 0 12px 24px rgba(37, 99, 235, 0.14);
     }}
     .node-main {{
       display: flex;
@@ -939,7 +1012,7 @@ def _render_sub_page(
       width: min(520px, 100%);
       border-radius: 18px;
       border: 1px solid var(--line);
-      background: var(--paper-strong);
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
       box-shadow: 0 20px 45px rgba(2, 8, 23, 0.25);
       padding: 18px;
       display: grid;
@@ -947,7 +1020,7 @@ def _render_sub_page(
       animation: reveal .3s ease;
     }}
     html[data-theme="night"] .modal-card {{
-      background: #122648;
+      background: linear-gradient(155deg, var(--surface-card-1) 0%, var(--surface-card-3) 100%);
     }}
     .modal-icon {{
       width: 44px;
@@ -1060,6 +1133,12 @@ def _render_sub_page(
           <a class="btn" href="{master_link_html}" target="_blank" rel="noopener">باز کردن لینک اصلی</a>
         </div>
       </div>
+      <div class="preset-switch">
+        <button type="button" class="preset-btn" data-preset="guardino">استاندارد</button>
+        <button type="button" class="preset-btn" data-preset="ocean">دریا</button>
+        <button type="button" class="preset-btn" data-preset="aurora">شفق</button>
+        <button type="button" class="preset-btn" data-preset="sunset">غروب</button>
+      </div>
       <div class="mini-chips">
         <span class="badge {expiry_badge}">{expiry_state}</span>
         <span class="badge {status_class}">وضعیت کاربر: {status_text}</span>
@@ -1093,15 +1172,15 @@ def _render_sub_page(
       </article>
       <article class="glass stat-card reveal" style="--delay:.15s">
         <div class="stat-top"><span class="k">حجم کل</span><span class="dot neutral"></span></div>
-        <div class="v"><span data-number="{total_gb:.2f}">{total_gb:.2f}</span> GB</div>
+        <div class="v"><span data-number="{total_gb:.2f}">{total_gb:.2f}</span> گیگ</div>
       </article>
       <article class="glass stat-card reveal" style="--delay:.18s">
         <div class="stat-top"><span class="k">مصرف شده</span><span class="dot warn"></span></div>
-        <div class="v"><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> GB</div>
+        <div class="v"><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> گیگ</div>
       </article>
       <article class="glass stat-card reveal" style="--delay:.21s">
         <div class="stat-top"><span class="k">باقی‌مانده</span><span class="dot ok"></span></div>
-        <div class="v"><span data-number="{remain_gb:.2f}">{remain_gb:.2f}</span> GB</div>
+        <div class="v"><span data-number="{remain_gb:.2f}">{remain_gb:.2f}</span> گیگ</div>
       </article>
       <article class="glass stat-card reveal" style="--delay:.24s">
         <div class="stat-top"><span class="k">آخرین بروزرسانی</span><span class="dot neutral"></span></div>
@@ -1129,7 +1208,7 @@ def _render_sub_page(
             <div class="progress-item">
               <div class="progress-meta">
                 <span>مصرف حجم</span>
-                <strong><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> GB</strong>
+                <strong><span data-number="{used_gb:.2f}">{used_gb:.2f}</span> گیگ</strong>
               </div>
               <div class="track"><span style="width:{percent}%"></span></div>
             </div>
@@ -1240,6 +1319,8 @@ def _render_sub_page(
       }});
     }}
 
+    const PRESETS = ["guardino", "ocean", "aurora", "sunset"];
+
     function applyTheme(mode) {{
       const normalized = mode === "night" ? "night" : "day";
       document.documentElement.dataset.theme = normalized;
@@ -1248,7 +1329,7 @@ def _render_sub_page(
         label.textContent = normalized === "night" ? "حالت روز" : "حالت شب";
       }}
       try {{
-        localStorage.setItem("guardino-sub-theme", normalized);
+        localStorage.setItem("sub-theme-mode", normalized);
       }} catch (_err) {{
         // ignore storage errors
       }}
@@ -1257,7 +1338,7 @@ def _render_sub_page(
     function initTheme() {{
       let saved = "day";
       try {{
-        const v = localStorage.getItem("guardino-sub-theme");
+        const v = localStorage.getItem("sub-theme-mode") || localStorage.getItem("guardino-sub-theme");
         if (v === "night") saved = "night";
       }} catch (_err) {{
         saved = "day";
@@ -1268,6 +1349,37 @@ def _render_sub_page(
       toggle.addEventListener("click", () => {{
         const current = document.documentElement.dataset.theme === "night" ? "night" : "day";
         applyTheme(current === "night" ? "day" : "night");
+      }});
+    }}
+
+    function applyPreset(name) {{
+      const normalized = PRESETS.includes(name) ? name : "guardino";
+      document.documentElement.dataset.preset = normalized;
+      document.querySelectorAll(".preset-btn[data-preset]").forEach((btn) => {{
+        const hit = btn.getAttribute("data-preset") === normalized;
+        btn.classList.toggle("active", hit);
+      }});
+      try {{
+        localStorage.setItem("sub-theme-preset", normalized);
+      }} catch (_err) {{
+        // ignore storage errors
+      }}
+    }}
+
+    function initPreset() {{
+      let saved = "guardino";
+      try {{
+        const v = localStorage.getItem("sub-theme-preset") || localStorage.getItem("theme_preset");
+        if (v && PRESETS.includes(v)) saved = v;
+      }} catch (_err) {{
+        saved = "guardino";
+      }}
+      applyPreset(saved);
+      document.querySelectorAll(".preset-btn[data-preset]").forEach((btn) => {{
+        btn.addEventListener("click", () => {{
+          const target = btn.getAttribute("data-preset") || "guardino";
+          applyPreset(target);
+        }});
       }});
     }}
 
@@ -1346,6 +1458,7 @@ def _render_sub_page(
     }}
 
     initTheme();
+    initPreset();
     bindCopyButtons();
     initStatusModal();
     renderFaNumbers();
