@@ -29,12 +29,16 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
             func.count().label("total"),
             func.coalesce(func.sum(case((GuardinoUser.status == UserStatus.active, 1), else_=0)), 0).label("active"),
             func.coalesce(func.sum(case((GuardinoUser.status == UserStatus.disabled, 1), else_=0)), 0).label("disabled"),
+            func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
+            func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
         ).where(GuardinoUser.owner_reseller_id == reseller.id)
     )
     urow = uq.one()
     users_total = int(urow.total or 0)
     users_active = int(urow.active or 0)
     users_disabled = int(urow.disabled or 0)
+    used_bytes_total = int(urow.used_bytes_total or 0)
+    sold_gb_total = int(urow.sold_gb_total or 0)
 
     # Allowed nodes
     nq = await db.execute(
@@ -78,6 +82,8 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
         users_total=users_total,
         users_active=users_active,
         users_disabled=users_disabled,
+        used_bytes_total=used_bytes_total,
+        sold_gb_total=sold_gb_total,
         nodes_allowed=nodes_allowed,
         orders_total=orders_total,
         orders_30d=orders_30d,
