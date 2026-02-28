@@ -41,7 +41,7 @@ export function AppHeader({
   const isDark = theme === "dark";
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/85 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[linear-gradient(120deg,hsl(var(--card))/0.96_0%,hsl(var(--muted))/0.38_100%)] backdrop-blur">
       <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-lg font-semibold truncate">{t(key)}</div>
@@ -55,7 +55,7 @@ export function AppHeader({
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
-            className="px-3 md:hidden"
+            className="px-3 md:hidden hover:-translate-y-0.5 transition-all duration-200"
             onClick={() => onMenuClick?.()}
             title={t("sidebar.open")}
             aria-label={t("sidebar.open")}
@@ -66,7 +66,7 @@ export function AppHeader({
           {onToggleCollapse ? (
             <Button
               variant="ghost"
-              className="px-3 hidden md:inline-flex"
+              className="px-3 hidden md:inline-flex hover:-translate-y-0.5 transition-all duration-200"
               onClick={() => onToggleCollapse()}
               title={sidebarCollapsed ? t("sidebar.open") : t("sidebar.close")}
               aria-label={sidebarCollapsed ? t("sidebar.open") : t("sidebar.close")}
@@ -93,7 +93,7 @@ export function AppHeader({
 
           <Button
             variant="ghost"
-            className="px-3"
+            className="px-3 hover:-translate-y-0.5 transition-all duration-200"
             onClick={() => setTheme(isDark ? "light" : "dark")}
             title={isDark ? t("topbar.themeLight") : t("topbar.themeDark")}
           >
