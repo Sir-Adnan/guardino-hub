@@ -19,7 +19,7 @@ from app.services.refund import refundable_gb_for_user
 from app.services.status_policy import enable_if_needed
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
-from app.schemas.ops import ExtendRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
+from app.schemas.ops import ExtendRequest, DecreaseTimeRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
 
 router = APIRouter()
 
@@ -206,6 +206,100 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     order.status = OrderStatus.completed
     await db.commit()
     return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+
+
+@router.post("/{user_id}/decrease-time", response_model=OpResult)
+async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
+    user = q.scalar_one_or_none()
+    if not user or user.status != UserStatus.active:
+        raise HTTPException(status_code=404, detail="User not found/active")
+
+    order = Order(
+        reseller_id=reseller.id,
+        user_id=user.id,
+        type=OrderType.refund,
+        status=OrderStatus.pending,
+        purchased_gb=None,
+        price_per_gb_snapshot=None,
+    )
+    db.add(order)
+    await db.flush()
+
+    old_total_gb = int(user.total_gb)
+    old_expire_at = user.expire_at
+    user.expire_at = old_expire_at - timedelta(days=int(payload.days))
+
+    # Update remote panels before local financial commit.
+    qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs_sub.scalars().all()
+    remote_sync_errors: list[str] = []
+    remote_synced_ok: list[tuple[SubAccount, Node]] = []
+    if subs:
+        qn = await db.execute(select(Node).where(Node.id.in_([s.node_id for s in subs])))
+        node_map = {n.id: n for n in qn.scalars().all()}
+        for s in subs:
+            n = node_map.get(s.node_id)
+            if not n:
+                remote_sync_errors.append(f"node#{s.node_id}: node not found")
+                continue
+            adapter = get_adapter(n)
+            try:
+                await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                continue
+            remote_synced_ok.append((s, n))
+            try:
+                await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
+            except Exception as e:
+                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                continue
+
+            # WGDashboard share links (legacy support) - best-effort
+            try:
+                if (
+                    s.panel_sub_url_cached
+                    and "sharePeer/get" in s.panel_sub_url_cached
+                    and "ShareID=" in s.panel_sub_url_cached
+                    and getattr(n, "panel_type", None)
+                    and getattr(n.panel_type, "value", "") == "wg_dashboard"
+                ):
+                    qs = parse_qs(urlparse(s.panel_sub_url_cached).query)
+                    sid = (qs.get("ShareID") or [None])[0]
+                    if sid:
+                        async with build_async_client() as client:
+                            await client.post(
+                                f"{n.base_url.rstrip('/')}/api/sharePeer/update",
+                                headers={"wg-dashboard-apikey": (n.credentials or {}).get("apikey", "")},
+                                json={"ShareID": sid, "ExpireDate": user.expire_at.strftime("%Y-%m-%d %H:%M:%S")},
+                            )
+            except Exception:
+                pass
+    if remote_sync_errors:
+        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
+        _raise_remote_sync_failed_with_rollback("Decrease time", remote_sync_errors, rollback_errors)
+
+    now = _now()
+    refund_amount = 0
+    if reseller.price_per_day is not None and reseller.price_per_day > 0:
+        refund_amount = int(reseller.price_per_day) * int(payload.days)
+        reseller.balance += refund_amount
+        db.add(
+            LedgerTransaction(
+                reseller_id=reseller.id,
+                order_id=order.id,
+                amount=refund_amount,
+                reason="refund_decrease_time",
+                balance_after=reseller.balance,
+                occurred_at=now,
+            )
+        )
+
+    order.status = OrderStatus.completed
+    await db.commit()
+    return OpResult(ok=True, charged_amount=0, refunded_amount=refund_amount, new_balance=reseller.balance, user_id=user.id)
+
 
 @router.post("/{user_id}/add-traffic", response_model=OpResult)
 async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
