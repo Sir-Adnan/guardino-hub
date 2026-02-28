@@ -208,7 +208,7 @@ export function JalaliDateTimePicker({
       ? createPortal(
           <div
             ref={panelRef}
-            className="fixed z-[9999] w-[340px] rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_60%,hsl(var(--muted)/0.18)_100%)] p-3 shadow-2xl"
+            className="fixed z-[9999] w-[340px] rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_56%,hsl(var(--muted))_100%)] p-3 shadow-2xl"
             style={{ top: pos.top, left: pos.left }}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
