@@ -994,7 +994,7 @@ export default function UsersPage() {
             </div>
 
             {quickMode === "extend" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 30, 90, 180].map((d) => (
@@ -1039,7 +1039,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "add" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">افزایش حجم (گیگ)</div>
                 <div className="flex flex-wrap gap-2">
                   {[5, 10, 20, 50].map((g) => (
@@ -1064,7 +1064,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.24_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش حجم (ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 5, 10, 20].map((g) => (
@@ -1093,7 +1093,7 @@ export default function UsersPage() {
             ) : null}
 
             {quickMode === "time_dec" ? (
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))/0.28_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 3, 7, 15, 30].map((d) => (
@@ -1138,7 +1138,7 @@ export default function UsersPage() {
               </div>
             ) : null}
 
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--card))_0%,hsl(var(--muted))/0.3_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--card))_0%,hsl(var(--muted)/0.3)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
               <div className="font-medium">کنترل سریع</div>
               <div className="flex flex-wrap gap-2">
                 <Button
