@@ -10,14 +10,16 @@ import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/api";
 import { fmtNumber } from "@/lib/format";
+import { formatJalaliDateTime } from "@/lib/jalali";
 import { copyText } from "@/lib/copy";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/components/i18n-context";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useAuth } from "@/components/auth-context";
 import { Badge } from "@/components/ui/badge";
+import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { cn } from "@/lib/cn";
-import { CalendarDays, Copy, ExternalLink, Gauge, Link2, Lock, Sparkles } from "lucide-react";
+import { CalendarDays, Copy, ExternalLink, Gauge, Link2, Lock, Sparkles, UserPlus2 } from "lucide-react";
 
 type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
 type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
@@ -93,6 +95,7 @@ const durationPresets = [
 ];
 
 const trafficPresets = [20, 30, 50, 70, 100, 150, 200];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EMPTY_DEFAULTS: UserDefaults = {
   default_pricing_mode: "bundle",
@@ -176,6 +179,7 @@ export default function NewUserPage() {
 
   const [preset, setPreset] = React.useState<string>("1m");
   const [days, setDays] = React.useState<number>(30);
+  const [targetExpireAt, setTargetExpireAt] = React.useState<Date | null>(null);
 
   const [nodeMode, setNodeMode] = React.useState<"all" | "manual" | "group">("all");
   const [selectedNodeIds, setSelectedNodeIds] = React.useState<number[]>([]);
@@ -405,6 +409,29 @@ export default function NewUserPage() {
     }
   }, [customTrafficLocked, effectiveTrafficPresets, totalGb]);
 
+  React.useEffect(() => {
+    if (days <= 0) {
+      setTargetExpireAt(null);
+      return;
+    }
+    const now = new Date();
+    now.setSeconds(0, 0);
+    setTargetExpireAt(new Date(now.getTime() + days * DAY_MS));
+  }, [days]);
+
+  function clampDaysByPolicy(raw: number) {
+    let next = Math.max(0, Math.floor(Number(raw) || 0));
+    if (userPolicy.enabled && next > 0) {
+      const minDays = Math.max(1, Number(userPolicy.min_days) || 1);
+      const maxDays = Math.max(minDays, Number(userPolicy.max_days) || minDays);
+      next = Math.min(maxDays, Math.max(minDays, next));
+    }
+    if (next === 0 && userPolicy.enabled && !userPolicy.allow_no_expire) {
+      next = Math.max(1, Number(userPolicy.min_days) || 1);
+    }
+    return next;
+  }
+
   function applyDurationPreset(key: string) {
     if (userPolicy.enabled) {
       const allowed = new Set(effectiveDurationPresets.map((x) => x.key));
@@ -412,7 +439,18 @@ export default function NewUserPage() {
     }
     setPreset(key);
     const found = durationPresets.find((x) => x.key === key);
-    if (found) setDays(found.days);
+    if (found) setDays(clampDaysByPolicy(found.days));
+  }
+
+  function onTargetDatePick(nextDate: Date) {
+    if (customDaysLocked) return;
+    const now = new Date();
+    const diff = Math.ceil((nextDate.getTime() - now.getTime()) / DAY_MS);
+    const next = clampDaysByPolicy(diff);
+    setDays(next);
+    const matched = effectiveDurationPresets.find((p) => p.days === next);
+    setPreset(matched?.key || "");
+    setTargetExpireAt(nextDate);
   }
 
   function buildLabel(index: number, count: number) {
@@ -638,20 +676,12 @@ export default function NewUserPage() {
     if (customDaysLocked) return;
     const num = Number(value);
     if (!Number.isFinite(num)) {
-      setDays(0);
+      const nextFallback = clampDaysByPolicy(0);
+      setDays(nextFallback);
       setPreset("");
       return;
     }
-    const rounded = Math.max(0, Math.floor(num));
-    let next = rounded;
-    if (userPolicy.enabled && rounded > 0) {
-      const minDays = Math.max(1, Number(userPolicy.min_days) || 1);
-      const maxDays = Math.max(minDays, Number(userPolicy.max_days) || minDays);
-      next = Math.min(maxDays, Math.max(minDays, rounded));
-    }
-    if (next === 0 && userPolicy.enabled && !userPolicy.allow_no_expire) {
-      next = Math.max(1, Number(userPolicy.min_days) || 1);
-    }
+    const next = clampDaysByPolicy(num);
     setDays(next);
     const matched = effectiveDurationPresets.find((p) => p.days === next);
     setPreset(matched?.key || "");
@@ -659,12 +689,44 @@ export default function NewUserPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(115deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 shadow-[0_14px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
+              <UserPlus2 size={13} />
+              ساخت کاربر جدید
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("newUser.title")}</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{t("newUser.subtitle")}</p>
+          </div>
+
+          <div className="grid min-w-[220px] grid-cols-2 gap-2 text-xs sm:min-w-[320px]">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(59,130,246,0.14),rgba(14,165,233,0.08))] px-3 py-2">
+              <div className="text-[hsl(var(--fg))]/70">مدل قیمت</div>
+              <div className="mt-1 font-semibold">{pricingMode === "bundle" ? "Bundle" : "Per Node"}</div>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(16,185,129,0.14),rgba(5,150,105,0.08))] px-3 py-2">
+              <div className="text-[hsl(var(--fg))]/70">انتخاب نود</div>
+              <div className="mt-1 font-semibold">{nodeMode === "all" ? "همه" : nodeMode === "manual" ? "دستی" : "گروهی"}</div>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(249,115,22,0.14),rgba(245,158,11,0.08))] px-3 py-2">
+              <div className="text-[hsl(var(--fg))]/70">حجم</div>
+              <div className="mt-1 font-semibold">{fmtNumber(totalGb)} گیگ</div>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(139,92,246,0.14),rgba(99,102,241,0.08))] px-3 py-2">
+              <div className="text-[hsl(var(--fg))]/70">مدت</div>
+              <div className="mt-1 font-semibold">{days === 0 ? "نامحدود" : `${fmtNumber(days)} روز`}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">{t("newUser.title")}</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">{t("newUser.subtitle")}</div>
+          <div className="text-lg font-semibold">مشخصات کاربر</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">اطلاعات پایه، پلن، نودها و پیش‌فاکتور</div>
           {defaultsLoaded ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.5] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--card))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
               <div className="flex flex-wrap items-center gap-2">
                 <Sparkles size={14} />
                 <span>
@@ -683,7 +745,7 @@ export default function NewUserPage() {
 
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-4">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.label")} <HelpTip text={t("help.label")} />
               </label>
@@ -695,7 +757,7 @@ export default function NewUserPage() {
               ) : null}
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.3] p-4">
+            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
                 {t("newUser.username")} <HelpTip text={t("help.username")} />
               </label>
@@ -719,14 +781,14 @@ export default function NewUserPage() {
             <div
               className={cn(
                 "space-y-3 rounded-2xl border p-4 transition-all",
-                "border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35]",
+                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)]",
                 customTrafficLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
               )}
             >
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <Gauge size={15} />
-                  حجم کاربر (GB)
+                  حجم کاربر (گیگ)
                 </label>
                 {customTrafficLocked ? (
                   <Badge variant="warning" className="gap-1">
@@ -746,7 +808,7 @@ export default function NewUserPage() {
                 <div className="flex flex-wrap gap-2">
                   {effectiveTrafficPresets.map((gb) => (
                     <Button key={gb} type="button" variant={totalGb === gb ? "primary" : "outline"} size="sm" onClick={() => setTotalGb(gb)}>
-                      {gb} GB
+                      {gb} گیگ
                     </Button>
                   ))}
                 </div>
@@ -761,7 +823,7 @@ export default function NewUserPage() {
             <div
               className={cn(
                 "space-y-3 rounded-2xl border p-4 transition-all",
-                "border-[hsl(var(--border))] bg-[hsl(var(--muted))/0.35]",
+                "border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)]",
                 customDaysLocked ? "ring-1 ring-amber-400/50" : "hover:shadow-soft"
               )}
             >
@@ -776,16 +838,25 @@ export default function NewUserPage() {
                   </Badge>
                 ) : null}
               </div>
-              <div className="grid gap-2 sm:grid-cols-[220px,1fr] sm:items-center">
-                <Input
-                  className={cn("h-11 rounded-2xl text-base", customDaysLocked ? "opacity-80" : "")}
-                  type="number"
-                  min={userPolicy.enabled ? (userPolicy.allow_no_expire ? 0 : Math.max(1, userPolicy.min_days)) : 0}
-                  max={userPolicy.enabled ? Math.max(userPolicy.min_days, userPolicy.max_days) : 36500}
-                  value={days}
-                  disabled={customDaysLocked}
-                  onChange={(e) => onDaysInput(e.target.value)}
-                />
+              <div className="grid gap-2 sm:grid-cols-[260px,1fr] sm:items-center">
+                <div className="flex items-center gap-2">
+                  <Input
+                    className={cn("h-11 rounded-2xl text-base", customDaysLocked ? "opacity-80" : "")}
+                    type="number"
+                    min={userPolicy.enabled ? (userPolicy.allow_no_expire ? 0 : Math.max(1, userPolicy.min_days)) : 0}
+                    max={userPolicy.enabled ? Math.max(userPolicy.min_days, userPolicy.max_days) : 36500}
+                    value={days}
+                    disabled={customDaysLocked}
+                    onChange={(e) => onDaysInput(e.target.value)}
+                  />
+                  <JalaliDateTimePicker
+                    mode="icon"
+                    value={targetExpireAt}
+                    disabled={customDaysLocked}
+                    onChange={onTargetDatePick}
+                    triggerClassName="h-11 w-11 shrink-0 rounded-2xl"
+                  />
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {effectiveDurationPresets.map((p) => (
                     <Button
@@ -800,6 +871,13 @@ export default function NewUserPage() {
                   ))}
                 </div>
               </div>
+              {targetExpireAt ? (
+                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-[11px] text-[hsl(var(--fg))]/75">
+                  تاریخ پایان انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetExpireAt)}</span>
+                  <span className="mx-1">•</span>
+                  معادل: <span className="font-semibold">{fmtNumber(days)} روز</span>
+                </div>
+              ) : null}
               <div className="text-xs text-[hsl(var(--fg))]/70">
                 {customDaysLocked
                   ? "روز دستی برای این حساب غیرفعال است و فقط پکیج‌های زمانی مجاز قابل استفاده هستند."
@@ -810,7 +888,7 @@ export default function NewUserPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4">
             <label className="text-sm flex items-center gap-2">
               {t("newUser.pricingMode")} <HelpTip text={t("help.pricingMode")} />
             </label>
@@ -821,7 +899,7 @@ export default function NewUserPage() {
             <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.bundleHelp")}</div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-4">
             <label className="text-sm flex items-center gap-2">
               {t("newUser.nodeSelect")} <HelpTip text={t("help.nodeIds")} />
             </label>
@@ -875,7 +953,7 @@ export default function NewUserPage() {
             ) : null}
 
             {nodeMode === "manual" ? (
-              <div className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-2">
+              <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Input value={nodePickQ} onChange={(e) => setNodePickQ(e.target.value)} placeholder={t("common.search")} />
                   <div className="flex gap-2">
@@ -894,7 +972,7 @@ export default function NewUserPage() {
 
                 <div className="grid gap-2 md:grid-cols-2">
                   {filteredNodes.map((n) => (
-                    <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-sm">
+                    <label key={n.id} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                       <input
                         type="checkbox"
                         checked={selectedNodeIds.includes(n.id)}
@@ -909,7 +987,7 @@ export default function NewUserPage() {
             ) : null}
           </div>
 
-          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] p-3">
+          <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3">
             <div className="flex items-center gap-2">
               <Switch checked={bulkEnabled} onCheckedChange={setBulkEnabled} />
               <div className="text-sm font-medium">{t("newUser.bulk")}</div>
@@ -937,7 +1015,7 @@ export default function NewUserPage() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
             <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
             <Button type="button" disabled={loading} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
             {creating ? (
@@ -947,7 +1025,7 @@ export default function NewUserPage() {
           </div>
 
           {creating ? (
-            <div className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-2">
+            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <div className="font-medium">در حال ساخت کاربران...</div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">
@@ -963,7 +1041,7 @@ export default function NewUserPage() {
           ) : null}
 
           {quote ? (
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader>
                 <div className="text-sm text-[hsl(var(--fg))]/70">پیش‌فاکتور</div>
                 <div className="text-xl font-semibold">
@@ -997,13 +1075,13 @@ export default function NewUserPage() {
       >
         <div className="space-y-4 text-sm">
           {createSummary ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
               کل: {createSummary.total} • انجام‌شده: {createSummary.done} • موفق: {createSummary.success} • ناموفق: {createSummary.failed}
               {createSummary.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 text-xs text-[hsl(var(--fg))]/80">
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--card))_0%,hsl(var(--muted))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
             پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.
           </div>
 
