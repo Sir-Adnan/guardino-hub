@@ -3,8 +3,10 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.app_setting import AppSetting
 
+GLOBAL_USER_POLICY_KEY = "global_user_policy"
 ALLOWED_DURATION_PRESETS = {"7d", "1m", "3m", "6m", "1y", "unlimited"}
 DEFAULT_DURATION_PRESETS = ["7d", "1m", "3m", "6m", "1y"]
 DEFAULT_TRAFFIC_GB = [20, 30, 50, 70, 100, 150, 200]
@@ -20,8 +22,12 @@ def base_user_policy() -> dict:
         "allow_custom_days": True,
         "allow_custom_traffic": True,
         "allow_no_expire": False,
+        "allow_user_delete": True,
+        "allow_reset_usage": True,
         "min_days": 1,
         "max_days": 3650,
+        "delete_refund_window_days": int(settings.REFUND_WINDOW_DAYS),
+        "delete_expired_used_gb_limit": 1.0,
         "allowed_duration_presets": list(DEFAULT_DURATION_PRESETS),
         "allowed_traffic_gb": list(DEFAULT_TRAFFIC_GB),
     }
@@ -36,6 +42,8 @@ def normalize_user_policy(raw: dict | None) -> dict:
     out["allow_custom_days"] = bool(raw.get("allow_custom_days", out["allow_custom_days"]))
     out["allow_custom_traffic"] = bool(raw.get("allow_custom_traffic", out["allow_custom_traffic"]))
     out["allow_no_expire"] = bool(raw.get("allow_no_expire", out["allow_no_expire"]))
+    out["allow_user_delete"] = bool(raw.get("allow_user_delete", out["allow_user_delete"]))
+    out["allow_reset_usage"] = bool(raw.get("allow_reset_usage", out["allow_reset_usage"]))
 
     try:
         min_days = int(raw.get("min_days", out["min_days"]))
@@ -49,6 +57,18 @@ def normalize_user_policy(raw: dict | None) -> dict:
     max_days = max(min_days, min(36500, max_days))
     out["min_days"] = min_days
     out["max_days"] = max_days
+
+    try:
+        window_days = int(raw.get("delete_refund_window_days", out["delete_refund_window_days"]))
+    except Exception:
+        window_days = out["delete_refund_window_days"]
+    out["delete_refund_window_days"] = max(0, min(36500, window_days))
+
+    try:
+        expired_used_limit = float(raw.get("delete_expired_used_gb_limit", out["delete_expired_used_gb_limit"]))
+    except Exception:
+        expired_used_limit = out["delete_expired_used_gb_limit"]
+    out["delete_expired_used_gb_limit"] = max(0.0, min(100000.0, expired_used_limit))
 
     presets = raw.get("allowed_duration_presets")
     if isinstance(presets, list):
@@ -100,6 +120,15 @@ async def get_user_policy_setting_optional(db: AsyncSession, key: str) -> dict |
     if not row:
         return None
     return normalize_user_policy(row.value)
+
+
+async def get_effective_user_policy(db: AsyncSession, reseller_id: int) -> dict:
+    global_policy = await get_user_policy_setting(db, GLOBAL_USER_POLICY_KEY)
+    q = await db.execute(select(AppSetting).where(AppSetting.key == reseller_user_policy_key(reseller_id)))
+    row = q.scalar_one_or_none()
+    if not row or not isinstance(row.value, dict):
+        return global_policy
+    return normalize_user_policy({**global_policy, **row.value})
 
 
 async def set_user_policy_setting(db: AsyncSession, key: str, value: dict) -> dict:

@@ -19,6 +19,7 @@ from app.models.subaccount import SubAccount
 from app.models.user import GuardinoUser, NodeSelectionMode, UserStatus
 from app.services.adapters.factory import get_adapter
 from app.services.http_client import build_async_client
+from app.services.subscription_tokens import is_master_sub_token_revoked
 from app.services.subscription_merge import merge_subscriptions
 
 router = APIRouter()
@@ -1470,6 +1471,8 @@ def _render_sub_page(
 
 
 async def _get_user_by_token(db: AsyncSession, token: str) -> GuardinoUser:
+    if await is_master_sub_token_revoked(db, token):
+        raise HTTPException(status_code=404, detail="Not found")
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.master_sub_token == token))
     user = q.scalar_one_or_none()
     if not user or user.status in (UserStatus.deleted,):

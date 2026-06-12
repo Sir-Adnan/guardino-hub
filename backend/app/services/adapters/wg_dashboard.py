@@ -530,7 +530,7 @@ class WGDashboardAdapter:
                     return s
         raise AdapterError("WGDashboard: no available IP returned")
 
-    async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
+    async def provision_user(self, label: str, total_gb: int, expire_at: datetime, status: str = "active") -> ProvisionResult:
         config_name = await self._resolve_configuration_name()
         payload = await self._build_add_peer_payload(label)
         try:

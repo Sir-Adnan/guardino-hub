@@ -10,14 +10,14 @@ from app.schemas.settings import ResellerUserPolicy
 from app.services.user_defaults import (
     GLOBAL_USER_DEFAULTS_KEY,
     base_user_defaults,
+    get_effective_user_defaults,
     get_user_defaults_setting,
     get_user_defaults_setting_optional,
     reseller_user_defaults_key,
     set_user_defaults_setting,
 )
 from app.services.reseller_user_policy import (
-    get_user_policy_setting,
-    reseller_user_policy_key,
+    get_effective_user_policy,
 )
 
 router = APIRouter()
@@ -29,9 +29,9 @@ async def get_user_defaults(db: AsyncSession = Depends(get_db), reseller=Depends
     reseller_defaults = await get_user_defaults_setting_optional(db, reseller_user_defaults_key(reseller.id))
     if reseller_defaults is None:
         reseller_defaults = base_user_defaults()
-        effective = global_defaults
     else:
-        effective = {**global_defaults, **reseller_defaults}
+        reseller_defaults = {**base_user_defaults(), **reseller_defaults}
+    effective = await get_effective_user_defaults(db, reseller.id)
     return UserDefaultsEnvelope(
         global_defaults=UserDefaults(**global_defaults),
         reseller_defaults=UserDefaults(**reseller_defaults),
@@ -54,5 +54,5 @@ async def get_user_policy(
     db: AsyncSession = Depends(get_db),
     reseller=Depends(require_reseller),
 ):
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    policy = await get_effective_user_policy(db, reseller.id)
     return ResellerUserPolicy(**policy)

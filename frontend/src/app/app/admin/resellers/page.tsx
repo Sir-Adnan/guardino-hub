@@ -36,8 +36,12 @@ type ResellerUserPolicy = {
   allow_custom_days: boolean;
   allow_custom_traffic: boolean;
   allow_no_expire: boolean;
+  allow_user_delete: boolean;
+  allow_reset_usage: boolean;
   min_days: number;
   max_days: number;
+  delete_refund_window_days: number;
+  delete_expired_used_gb_limit: number;
   allowed_duration_presets: string[];
   allowed_traffic_gb: number[];
 };
@@ -61,8 +65,12 @@ function defaultUserPolicy(): ResellerUserPolicy {
     allow_custom_days: true,
     allow_custom_traffic: true,
     allow_no_expire: false,
+    allow_user_delete: true,
+    allow_reset_usage: true,
     min_days: 1,
     max_days: 3650,
+    delete_refund_window_days: 10,
+    delete_expired_used_gb_limit: 1,
     allowed_duration_presets: ["7d", "1m", "3m", "6m", "1y"],
     allowed_traffic_gb: [...TRAFFIC_PRESET_OPTIONS],
   };
@@ -88,8 +96,12 @@ function normalizePolicy(p: ResellerUserPolicy): ResellerUserPolicy {
     allow_custom_days: !!p.allow_custom_days,
     allow_custom_traffic: !!p.allow_custom_traffic,
     allow_no_expire: !!p.allow_no_expire,
+    allow_user_delete: !!p.allow_user_delete,
+    allow_reset_usage: !!p.allow_reset_usage,
     min_days: Math.max(1, Number(p.min_days) || 1),
     max_days: Math.max(1, Number(p.max_days) || 3650),
+    delete_refund_window_days: Math.max(0, Math.min(36500, Number(p.delete_refund_window_days ?? 10) || 0)),
+    delete_expired_used_gb_limit: Math.max(0, Number(p.delete_expired_used_gb_limit ?? 1) || 0),
     allowed_duration_presets: Array.from(
       new Set(
         (p.allowed_duration_presets || [])
@@ -663,6 +675,47 @@ async function assignAllNodesForReseller(resellerId: number) {
               ) : (
                 <div className="text-xs text-[hsl(var(--fg))]/70">در حالت غیرفعال، محدودیتی برای روز/حجم اعمال نمی‌شود.</div>
               )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                  <div className="text-xs text-[hsl(var(--fg))]/70">سیاست حذف و ریفاند</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs">اجازه حذف کاربر</span>
+                    <Switch
+                      checked={userPolicy.allow_user_delete}
+                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={userPolicy.delete_refund_window_days}
+                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                      placeholder="روز مجاز"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={userPolicy.delete_expired_used_gb_limit}
+                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                      placeholder="حد مصرف GB"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                  <div className="text-xs text-[hsl(var(--fg))]/70">سیاست ریست مصرف</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs">اجازه ریست کاربر</span>
+                    <Switch
+                      checked={userPolicy.allow_reset_usage}
+                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))}
+                    />
+                  </div>
+                  <div className="text-xs text-[hsl(var(--fg))]/65">برای بستن ریست فقط این گزینه را خاموش کنید؛ محدودیت ساخت لازم نیست فعال باشد.</div>
+                </div>
+              </div>
             </div>
           </div>
 

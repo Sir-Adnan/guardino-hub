@@ -17,7 +17,7 @@ from app.schemas.admin import (
 )
 from app.schemas.settings import ResellerUserPolicy
 from app.services.reseller_user_policy import (
-    get_user_policy_setting,
+    get_effective_user_policy,
     reseller_user_policy_key,
     set_user_policy_setting,
 )
@@ -53,7 +53,11 @@ async def list_resellers(
     total = int(total_q.scalar_one())
     q = await db.execute(base.limit(limit).offset(offset))
     rows = q.scalars().all()
-    return ResellerList(items=[_to_out(r) for r in rows], total=total)
+    items: list[ResellerOut] = []
+    for r in rows:
+        policy = await get_effective_user_policy(db, r.id)
+        items.append(_to_out(r, policy))
+    return ResellerList(items=items, total=total)
 
 
 @router.get("/{reseller_id}", response_model=ResellerOut)
@@ -62,7 +66,7 @@ async def get_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), adm
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    policy = await get_effective_user_policy(db, r.id)
     return _to_out(r, policy)
 
 @router.post("", response_model=ResellerOut)
@@ -88,7 +92,7 @@ async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Dep
     if payload.user_policy is not None:
         await set_user_policy_setting(db, reseller_user_policy_key(r.id), payload.user_policy.model_dump())
 
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    policy = await get_effective_user_policy(db, r.id)
     return _to_out(r, policy)
 
 
@@ -122,7 +126,7 @@ async def update_reseller(
     await db.refresh(r)
     if user_policy_payload is not None:
         await set_user_policy_setting(db, reseller_user_policy_key(r.id), user_policy_payload.model_dump())
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(r.id))
+    policy = await get_effective_user_policy(db, r.id)
     return _to_out(r, policy)
 
 

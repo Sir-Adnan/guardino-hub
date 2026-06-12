@@ -134,14 +134,21 @@ class MarzbanAdapter:
         except Exception as e:
             return TestConnectionResult(ok=False, detail=str(e))
 
-    async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
+    async def provision_user(self, label: str, total_gb: int, expire_at: datetime, status: str = "active") -> ProvisionResult:
+        create_status = "on_hold" if str(status or "").strip().lower() == "on_hold" else "active"
+        expire_ts = int(expire_at.timestamp())
         payload: dict[str, Any] = {
             "username": label,
-            "expire": int(expire_at.timestamp()),
+            "expire": expire_ts,
             "data_limit": int(total_gb) * 1024 * 1024 * 1024,
             "data_limit_reset_strategy": "no_reset",
-            "status": "active",
+            "status": create_status,
         }
+        if create_status == "on_hold":
+            now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
+            duration = max(0, int((expire_at - now).total_seconds()))
+            payload["expire"] = None
+            payload["on_hold_expire_duration"] = duration
 
         # Default selection rule (Guardino): enable ALL proxy types and ALL inbounds.
         # Fetch from panel API so it reflects the current panel configuration.

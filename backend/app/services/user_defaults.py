@@ -22,6 +22,7 @@ def base_user_defaults() -> dict:
         "label_suffix": "",
         "username_prefix": "",
         "username_suffix": "",
+        "show_guardino_master_sub": False,
     }
 
 
@@ -58,6 +59,8 @@ def normalize_user_defaults(raw: dict | None) -> dict:
             v = ""
         out[k] = str(v).strip()[:64]
 
+    out["show_guardino_master_sub"] = bool(raw.get("show_guardino_master_sub", out["show_guardino_master_sub"]))
+
     return out
 
 
@@ -73,6 +76,15 @@ async def get_user_defaults_setting_optional(db: AsyncSession, key: str) -> dict
     if not row:
         return None
     return normalize_user_defaults(row.value)
+
+
+async def get_effective_user_defaults(db: AsyncSession, reseller_id: int) -> dict:
+    global_defaults = await get_user_defaults_setting(db, GLOBAL_USER_DEFAULTS_KEY)
+    q = await db.execute(select(AppSetting).where(AppSetting.key == reseller_user_defaults_key(reseller_id)))
+    row = q.scalar_one_or_none()
+    if not row or not isinstance(row.value, dict):
+        return global_defaults
+    return normalize_user_defaults({**global_defaults, **row.value})
 
 
 async def set_user_defaults_setting(db: AsyncSession, key: str, value: dict) -> dict:

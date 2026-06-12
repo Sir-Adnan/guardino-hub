@@ -24,7 +24,7 @@ import { formatJalaliDateTime } from "@/lib/jalali";
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
 type LinksResp = {
   user_id: number;
-  master_link: string;
+  master_link?: string | null;
   node_links: Array<{
     node_id: number;
     node_name?: string;
@@ -101,7 +101,7 @@ export default function UserDetailPage() {
   const [err, setErr] = React.useState<string | null>(null);
 
   const [opMode, setOpMode] = React.useState<OpMode>("extend");
-  const [extendDays, setExtendDays] = React.useState(30);
+  const [extendDays, setExtendDays] = React.useState(31);
   const [decreaseDays, setDecreaseDays] = React.useState(7);
   const [addGb, setAddGb] = React.useState(10);
   const [decreaseGb, setDecreaseGb] = React.useState(5);
@@ -209,6 +209,10 @@ export default function UserDetailPage() {
       })
       .filter(Boolean);
     const text = [links.master_link, ...direct].filter(Boolean).join("\n");
+    if (!text) {
+      push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+      return;
+    }
     const ok = await copyText(text);
     push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" });
   }
@@ -376,22 +380,24 @@ export default function UserDetailPage() {
                 </div>
               ) : links ? (
                 <>
+                  {links.master_link ? (
                   <div className="space-y-2">
                     <div className="text-xs text-[hsl(var(--fg))]/70">لینک اصلی اشتراک</div>
                     <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input value={links.master_link} readOnly />
+                      <Input value={links.master_link || ""} readOnly />
                       <Button
                         type="button"
                         variant="outline"
                         className="sm:w-[170px]"
                         onClick={() => {
-                          copyText(links.master_link).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                          copyText(links.master_link || "").then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                         }}
                       >
                         {t("common.copy")}
                       </Button>
                     </div>
                   </div>
+                  ) : null}
 
                   <div className="space-y-2">
                     <div className="text-sm font-semibold">لینک‌های مستقیم</div>
@@ -491,7 +497,7 @@ export default function UserDetailPage() {
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
-                    {[7, 30, 90, 180, 365].map((d) => (
+                    {[7, 31, 90, 180, 365].map((d) => (
                       <Button key={d} type="button" size="sm" variant={extendDays === d ? "primary" : "outline"} onClick={() => setExtendDays(d)}>
                         {d} روز
                       </Button>
@@ -580,7 +586,7 @@ export default function UserDetailPage() {
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
-                    {[1, 3, 7, 15, 30, 60].map((d) => (
+                    {[1, 3, 7, 15, 31, 60].map((d) => (
                       <Button key={d} type="button" size="sm" variant={decreaseDays === d ? "primary" : "outline"} onClick={() => setDecreaseDays(d)}>
                         -{d} روز
                       </Button>

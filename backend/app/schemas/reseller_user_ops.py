@@ -7,6 +7,7 @@ class CreateUserRequest(BaseModel):
     # Optional username for remote panels (Marzban/Pasarguard). WG may ignore.
     username: Optional[str] = None
     randomize_username: bool = Field(default=False, description="If true, username is auto-generated")
+    create_status: str = Field(default="on_hold", pattern="^(active|on_hold)$")
 
     # One of: 7d, 1m, 3m, 6m, 1y, unlimited
     duration_preset: Optional[str] = None

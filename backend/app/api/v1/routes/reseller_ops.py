@@ -15,8 +15,10 @@ from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.services.pricing import calculate_price, resolve_allowed_nodes
 from app.services.adapters.factory import get_adapter
-from app.services.refund import refundable_gb_for_user
+from app.services.refund import BYTES_PER_GB, refundable_gb_for_user
+from app.services.reseller_user_policy import get_effective_user_policy
 from app.services.status_policy import enable_if_needed
+from app.services.subscription_tokens import remember_revoked_master_sub_token
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
 from app.schemas.ops import ExtendRequest, DecreaseTimeRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
@@ -104,6 +106,88 @@ def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     return origin.rstrip("/") + u
 
 
+_POLICY_PRESET_DAYS = {
+    "7d": 7,
+    "1m": 31,
+    "3m": 90,
+    "6m": 180,
+    "1y": 365,
+}
+
+
+def _policy_window_days(policy: dict) -> int:
+    try:
+        return max(0, min(36500, int(policy.get("delete_refund_window_days", 10))))
+    except Exception:
+        return 10
+
+
+def _policy_allowed_days(policy: dict) -> set[int]:
+    out: set[int] = set()
+    for preset in policy.get("allowed_duration_presets") or []:
+        days = _POLICY_PRESET_DAYS.get(str(preset or "").strip().lower())
+        if days:
+            out.add(days)
+    return out
+
+
+def _enforce_policy_days(policy: dict, days: int) -> None:
+    if not bool(policy.get("enabled")):
+        return
+    d = int(days)
+    min_days = int(policy.get("min_days", 1) or 1)
+    max_days = int(policy.get("max_days", 3650) or 3650)
+    if d < min_days or d > max_days:
+        raise HTTPException(status_code=400, detail=f"Allowed days range is {min_days}-{max_days}.")
+    if not bool(policy.get("allow_custom_days", True)):
+        allowed = _policy_allowed_days(policy)
+        if allowed and d not in allowed:
+            allowed_text = ", ".join(str(x) for x in sorted(allowed))
+            raise HTTPException(status_code=400, detail=f"This day value is not allowed for your account. Allowed: {allowed_text}")
+
+
+def _enforce_policy_traffic(policy: dict, gb: int) -> None:
+    if not bool(policy.get("enabled")):
+        return
+    if bool(policy.get("allow_custom_traffic", True)):
+        return
+    allowed = {int(x) for x in (policy.get("allowed_traffic_gb") or []) if str(x).isdigit()}
+    if allowed and int(gb) not in allowed:
+        allowed_text = ", ".join(str(x) for x in sorted(allowed))
+        raise HTTPException(status_code=400, detail=f"This traffic value is not allowed for your account. Allowed: {allowed_text}")
+
+
+def _user_expired(user: GuardinoUser) -> bool:
+    expire_at = user.expire_at
+    now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
+    return expire_at < now
+
+
+def _user_used_gb_float(user: GuardinoUser) -> float:
+    return float(user.used_bytes or 0) / float(BYTES_PER_GB)
+
+
+def _enforce_delete_policy(user: GuardinoUser, policy: dict) -> None:
+    if not bool(policy.get("allow_user_delete", True)):
+        raise HTTPException(status_code=403, detail="User delete/refund is disabled for your account.")
+
+    try:
+        expired_used_limit = float(policy.get("delete_expired_used_gb_limit", 1.0))
+    except Exception:
+        expired_used_limit = 1.0
+    if _user_expired(user) and _user_used_gb_float(user) > max(0.0, expired_used_limit):
+        raise HTTPException(status_code=400, detail="Expired users with usage above the configured limit cannot be deleted/refunded.")
+
+    window_days = _policy_window_days(policy)
+    if window_days > 0:
+        created_at = user.created_at
+        if not created_at:
+            raise HTTPException(status_code=400, detail="User creation date is missing.")
+        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
+        if now - created_at > timedelta(days=window_days):
+            raise HTTPException(status_code=400, detail=f"Delete/refund window expired ({window_days} days).")
+
+
 async def _delete_subaccounts_remote_first(
     db: AsyncSession,
     subs: list[SubAccount],
@@ -130,6 +214,8 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
+    policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_policy_days(policy, payload.days)
 
     # price: only time amount (optional)
     time_amount = 0
@@ -214,6 +300,8 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSes
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
+    policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_policy_days(policy, payload.days)
 
     order = Order(
         reseller_id=reseller.id,
@@ -307,6 +395,8 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
+    policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_policy_traffic(policy, payload.add_gb)
 
     qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs.scalars().all()
@@ -486,17 +576,19 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
+    policy = await get_effective_user_policy(db, reseller.id)
 
     # Determine refundable GB under policy (10 days, remaining GB)
-    refundable = refundable_gb_for_user(user)
+    refundable = refundable_gb_for_user(user, window_days=_policy_window_days(policy))
     if payload.action == "delete":
-        # Delete is always allowed; refund is optional and policy-based.
+        _enforce_delete_policy(user, policy)
         refund_gb = max(0, int(refundable))
     else:
         if refundable <= 0:
             raise HTTPException(status_code=400, detail="Refund window expired or no remaining volume")
         if payload.decrease_gb is None:
             raise HTTPException(status_code=400, detail="decrease_gb is required for decrease")
+        _enforce_policy_traffic(policy, payload.decrease_gb)
         refund_gb = min(int(payload.decrease_gb), int(refundable))
         if refund_gb <= 0:
             raise HTTPException(status_code=400, detail="Nothing to refund")
@@ -629,6 +721,9 @@ async def reset_user_usage(user_id: int, db: AsyncSession = Depends(get_db), res
     user = q.scalar_one_or_none()
     if not user or user.status == UserStatus.deleted:
         raise HTTPException(status_code=404, detail="User not found")
+    policy = await get_effective_user_policy(db, reseller.id)
+    if not bool(policy.get("allow_reset_usage", True)):
+        raise HTTPException(status_code=403, detail="Usage reset is disabled for your account.")
 
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs_sub.scalars().all()
@@ -693,7 +788,9 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
     _raise_remote_sync_failed("Revoke subscription", remote_sync_errors)
 
     # Rotate master subscription token as well so old central link is invalidated.
+    old_master_sub_token = user.master_sub_token
     user.master_sub_token = await _new_unique_master_sub_token(db)
+    await remember_revoked_master_sub_token(db, old_master_sub_token)
 
     await db.commit()
     return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail="master_sub_rotated=1")

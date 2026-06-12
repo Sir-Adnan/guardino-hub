@@ -5,7 +5,7 @@ from typing import Optional
 
 _PRESETS = {
     "7d": 7,
-    "1m": 30,
+    "1m": 31,
     "3m": 90,
     "6m": 180,
     "1y": 365,

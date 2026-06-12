@@ -8,6 +8,7 @@ import { storage } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
@@ -22,6 +23,22 @@ type UserDefaults = {
   label_suffix: string;
   username_prefix: string;
   username_suffix: string;
+  show_guardino_master_sub: boolean;
+};
+
+type ResellerUserPolicy = {
+  enabled: boolean;
+  allow_custom_days: boolean;
+  allow_custom_traffic: boolean;
+  allow_no_expire: boolean;
+  allow_user_delete: boolean;
+  allow_reset_usage: boolean;
+  min_days: number;
+  max_days: number;
+  delete_refund_window_days: number;
+  delete_expired_used_gb_limit: number;
+  allowed_duration_presets: string[];
+  allowed_traffic_gb: number[];
 };
 
 type UserDefaultsEnvelope = {
@@ -46,7 +63,42 @@ const EMPTY_DEFAULTS: UserDefaults = {
   label_suffix: "",
   username_prefix: "",
   username_suffix: "",
+  show_guardino_master_sub: false,
 };
+
+const EMPTY_POLICY: ResellerUserPolicy = {
+  enabled: false,
+  allow_custom_days: true,
+  allow_custom_traffic: true,
+  allow_no_expire: false,
+  allow_user_delete: true,
+  allow_reset_usage: true,
+  min_days: 1,
+  max_days: 3650,
+  delete_refund_window_days: 10,
+  delete_expired_used_gb_limit: 1,
+  allowed_duration_presets: ["7d", "1m", "3m", "6m", "1y"],
+  allowed_traffic_gb: [20, 30, 50, 70, 100, 150, 200],
+};
+
+function normalizePolicy(raw: Partial<ResellerUserPolicy> | null | undefined): ResellerUserPolicy {
+  const p = { ...EMPTY_POLICY, ...(raw || {}) };
+  return {
+    ...p,
+    enabled: !!p.enabled,
+    allow_custom_days: !!p.allow_custom_days,
+    allow_custom_traffic: !!p.allow_custom_traffic,
+    allow_no_expire: !!p.allow_no_expire,
+    allow_user_delete: !!p.allow_user_delete,
+    allow_reset_usage: !!p.allow_reset_usage,
+    min_days: Math.max(1, Number(p.min_days) || 1),
+    max_days: Math.max(1, Number(p.max_days) || 3650),
+    delete_refund_window_days: Math.max(0, Math.min(36500, Number(p.delete_refund_window_days ?? 10) || 0)),
+    delete_expired_used_gb_limit: Math.max(0, Number(p.delete_expired_used_gb_limit ?? 1) || 0),
+    allowed_duration_presets: Array.isArray(p.allowed_duration_presets) ? p.allowed_duration_presets : EMPTY_POLICY.allowed_duration_presets,
+    allowed_traffic_gb: Array.isArray(p.allowed_traffic_gb) ? p.allowed_traffic_gb : EMPTY_POLICY.allowed_traffic_gb,
+  };
+}
 
 function toggleId(list: number[], id: number, checked: boolean): number[] {
   const s = new Set(list);
@@ -66,6 +118,7 @@ export default function SettingsPage() {
   const [loadingDefaults, setLoadingDefaults] = React.useState(true);
   const [resellerDefaults, setResellerDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
   const [globalDefaults, setGlobalDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
+  const [globalPolicy, setGlobalPolicy] = React.useState<ResellerUserPolicy>(EMPTY_POLICY);
 
   const [resellerNodes, setResellerNodes] = React.useState<NodeLite[]>([]);
   const [adminNodes, setAdminNodes] = React.useState<NodeLite[]>([]);
@@ -114,7 +167,7 @@ export default function SettingsPage() {
         apiFetch<any>("/api/v1/reseller/nodes"),
       ]);
 
-      setResellerDefaults(env.reseller_defaults || EMPTY_DEFAULTS);
+      setResellerDefaults(env.effective || env.reseller_defaults || EMPTY_DEFAULTS);
 
       const resellerNodeItems = (resellerNodeRes?.items || resellerNodeRes || []).map((n: any) => ({
         id: n.id,
@@ -125,11 +178,13 @@ export default function SettingsPage() {
       setResellerNodes(resellerNodeItems);
 
       if (me?.role === "admin") {
-        const [g, adminNodeRes] = await Promise.all([
+        const [g, adminNodeRes, gp] = await Promise.all([
           apiFetch<UserDefaults>("/api/v1/admin/settings/user-defaults"),
           apiFetch<any>("/api/v1/admin/nodes?offset=0&limit=500"),
+          apiFetch<ResellerUserPolicy>("/api/v1/admin/settings/user-policy"),
         ]);
         setGlobalDefaults(g || EMPTY_DEFAULTS);
+        setGlobalPolicy(normalizePolicy(gp));
         setAdminNodes((adminNodeRes?.items || []).map((n: any) => ({
           id: n.id,
           name: n.name,
@@ -183,6 +238,19 @@ export default function SettingsPage() {
       push({ title: "پیش‌فرض سراسری ذخیره شد", type: "success" });
     } catch (e: any) {
       push({ title: "خطا در ذخیره پیش‌فرض سراسری", desc: String(e?.message || e), type: "error" });
+    }
+  }
+
+  async function saveGlobalPolicy() {
+    try {
+      const saved = await apiFetch<ResellerUserPolicy>("/api/v1/admin/settings/user-policy", {
+        method: "PUT",
+        body: JSON.stringify(normalizePolicy(globalPolicy)),
+      });
+      setGlobalPolicy(normalizePolicy(saved));
+      push({ title: "سیاست سراسری ذخیره شد", type: "success" });
+    } catch (e: any) {
+      push({ title: "خطا در ذخیره سیاست سراسری", desc: String(e?.message || e), type: "error" });
     }
   }
 
@@ -363,6 +431,19 @@ export default function SettingsPage() {
                   </select>
                 </div>
 
+                <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium">ساب مرکزی Guardino</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">نمایش لینک تجمیعی گاردینو بعد از لینک‌های مستقیم</div>
+                    </div>
+                    <Switch
+                      checked={!!resellerDefaults.show_guardino_master_sub}
+                      onCheckedChange={(v) => setResellerDefaults((x) => ({ ...x, show_guardino_master_sub: v }))}
+                    />
+                  </div>
+                </div>
+
                 {resellerDefaults.default_node_mode === "manual" ? (
                   <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                     <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب نودهای پیش‌فرض (حالت دستی)</div>
@@ -432,6 +513,7 @@ export default function SettingsPage() {
           </Card>
 
           {me?.role === "admin" ? (
+            <>
             <Card className="overflow-hidden">
               <CardHeader>
                 <div className="text-sm font-semibold">پیش‌فرض سراسری برای همه رسیلرها (ادمین)</div>
@@ -465,6 +547,19 @@ export default function SettingsPage() {
                       <option value="manual">انتخاب دستی</option>
                       <option value="group">گروهی (Tag)</option>
                     </select>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-medium">ساب مرکزی Guardino</div>
+                        <div className="text-xs text-[hsl(var(--fg))]/70">نمایش لینک تجمیعی گاردینو برای رسیلرهای بدون تنظیم اختصاصی</div>
+                      </div>
+                      <Switch
+                        checked={!!globalDefaults.show_guardino_master_sub}
+                        onCheckedChange={(v) => setGlobalDefaults((x) => ({ ...x, show_guardino_master_sub: v }))}
+                      />
+                    </div>
                   </div>
 
                   {globalDefaults.default_node_mode === "manual" ? (
@@ -534,6 +629,49 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div className="text-sm font-semibold">سیاست سراسری حذف و ریست کاربران</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.</div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <span className="text-sm">اجازه حذف و ریفاند کاربر</span>
+                    <Switch checked={globalPolicy.allow_user_delete} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <span className="text-sm">اجازه ریست مصرف</span>
+                    <Switch checked={globalPolicy.allow_reset_usage} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">مهلت حذف/ریفاند از زمان ساخت (روز، 0 یعنی نامحدود)</div>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={globalPolicy.delete_refund_window_days}
+                      onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">حداکثر مصرف کاربر منقضی برای حذف (GB)</div>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={globalPolicy.delete_expired_used_gb_limit}
+                      onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" onClick={saveGlobalPolicy}>ذخیره سیاست سراسری</Button>
+                  <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                </div>
+              </CardContent>
+            </Card>
+            </>
           ) : null}
 
           <div className="pt-2">

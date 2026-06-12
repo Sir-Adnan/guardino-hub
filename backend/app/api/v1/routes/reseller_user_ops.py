@@ -17,8 +17,7 @@ from app.services.user_inputs import resolve_days, sanitize_username, random_use
 from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse, PriceQuoteResponse
 from urllib.parse import urlparse
 from app.services.reseller_user_policy import (
-    get_user_policy_setting,
-    reseller_user_policy_key,
+    get_effective_user_policy,
 )
 
 router = APIRouter()
@@ -91,7 +90,7 @@ def _enforce_user_policy(payload: CreateUserRequest, policy: dict) -> int:
 
 @router.post("/quote", response_model=PriceQuoteResponse)
 async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    policy = await get_effective_user_policy(db, reseller.id)
     days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
@@ -101,7 +100,7 @@ async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), 
 
 @router.post("", response_model=CreateUserResponse)
 async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    policy = await get_user_policy_setting(db, reseller_user_policy_key(reseller.id))
+    policy = await get_effective_user_policy(db, reseller.id)
     days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
@@ -136,6 +135,7 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
         effective_username = sanitize_username(payload.username) or None
 
     remote_label = effective_username or payload.label
+    create_status = "on_hold" if str(payload.create_status or "").strip().lower() == "on_hold" else "active"
 
     user = GuardinoUser(
         owner_reseller_id=reseller.id,
@@ -150,6 +150,7 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
             "requested_node_ids": payload.node_ids,
             "requested_node_group": payload.node_group,
             "remote_label": remote_label,
+            "create_status": create_status,
             "no_expire": bool(int(days_final) == 0),
         },
     )
@@ -161,7 +162,12 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
         for n in nodes:
             adapter = get_adapter(n)
             panel_username = _panel_username(remote_label)
-            pr = await adapter.provision_user(label=panel_username, total_gb=payload.total_gb, expire_at=expire_at)
+            pr = await adapter.provision_user(
+                label=panel_username,
+                total_gb=payload.total_gb,
+                expire_at=expire_at,
+                status=create_status,
+            )
             direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
             sa = SubAccount(
                 user_id=user.id,

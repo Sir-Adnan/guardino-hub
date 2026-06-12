@@ -13,5 +13,5 @@ class NodeLink(BaseModel):
 
 class UserLinksResponse(BaseModel):
     user_id: int
-    master_link: str
+    master_link: Optional[str] = None
     node_links: list[NodeLink]

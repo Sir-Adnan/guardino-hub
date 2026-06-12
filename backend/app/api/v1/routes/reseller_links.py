@@ -12,6 +12,9 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
 from app.schemas.links import UserLinksResponse, NodeLink
+from app.services.user_defaults import (
+    get_effective_user_defaults,
+)
 
 def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     if not direct:
@@ -39,6 +42,11 @@ def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     return origin.rstrip("/") + u
 
 router = APIRouter()
+
+
+async def _show_guardino_master_sub(db: AsyncSession, reseller_id: int) -> bool:
+    effective = await get_effective_user_defaults(db, reseller_id)
+    return bool(effective.get("show_guardino_master_sub", False))
 
 @router.get("/{user_id}/links", response_model=UserLinksResponse)
 async def get_links(user_id: int, request: Request, refresh: bool = False, db: AsyncSession = Depends(get_db), reseller = Depends(block_if_balance_zero)):
@@ -117,5 +125,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
     if refresh:
         await db.commit()
 
-    master = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
+    master = None
+    if await _show_guardino_master_sub(db, reseller.id):
+        master = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
     return UserLinksResponse(user_id=user.id, master_link=master, node_links=node_links)

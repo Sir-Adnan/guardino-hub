@@ -197,7 +197,7 @@ class PasarguardAdapter:
 
     async def _pick_default_template_id(self) -> int | None:
         try:
-            js = await self._get_json("/api/user_templates/simple")
+            js = await self._get_json("/api/user_templates/simple?offset=0&limit=500&all=true")
             templates = js.get("templates") if isinstance(js, dict) else None
             if isinstance(templates, list) and templates:
                 for t in templates:
@@ -213,8 +213,14 @@ class PasarguardAdapter:
         return None
 
     def _all_proxy_settings(self) -> dict[str, Any]:
-        # Force-enable all common proxy families for newly created users.
-        # Pasarguard validates missing optional fields and generates identifiers where needed.
+        # PasarGuard 5.x generates missing protocol secrets/defaults server-side.
+        # Keep this minimal so newer protocols keep working without Guardino
+        # needing to know every panel-side schema detail.
+        return {}
+
+    def _legacy_proxy_settings(self) -> dict[str, Any]:
+        # Compatibility fallback for older PasarGuard builds that expected
+        # explicit protocol keys instead of generating all defaults from {}.
         return {
             "vmess": {},
             "vless": {},
@@ -225,7 +231,7 @@ class PasarguardAdapter:
     def _has_proxy_settings(self, proxy_settings: Any) -> bool:
         if not isinstance(proxy_settings, dict):
             return False
-        for key in ("vmess", "vless", "trojan", "shadowsocks"):
+        for key in ("vmess", "vless", "trojan", "shadowsocks", "wireguard", "hysteria"):
             val = proxy_settings.get(key)
             if isinstance(val, dict) and len(val) > 0:
                 return True
@@ -258,7 +264,21 @@ class PasarguardAdapter:
         if proxy_ok and (group_ok or group_id is None):
             return
 
-        # 2) Try modify with empty proxy_settings (some versions auto-generate defaults)
+        # 2) Try the older explicit proxy payload.
+        try:
+            payload: dict[str, Any] = {"proxy_settings": self._legacy_proxy_settings()}
+            if group_id:
+                payload["group_ids"] = [group_id]
+            await self._put_json(f"/api/user/{remote_identifier}", payload)
+        except Exception:
+            pass
+
+        user_id, proxy_ok, group_ids = await self._get_user_state(remote_identifier)
+        group_ok = (group_id is None) or (group_id in group_ids)
+        if proxy_ok and (group_ok or group_id is None):
+            return
+
+        # 3) Try modify with empty proxy_settings (some versions auto-generate defaults)
         try:
             payload: dict[str, Any] = {"proxy_settings": {}}
             if group_id:
@@ -272,7 +292,7 @@ class PasarguardAdapter:
         if proxy_ok and (group_ok or group_id is None):
             return
 
-        # 3) Final fallback: dedicated bulk proxy API
+        # 4) Final fallback: dedicated bulk proxy API
         if user_id is not None:
             bulk_payload: dict[str, Any] = {"users": [user_id], "method": "chacha20-ietf-poly1305"}
             if group_id:
@@ -294,15 +314,22 @@ class PasarguardAdapter:
                 f"Pasarguard user '{remote_identifier}' created but missing required config: {', '.join(missing)}"
             )
 
-    async def provision_user(self, label: str, total_gb: int, expire_at: datetime) -> ProvisionResult:
+    async def provision_user(self, label: str, total_gb: int, expire_at: datetime, status: str = "active") -> ProvisionResult:
+        create_status = "on_hold" if str(status or "").strip().lower() == "on_hold" else "active"
         data_limit = int(total_gb) * 1024 * 1024 * 1024
+        expire_ts = int(expire_at.timestamp())
         payload: dict[str, Any] = {
             "username": label,
-            "expire": int(expire_at.timestamp()),
+            "expire": expire_ts,
             "data_limit": data_limit,
             "data_limit_reset_strategy": "no_reset",
-            "status": "active",
+            "status": create_status,
         }
+        if create_status == "on_hold":
+            now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
+            duration = max(0, int((expire_at - now).total_seconds()))
+            payload["expire"] = None
+            payload["on_hold_expire_duration"] = min(duration, 2_147_483_647)
 
         # Default selection rule (Guardino): enable ALL inbounds by default.
         # In Pasarguard, this is done via group_ids.
@@ -322,26 +349,29 @@ class PasarguardAdapter:
         try:
             js = await self._post_json("/api/user", payload_with_proxies)
         except AdapterError:
-            # Some Pasarguard versions may reject proxy_settings in create payload.
-            # Retry without proxy_settings before falling back to template creation.
+            # Some PasarGuard versions may reject empty proxy_settings. Retry the
+            # legacy explicit payload before falling back to template creation.
             try:
-                js = await self._post_json("/api/user", payload)
-                created_without_proxy_settings = True
+                js = await self._post_json("/api/user", {**payload, "proxy_settings": self._legacy_proxy_settings()})
             except AdapterError:
-                template_id = await self._pick_default_template_id()
-                if not template_id:
-                    raise
-                # from_template only accepts user_template_id + username; then apply limits via PUT
-                js = await self._post_json("/api/user/from_template", {"user_template_id": template_id, "username": label})
-                # Apply limits + group_ids + proxy settings after template creation
-                update_payload: dict[str, Any] = {
-                    "expire": int(expire_at.timestamp()),
-                    "data_limit": data_limit,
-                    "proxy_settings": self._all_proxy_settings(),
-                }
-                if group_id:
-                    update_payload["group_ids"] = [group_id]
-                await self._put_json(f"/api/user/{label}", update_payload)
+                try:
+                    js = await self._post_json("/api/user", payload)
+                    created_without_proxy_settings = True
+                except AdapterError:
+                    template_id = await self._pick_default_template_id()
+                    if not template_id:
+                        raise
+                    # from_template only accepts user_template_id + username; then apply limits via PUT
+                    js = await self._post_json("/api/user/from_template", {"user_template_id": template_id, "username": label})
+                    # Apply limits + group_ids + proxy settings after template creation
+                    update_payload: dict[str, Any] = {
+                        "expire": int(expire_at.timestamp()),
+                        "data_limit": data_limit,
+                        "proxy_settings": self._all_proxy_settings(),
+                    }
+                    if group_id:
+                        update_payload["group_ids"] = [group_id]
+                    await self._put_json(f"/api/user/{label}", update_payload)
 
         remote_identifier = (js or {}).get("username") or label
         if created_without_proxy_settings:
@@ -373,6 +403,14 @@ class PasarguardAdapter:
         await self._delete(f"/api/user/{remote_identifier}")
 
     async def set_status(self, remote_identifier: str, status: str) -> None:
+        desired = str(status or "").strip().lower()
+        if desired in {"active", "disabled"}:
+            try:
+                await self._put_json(f"/api/user/{remote_identifier}/disabled", {"disabled": desired == "disabled"})
+                return
+            except AdapterError:
+                # Older panels did not expose the dedicated toggle endpoint.
+                pass
         await self._put_json(f"/api/user/{remote_identifier}", {"status": status})
 
     async def disable_user(self, remote_identifier: str) -> None:

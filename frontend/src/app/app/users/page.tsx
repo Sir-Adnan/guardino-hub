@@ -51,7 +51,7 @@ type ResellerStatsOut = {
 };
 type LinksResp = {
   user_id: number;
-  master_link: string;
+  master_link?: string | null;
   node_links: Array<{
     node_id: number;
     node_name?: string;
@@ -156,6 +156,7 @@ export default function UsersPage() {
   const locked = (me?.balance ?? 1) <= 0;
 
   const [q, setQ] = React.useState("");
+  const [debouncedQ, setDebouncedQ] = React.useState("");
   const [data, setData] = React.useState<UsersPage | null>(null);
   const [resellerStats, setResellerStats] = React.useState<ResellerStatsOut | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
@@ -185,7 +186,7 @@ export default function UsersPage() {
   const [editOpen, setEditOpen] = React.useState(false);
   const [editUser, setEditUser] = React.useState<UserOut | null>(null);
   const [quickMode, setQuickMode] = React.useState<"extend" | "add" | "dec" | "time_dec">("extend");
-  const [editDays, setEditDays] = React.useState(30);
+  const [editDays, setEditDays] = React.useState(31);
   const [editDecDays, setEditDecDays] = React.useState(7);
   const [editAddGb, setEditAddGb] = React.useState(10);
   const [editDecGb, setEditDecGb] = React.useState(5);
@@ -199,7 +200,11 @@ export default function UsersPage() {
     setErr(null);
     try {
       const offset = (page - 1) * pageSize;
-      const res = await apiFetch<UsersPage>(`/api/v1/reseller/users?offset=${offset}&limit=${pageSize}`);
+      const params = new URLSearchParams({ offset: String(offset), limit: String(pageSize) });
+      const search = debouncedQ.trim();
+      if (search) params.set("q", search);
+      if (filter !== "all") params.set("status", filter);
+      const res = await apiFetch<UsersPage>(`/api/v1/reseller/users?${params.toString()}`);
       setData(res);
       try {
         const statsRes = await apiFetch<ResellerStatsOut>("/api/v1/reseller/stats");
@@ -226,14 +231,26 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     load();
-  }, [page, pageSize]);
+  }, [page, pageSize, debouncedQ, filter]);
 
   React.useEffect(() => {
     const timer = window.setInterval(() => {
       load().catch(() => undefined);
     }, AUTO_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [page, pageSize]);
+  }, [page, pageSize, debouncedQ, filter]);
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQ(q.trim());
+      setPage(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [filter]);
 
   React.useEffect(() => {
     loadNodes().catch(() => undefined);
@@ -263,12 +280,18 @@ export default function UsersPage() {
   }, []);
 
   function applyFilter(items: UserOut[]) {
-    const qq = q.trim().toLowerCase();
+    const qq = debouncedQ.trim().toLowerCase();
     let out = items;
     if (qq) out = out.filter((u) => (u.label || "").toLowerCase().includes(qq));
 
     if (filter !== "all") {
-      out = out.filter((u) => (u.status || "").toLowerCase() === filter);
+      out = out.filter((u) => {
+        if (filter === "expired") {
+          const days = safeDaysLeft(u.expire_at);
+          return days !== null && days < 0;
+        }
+        return (u.status || "").toLowerCase() === filter;
+      });
     }
 
     return out;
@@ -376,6 +399,10 @@ export default function UsersPage() {
   async function copyMaster(u: UserOut, ev?: React.MouseEvent<HTMLElement>) {
     try {
       const res = await fetchUserLinks(u, true);
+      if (!res.master_link) {
+        push({ title: "ساب مرکزی Guardino غیرفعال است", type: "warning" });
+        return;
+      }
       const ok = await copyText(res.master_link);
       if (ok) showCopyHint(ev || null, t("common.copied"));
       else push({ title: t("common.failed"), type: "error" });
@@ -389,6 +416,10 @@ export default function UsersPage() {
       const res = await fetchUserLinks(u, true);
       const direct = extractDirectLinks(res);
       const lines = [...direct, res.master_link].filter(Boolean).join("\n");
+      if (!lines) {
+        push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+        return;
+      }
       const ok = await copyText(lines);
       if (ok) showCopyHint(ev || null, "همه لینک‌ها کپی شد");
       else push({ title: t("common.failed"), type: "error" });
@@ -491,7 +522,7 @@ export default function UsersPage() {
   function openQuickEdit(u: UserOut) {
     setEditUser(u);
     setQuickMode("extend");
-    setEditDays(30);
+    setEditDays(31);
     setEditDecDays(7);
     setEditAddGb(10);
     setEditDecGb(5);
@@ -997,7 +1028,7 @@ export default function UsersPage() {
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
-                  {[7, 30, 90, 180].map((d) => (
+                  {[7, 31, 90, 180].map((d) => (
                     <Button key={d} type="button" size="sm" variant={editDays === d ? "primary" : "outline"} onClick={() => setEditDays(d)}>
                       {d}
                     </Button>
@@ -1096,7 +1127,7 @@ export default function UsersPage() {
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
-                  {[1, 3, 7, 15, 30].map((d) => (
+                  {[1, 3, 7, 15, 31].map((d) => (
                     <Button key={d} type="button" size="sm" variant={editDecDays === d ? "primary" : "outline"} onClick={() => setEditDecDays(d)}>
                       -{d} روز
                     </Button>
@@ -1260,6 +1291,7 @@ export default function UsersPage() {
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
               پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
             </div>
+            {links.master_link ? (
             <div className="space-y-2">
               <div className="font-semibold">{t("users.masterSub")}</div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 break-all">{links.master_link}</div>
@@ -1267,7 +1299,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    copyText(links.master_link).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                    copyText(links.master_link || "").then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
                 >
                   {t("common.copy")}
@@ -1299,6 +1331,39 @@ export default function UsersPage() {
                   <Copy size={15} /> کپی همه لینک‌ها
                 </Button>
               </div>
+            </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => {
+                  const directList = extractDirectLinks(links);
+                  if (!directList.length) {
+                    push({ title: "لینک مستقیم موجود نیست", type: "warning" });
+                    return;
+                  }
+                  copyText(directList.join("\n")).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                }}
+              >
+                <Link2 size={15} /> کپی لینک‌های مستقیم
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => {
+                  const direct = extractDirectLinks(links);
+                  const all = [...direct, links.master_link].filter(Boolean).join("\n");
+                  if (!all) {
+                    push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+                    return;
+                  }
+                  copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
+                }}
+              >
+                <Copy size={15} /> کپی همه لینک‌ها
+              </Button>
             </div>
 
             <div className="space-y-2">

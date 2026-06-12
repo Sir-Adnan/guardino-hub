@@ -19,7 +19,7 @@ import { useAuth } from "@/components/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { cn } from "@/lib/cn";
-import { CalendarDays, Copy, ExternalLink, Gauge, Link2, Lock, Sparkles, UserPlus2 } from "lucide-react";
+import { CalendarDays, Copy, ExternalLink, Gauge, Link2, Lock, QrCode, Settings2, Sparkles, UserPlus2 } from "lucide-react";
 
 type QuoteResp = { total_amount: number; per_node_amount: Record<string, number>; time_amount: number };
 type CreateResp = { user_id: number; master_sub_token: string; charged_amount: number; nodes_provisioned: number[] };
@@ -44,7 +44,7 @@ type UserDefaultsEnvelope = {
 type NodeLite = { id: number; name: string; panel_type: string; base_url?: string; tags?: string[] };
 type LinksResp = {
   user_id: number;
-  master_link: string;
+  master_link?: string | null;
   node_links: Array<{
     node_id: number;
     node_name?: string;
@@ -60,7 +60,7 @@ type LinksResp = {
 type CreatedUserLinks = {
   user_id: number;
   label: string;
-  master_link: string;
+  master_link?: string | null;
   node_links: Array<{ node_id: number; node_label: string; full_url: string; status: string; detail?: string }>;
 };
 
@@ -87,7 +87,7 @@ type ResellerUserPolicy = {
 
 const durationPresets = [
   { key: "7d", label: "۷ روز", days: 7 },
-  { key: "1m", label: "۱ ماه", days: 30 },
+  { key: "1m", label: "۱ ماه", days: 31 },
   { key: "3m", label: "۳ ماه", days: 90 },
   { key: "6m", label: "۶ ماه", days: 180 },
   { key: "1y", label: "۱ سال", days: 365 },
@@ -164,6 +164,11 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
   return `${origin.replace(/\/+$/, "")}${uu}`;
 }
 
+function qrImageUrl(value: string, size: number = 240) {
+  const s = Math.max(80, Math.min(512, Number(size) || 240));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=8&data=${encodeURIComponent(value)}`;
+}
+
 export default function NewUserPage() {
   const r = useRouter();
   const { push } = useToast();
@@ -171,14 +176,14 @@ export default function NewUserPage() {
   const { refresh: refreshMe } = useAuth();
 
   const [label, setLabel] = React.useState("");
-  const [username, setUsername] = React.useState("");
   const [randomize, setRandomize] = React.useState(false);
+  const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("on_hold");
 
   const [totalGb, setTotalGb] = React.useState<number>(10);
   const [pricingMode, setPricingMode] = React.useState<"per_node" | "bundle">("bundle");
 
   const [preset, setPreset] = React.useState<string>("1m");
-  const [days, setDays] = React.useState<number>(30);
+  const [days, setDays] = React.useState<number>(31);
   const [targetExpireAt, setTargetExpireAt] = React.useState<Date | null>(null);
 
   const [nodeMode, setNodeMode] = React.useState<"all" | "manual" | "group">("all");
@@ -197,6 +202,7 @@ export default function NewUserPage() {
 
   const [resultOpen, setResultOpen] = React.useState(false);
   const [resultLinks, setResultLinks] = React.useState<CreatedUserLinks[]>([]);
+  const [qrPreview, setQrPreview] = React.useState<{ title: string; url: string } | null>(null);
   const [createSummary, setCreateSummary] = React.useState<CreateSummary | null>(null);
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
@@ -276,7 +282,6 @@ export default function NewUserPage() {
   function randomName() {
     const v = randomLabel();
     setLabel(v);
-    setUsername(v);
     if (randomize) setRandomize(false);
   }
 
@@ -461,10 +466,10 @@ export default function NewUserPage() {
 
   function buildUsername(index: number, count: number): string | undefined {
     if (randomize) return undefined;
-    const base = username.trim();
+    const base = label.trim();
     if (!base) return undefined;
     const indexed = count > 1 ? `${base}_${index}` : base;
-    return `${defaults.username_prefix || ""}${indexed}${defaults.username_suffix || ""}`;
+    return indexed;
   }
 
   function buildPayload(labelValue: string, usernameValue: string | undefined) {
@@ -477,6 +482,7 @@ export default function NewUserPage() {
       total_gb: totalGb,
       days,
       duration_preset: preset || undefined,
+      create_status: createStatus,
       pricing_mode: pricingMode,
       node_ids,
       node_group,
@@ -515,14 +521,14 @@ export default function NewUserPage() {
       return {
         user_id: userId,
         label: labelValue,
-        master_link: lr.master_link || fallbackMaster,
+        master_link: lr.master_link || "",
         node_links,
       };
     } catch {
       return {
         user_id: userId,
         label: labelValue,
-        master_link: fallbackMaster,
+        master_link: "",
         node_links: [],
       };
     }
@@ -651,6 +657,10 @@ export default function NewUserPage() {
 
   function copyAllMaster() {
     const all = resultLinks.map((x) => x.master_link).filter(Boolean).join("\n");
+    if (!all) {
+      push({ title: "ساب مرکزی Guardino غیرفعال است", type: "warning" });
+      return;
+    }
     copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
   }
 
@@ -744,30 +754,23 @@ export default function NewUserPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
-                {t("newUser.label")} <HelpTip text={t("help.label")} />
+                نام کاربر <HelpTip text="هم برای نمایش داخل گاردینو استفاده می‌شود و هم نام کاربر پنل‌های مرزبان/پاسارگارد از همین مقدار ساخته می‌شود." />
               </label>
-              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً customer-01" />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً customer-01" />
+                <Button type="button" variant="outline" onClick={randomName}>{t("newUser.random")}</Button>
+              </div>
               {(defaults.label_prefix || defaults.label_suffix) ? (
                 <div className="text-xs text-[hsl(var(--fg))]/60">
                   پیشوند/پسوند Label از تنظیمات: <span dir="ltr">{defaults.label_prefix || ""}[label]{defaults.label_suffix || ""}</span>
                 </div>
               ) : null}
-            </div>
-
-            <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
-              <label className="text-sm flex items-center gap-2">
-                {t("newUser.username")} <HelpTip text={t("help.username")} />
-              </label>
-              <div className="flex gap-2">
-                <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اگر خالی باشد، نام پنل از label ساخته می‌شود" />
-                <Button type="button" variant="outline" onClick={randomName}>{t("newUser.random")}</Button>
-              </div>
               {(defaults.username_prefix || defaults.username_suffix) ? (
                 <div className="text-xs text-[hsl(var(--fg))]/60">
-                  پیشوند/پسوند Username از تنظیمات: <span dir="ltr">{defaults.username_prefix || ""}[username]{defaults.username_suffix || ""}</span>
+                  تنظیمات قدیمی پیشوند/پسوند Username دیگر در فرم ساده استفاده نمی‌شود تا نام نمایش و نام پنل یکی بمانند.
                 </div>
               ) : null}
               <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/70">
@@ -888,6 +891,30 @@ export default function NewUserPage() {
             </div>
           </div>
 
+          <details className="group rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-1 py-1 text-sm font-semibold">
+              <span className="flex items-center gap-2">
+                <Settings2 size={16} />
+                تنظیمات پیشرفته
+              </span>
+              <span className="text-xs font-normal text-[hsl(var(--fg))]/65">
+                {createStatus === "on_hold" ? "On Hold" : "Active"} • {pricingMode === "bundle" ? "Bundle" : "Per Node"} • {nodeMode === "all" ? "همه نودها" : nodeMode === "manual" ? "انتخاب دستی" : "گروهی"}
+              </span>
+            </summary>
+
+            <div className="mt-3 space-y-4">
+              <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">ساخت کاربر در حالت On Hold</div>
+                    <div className="mt-1 text-xs text-[hsl(var(--fg))]/70">
+                      برای مرزبان و پاسارگارد اعمال می‌شود. اگر خاموش باشد، کاربر در پنل مقصد Active ساخته می‌شود.
+                    </div>
+                  </div>
+                  <Switch checked={createStatus === "on_hold"} onCheckedChange={(checked) => setCreateStatus(checked ? "on_hold" : "active")} />
+                </div>
+              </div>
+
           <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
             <label className="text-sm flex items-center gap-2">
               {t("newUser.pricingMode")} <HelpTip text={t("help.pricingMode")} />
@@ -986,6 +1013,8 @@ export default function NewUserPage() {
               </div>
             ) : null}
           </div>
+            </div>
+          </details>
 
           <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
             <div className="flex items-center gap-2">
@@ -1126,6 +1155,15 @@ export default function NewUserPage() {
                               >
                                 <Copy size={14} /> {t("common.copy")}
                               </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-2 sm:w-[140px]"
+                                onClick={() => setQrPreview({ title: n.node_label, url: n.full_url })}
+                              >
+                                <QrCode size={14} /> QR
+                              </Button>
                             </div>
                           ) : (
                             <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{n.detail || t("users.noLink")}</div>
@@ -1138,21 +1176,34 @@ export default function NewUserPage() {
                   )}
                 </div>
 
+                {x.master_link ? (
                 <div className="space-y-2">
                   <div className="text-xs font-medium">اشتراک تجمیعی Guardino</div>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input value={x.master_link} readOnly />
+                    <Input value={x.master_link || ""} readOnly />
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="gap-2 sm:w-[140px]"
-                      onClick={() => copyText(x.master_link).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }))}
+                      onClick={() => copyText(x.master_link || "").then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }))}
                     >
                       <Copy size={14} /> {t("common.copy")}
                     </Button>
+                    {x.master_link ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 sm:w-[140px]"
+                        onClick={() => setQrPreview({ title: `Guardino - ${x.label}`, url: x.master_link || "" })}
+                      >
+                        <QrCode size={14} /> QR
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
+                ) : null}
               </div>
             ))}
             {!resultLinks.length ? <div className="text-xs text-[hsl(var(--fg))]/70">{t("common.empty")}</div> : null}
@@ -1171,6 +1222,31 @@ export default function NewUserPage() {
             </div>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        open={!!qrPreview}
+        onClose={() => setQrPreview(null)}
+        title={qrPreview ? `QR - ${qrPreview.title}` : "QR"}
+      >
+        {qrPreview ? (
+          <div className="space-y-3">
+            <div className="mx-auto w-fit rounded-xl border border-[hsl(var(--border))] bg-white p-2">
+              <img src={qrImageUrl(qrPreview.url)} alt={`QR ${qrPreview.title}`} width={240} height={240} className="h-[240px] w-[240px] object-contain" />
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/50 p-2 text-xs break-all">
+              {qrPreview.url}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => copyText(qrPreview.url).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }))}>
+                {t("common.copy")}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setQrPreview(null)}>
+                {t("common.cancel")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );
