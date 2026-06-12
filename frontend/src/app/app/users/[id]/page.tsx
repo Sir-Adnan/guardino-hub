@@ -123,7 +123,7 @@ export default function UserDetailPage() {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
-  const [opMode, setOpMode] = React.useState<OpMode>("extend");
+  const [opMode, setOpMode] = React.useState<OpMode>("renewal");
   const [extendDays, setExtendDays] = React.useState(31);
   const [decreaseDays, setDecreaseDays] = React.useState(7);
   const [addGb, setAddGb] = React.useState(10);
@@ -524,8 +524,11 @@ export default function UserDetailPage() {
                   </Button>
                 ) : (
                   <>
+                    <Button variant={opMode === "renewal" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("renewal")} type="button">
+                      <CalendarDays size={15} /> تمدید بسته‌ای
+                    </Button>
                     <Button variant={opMode === "extend" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("extend")} type="button">
-                      <CalendarDays size={15} /> تمدید
+                      <CalendarDays size={15} /> افزایش زمان
                     </Button>
                     <Button variant={opMode === "traffic_up" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_up")} type="button">
                       <Gauge size={15} /> افزایش حجم
@@ -575,7 +578,7 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "extend" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
+                  <div className="text-sm font-medium">افزایش مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
                     {[7, 31, 90, 180, 365].map((d) => (
                       <Button key={d} type="button" size="sm" variant={extendDays === d ? "primary" : "outline"} onClick={() => setExtendDays(d)}>

@@ -26,11 +26,11 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-x-hidden overflow-y-auto p-3 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/55 backdrop-blur-[2.5px]" onClick={onClose} />
       <div
         className={cn(
-          "relative my-4 w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_52%,hsl(var(--muted))_100%)] shadow-2xl shadow-slate-900/20 max-h-[92dvh] overflow-hidden sm:my-0",
+          "relative my-4 min-w-0 w-full max-w-xl rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_52%,hsl(var(--muted))_100%)] shadow-2xl shadow-slate-900/20 max-h-[92dvh] overflow-hidden sm:my-0",
           className
         )}
       >
@@ -44,7 +44,7 @@ export function Modal({
             ✕
           </button>
         </div>
-        <div className="max-h-[calc(92dvh-72px)] overflow-auto px-5 py-4">{children}</div>
+        <div className="max-h-[calc(92dvh-72px)] overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5">{children}</div>
       </div>
     </div>
   );

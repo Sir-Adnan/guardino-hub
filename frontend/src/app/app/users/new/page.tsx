@@ -177,7 +177,6 @@ export default function NewUserPage() {
   const locked = (me?.balance ?? 1) <= 0;
 
   const [label, setLabel] = React.useState("");
-  const [randomize, setRandomize] = React.useState(false);
   const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("active");
 
   const [totalGb, setTotalGb] = React.useState<number>(10);
@@ -282,7 +281,6 @@ export default function NewUserPage() {
 
   function randomName() {
     setLabel(randomLabel());
-    setRandomize(false);
   }
 
   async function loadNodes() {
@@ -459,9 +457,9 @@ export default function NewUserPage() {
   }
 
   function buildLabel(index: number, count: number) {
-    const base = randomize ? randomLabel() : label.trim();
+    const base = label.trim();
     if (!base) {
-      throw new Error("نام کاربری را وارد کنید یا گزینه رندوم را فعال کنید.");
+      throw new Error("نام کاربری را وارد کنید یا از دکمه رندوم استفاده کنید.");
     }
     const indexed = count > 1 ? `${base}-${index}` : base;
     return `${defaults.label_prefix || ""}${indexed}${defaults.label_suffix || ""}`;
@@ -485,8 +483,8 @@ export default function NewUserPage() {
   }
 
   function validateBeforeSubmit() {
-    if (!randomize && !label.trim()) {
-      throw new Error("نام کاربری را وارد کنید یا گزینه رندوم را فعال کنید.");
+    if (!label.trim()) {
+      throw new Error("نام کاربری را وارد کنید یا از دکمه رندوم استفاده کنید.");
     }
     if (nodeMode === "manual" && selectedNodeIds.length === 0) {
       throw new Error(t("newUser.nodeSelectRequired"));
@@ -767,9 +765,8 @@ export default function NewUserPage() {
                   <Input
                     className="min-w-0 flex-1 border-0 bg-transparent"
                     value={label}
-                    disabled={randomize}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder={randomize ? "نام رندوم ساخته می‌شود" : "مثلاً customer-01"}
+                    placeholder="مثلاً customer-01"
                   />
                   {defaults.label_suffix ? (
                     <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap border-r border-[hsl(var(--border))] px-3 text-xs text-[hsl(var(--fg))]/70">
@@ -784,10 +781,6 @@ export default function NewUserPage() {
                   الگوی نام نهایی: <span dir="ltr">{defaults.label_prefix || ""}[username]{defaults.label_suffix || ""}</span>
                 </div>
               ) : null}
-              <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/70">
-                <input type="checkbox" checked={randomize} onChange={(e) => setRandomize(e.target.checked)} />
-                ساخت خودکار نام رندوم با رعایت پیشوند/پسوند
-              </label>
             </div>
           </div>
 
@@ -917,9 +910,9 @@ export default function NewUserPage() {
               <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium">ساخت کاربر در حالت On Hold</div>
-                    <div className="mt-1 text-xs text-[hsl(var(--fg))]/70">
-                      برای مرزبان و پاسارگارد اعمال می‌شود. اگر خاموش باشد، کاربر در پنل مقصد Active ساخته می‌شود.
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      ساخت کاربر در حالت On Hold
+                      <HelpTip text="برای مرزبان و پاسارگارد اعمال می‌شود. اگر خاموش باشد، کاربر در پنل مقصد Active ساخته می‌شود." />
                     </div>
                   </div>
                   <Switch checked={createStatus === "on_hold"} onCheckedChange={(checked) => setCreateStatus(checked ? "on_hold" : "active")} />
@@ -934,7 +927,6 @@ export default function NewUserPage() {
               <Button type="button" variant={pricingMode === "bundle" ? "primary" : "outline"} onClick={() => setPricingMode("bundle")}>{t("newUser.bundle")}</Button>
               <Button type="button" variant={pricingMode === "per_node" ? "primary" : "outline"} onClick={() => setPricingMode("per_node")}>{t("newUser.perNode")}</Button>
             </div>
-            <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.bundleHelp")}</div>
           </div>
 
           <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
@@ -968,10 +960,6 @@ export default function NewUserPage() {
               </Button>
             </div>
 
-            {nodeMode === "all" ? (
-              <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.nodesAllHint")}</div>
-            ) : null}
-
             {nodeMode === "group" ? (
               <div className="space-y-2">
                 <select
@@ -986,7 +974,6 @@ export default function NewUserPage() {
                     </option>
                   ))}
                 </select>
-                <div className="text-xs text-[hsl(var(--fg))]/70">{t("newUser.nodeGroupHint")}</div>
               </div>
             ) : null}
 

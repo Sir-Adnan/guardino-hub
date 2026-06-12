@@ -567,7 +567,7 @@ export default function UsersPage() {
 
   function openQuickEdit(u: UserOut) {
     setEditUser(u);
-    setQuickMode(renewalOnly ? "renewal" : "extend");
+    setQuickMode("renewal");
     setEditDays(31);
     setEditDecDays(7);
     setEditAddGb(10);
@@ -1069,9 +1069,12 @@ export default function UsersPage() {
                 برای این رسیلر ویرایش آزاد بسته شده است؛ فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <Button type="button" size="sm" variant={quickMode === "renewal" ? "primary" : "outline"} onClick={() => setQuickMode("renewal")}>
+                  تمدید بسته‌ای
+                </Button>
                 <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
-                  تمدید
+                  افزایش زمان
                 </Button>
                 <Button type="button" size="sm" variant={quickMode === "add" ? "primary" : "outline"} onClick={() => setQuickMode("add")}>
                   افزایش حجم
@@ -1114,8 +1117,8 @@ export default function UsersPage() {
                   </div>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
-                  <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled />
-                  <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled />
+                  <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled={renewalOnly} onChange={(e) => setEditRenewDays(Math.max(1, Number(e.target.value) || 1))} />
+                  <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled={renewalOnly} onChange={(e) => setEditRenewGb(Math.max(1, Number(e.target.value) || 1))} />
                   <Button
                     disabled={busyId === editUser.id || locked}
                     onClick={async () => {
@@ -1135,7 +1138,7 @@ export default function UsersPage() {
 
             {!renewalOnly && quickMode === "extend" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div className="font-medium">تمدید زمانی (روز)</div>
+                <div className="font-medium">افزایش زمان (روز)</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 31, 90, 180].map((d) => (
                     <Button key={d} type="button" size="sm" variant={editDays === d ? "primary" : "outline"} onClick={() => setEditDays(d)}>
