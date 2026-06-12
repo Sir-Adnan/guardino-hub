@@ -9,6 +9,7 @@ class UserOut(BaseModel):
     used_bytes: int
     expire_at: datetime
     status: str
+    create_status: Optional[str] = None
 
 class UsersPage(BaseModel):
     items: list[UserOut]

@@ -46,12 +46,6 @@ async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession =
     if not n:
         raise HTTPException(status_code=404, detail="Node not found")
 
-    # Enforce single default allocation per reseller
-    if payload.default_for_reseller:
-        q = await db.execute(select(NodeAllocation).where(NodeAllocation.reseller_id == payload.reseller_id))
-        for a in q.scalars().all():
-            a.default_for_reseller = False
-
     a = NodeAllocation(
         reseller_id=payload.reseller_id,
         node_id=payload.node_id,
@@ -89,10 +83,6 @@ async def update_allocation(allocation_id: int, payload: UpdateAllocationRequest
         a.enabled = bool(payload.enabled)
 
     if "default_for_reseller" in fields:
-        if payload.default_for_reseller:
-            q = await db.execute(select(NodeAllocation).where(NodeAllocation.reseller_id == a.reseller_id))
-            for other in q.scalars().all():
-                other.default_for_reseller = False
         a.default_for_reseller = bool(payload.default_for_reseller)
 
     if "price_per_gb_override" in fields:

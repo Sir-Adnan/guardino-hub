@@ -31,7 +31,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "users.subtitle": "لیست کاربران شما",
     "users.create": "ساخت کاربر",
     "users.search": "جستجو...",
-    "users.balanceZero": "بالانس شما صفر است؛ فقط لیست کاربران قابل مشاهده است.",
+    "users.balanceZero": "موجودی شما صفر است؛ ساخت و ویرایش کاربر بسته است، اما مشاهده لینک‌ها، بازسازی ساب و حذف کاربر همچنان مجاز است.",
 
         "users.balance": "شارژ حساب",
     "users.usage": "مصرف",
@@ -283,7 +283,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "adminAllocations.help.node": "نودی که برای این ریسیلر فعال می‌شود.",
     "adminAllocations.help.priceOverride": "اگر پر شود، قیمت/GB این نود برای این ریسیلر override می‌شود.",
     "adminAllocations.help.enabled": "اگر خاموش باشد، ریسیلر نمی‌تواند روی این نود کاربر بسازد و در ساب هم وارد نمی‌شود.",
-    "adminAllocations.help.default": "یک نود پیش‌فرض برای هر ریسیلر. برای پیشنهاد اولیه در UI/سناریوهای آینده استفاده می‌شود و اگر فعال شود، سایر پیش‌فرض‌ها برای همان ریسیلر خاموش می‌شوند."
+    "adminAllocations.help.default": "می‌توانید چند نود پیش‌فرض برای هر ریسیلر فعال کنید. اگر رسیلر موقع ساخت کاربر نودی انتخاب نکند، فقط همین نودهای پیش‌فرض استفاده می‌شوند؛ اگر هیچ پیش‌فرضی نباشد، همه تخصیص‌های فعال استفاده می‌شوند."
   },
   en: {
     "app.title": "Guardino Hub",
@@ -312,7 +312,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "users.subtitle": "Your users list",
     "users.create": "Create user",
     "users.search": "Search...",
-    "users.balanceZero": "Your balance is zero; only the users list is available.",
+    "users.balanceZero": "Your balance is zero; creating and editing users is blocked, but links, subscription revoke, and user deletion remain available.",
 
         "users.balance": "Balance",
     "users.usage": "Usage",
@@ -502,7 +502,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     "adminAllocations.help.node": "Which node is enabled for this reseller.",
     "adminAllocations.help.priceOverride": "If set, overrides the per-GB price for this node for this reseller.",
     "adminAllocations.help.enabled": "If disabled, the reseller cannot create users on this node and it won’t appear in merged subscriptions.",
-    "adminAllocations.help.default": "One default node per reseller. Used as a preferred/default choice in UI and for future behavior; enabling it will unset other defaults for the same reseller.",
+    "adminAllocations.help.default": "Multiple default nodes can be enabled per reseller. When no node is selected during user creation, only these default nodes are used; if none are marked, all enabled allocations are used.",
     "user.title": "User",
     "user.back": "Back",
     "user.refresh": "Refresh",

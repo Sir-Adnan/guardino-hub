@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
+import math
 import secrets
 
 from app.core.db import get_db
-from app.api.deps import block_if_balance_zero
+from app.api.deps import block_if_balance_zero, require_reseller
 from app.models.reseller import Reseller
 from app.models.user import GuardinoUser, UserStatus, NodeSelectionMode
 from app.models.subaccount import SubAccount
@@ -21,7 +22,7 @@ from app.services.status_policy import enable_if_needed
 from app.services.subscription_tokens import remember_revoked_master_sub_token
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
-from app.schemas.ops import ExtendRequest, DecreaseTimeRequest, AddTrafficRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
+from app.schemas.ops import ExtendRequest, DecreaseTimeRequest, AddTrafficRequest, RenewRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
 
 router = APIRouter()
 
@@ -113,6 +114,7 @@ _POLICY_PRESET_DAYS = {
     "6m": 180,
     "1y": 365,
 }
+_DEFAULT_RENEWAL_TRAFFIC_GB = {20, 30, 50, 70, 100, 150, 200}
 
 
 def _policy_window_days(policy: dict) -> int:
@@ -157,6 +159,26 @@ def _enforce_policy_traffic(policy: dict, gb: int) -> None:
         raise HTTPException(status_code=400, detail=f"This traffic value is not allowed for your account. Allowed: {allowed_text}")
 
 
+def _enforce_edit_allowed(policy: dict, operation: str) -> None:
+    if bool(policy.get("enabled")) and bool(policy.get("restrict_edit_to_renewal_only")):
+        raise HTTPException(status_code=403, detail=f"{operation} is disabled; package renewal is the only allowed edit.")
+
+
+def _enforce_renewal_package_policy(policy: dict, days: int, gb: int) -> None:
+    if not (bool(policy.get("enabled")) and bool(policy.get("restrict_edit_to_renewal_only"))):
+        return
+
+    allowed_days = _policy_allowed_days(policy) or set(_POLICY_PRESET_DAYS.values())
+    if int(days) not in allowed_days:
+        allowed_text = ", ".join(str(x) for x in sorted(allowed_days))
+        raise HTTPException(status_code=400, detail=f"This renewal duration is not allowed. Allowed: {allowed_text}")
+
+    allowed_traffic = {int(x) for x in (policy.get("allowed_traffic_gb") or []) if str(x).isdigit()} or set(_DEFAULT_RENEWAL_TRAFFIC_GB)
+    if int(gb) not in allowed_traffic:
+        allowed_text = ", ".join(str(x) for x in sorted(allowed_traffic))
+        raise HTTPException(status_code=400, detail=f"This renewal traffic is not allowed. Allowed: {allowed_text}")
+
+
 def _user_expired(user: GuardinoUser) -> bool:
     expire_at = user.expire_at
     now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
@@ -167,16 +189,24 @@ def _user_used_gb_float(user: GuardinoUser) -> float:
     return float(user.used_bytes or 0) / float(BYTES_PER_GB)
 
 
+def _user_volume_exhausted(user: GuardinoUser) -> bool:
+    total_bytes = int(user.total_gb or 0) * BYTES_PER_GB
+    return total_bytes > 0 and int(user.used_bytes or 0) >= total_bytes
+
+
 def _enforce_delete_policy(user: GuardinoUser, policy: dict) -> None:
     if not bool(policy.get("allow_user_delete", True)):
         raise HTTPException(status_code=403, detail="User delete/refund is disabled for your account.")
 
+    if _user_expired(user) or _user_volume_exhausted(user):
+        raise HTTPException(status_code=400, detail="Expired or volume-exhausted users cannot be deleted/refunded.")
+
     try:
-        expired_used_limit = float(policy.get("delete_expired_used_gb_limit", 1.0))
+        used_limit = float(policy.get("delete_expired_used_gb_limit", 1.0))
     except Exception:
-        expired_used_limit = 1.0
-    if _user_expired(user) and _user_used_gb_float(user) > max(0.0, expired_used_limit):
-        raise HTTPException(status_code=400, detail="Expired users with usage above the configured limit cannot be deleted/refunded.")
+        used_limit = 1.0
+    if used_limit > 0 and _user_used_gb_float(user) > used_limit:
+        raise HTTPException(status_code=400, detail="User usage is above the configured delete/refund limit.")
 
     window_days = _policy_window_days(policy)
     if window_days > 0:
@@ -215,6 +245,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_edit_allowed(policy, "Extend")
     _enforce_policy_days(policy, payload.days)
 
     # price: only time amount (optional)
@@ -294,6 +325,122 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
 
 
+@router.post("/{user_id}/renew", response_model=OpResult)
+async def renew_user(user_id: int, payload: RenewRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
+    user = q.scalar_one_or_none()
+    if not user or user.status == UserStatus.deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_policy_days(policy, payload.days)
+    _enforce_policy_traffic(policy, payload.total_gb)
+    _enforce_renewal_package_policy(policy, payload.days, payload.total_gb)
+
+    qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
+    subs = qs.scalars().all()
+    if not subs:
+        raise HTTPException(status_code=400, detail="No subaccounts")
+
+    node_ids = [s.node_id for s in subs]
+    qn = await db.execute(select(Node).where(Node.id.in_(node_ids)))
+    nodes = qn.scalars().all()
+    node_map = {n.id: n for n in nodes}
+
+    total_amount, _per_node, _time_amount = await calculate_price(
+        db,
+        reseller,
+        nodes,
+        total_gb=int(payload.total_gb),
+        days=int(payload.days),
+        pricing_mode=payload.pricing_mode,
+    )
+    if reseller.balance < total_amount:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
+    now = _now()
+    old_total_gb = int(user.total_gb or 0)
+    old_expire_at = user.expire_at
+    old_used_bytes = int(user.used_bytes or 0)
+    used_gb_float = max(0.0, float(old_used_bytes) / float(BYTES_PER_GB))
+    remaining_gb = max(0, int(math.ceil(max(0.0, float(old_total_gb) - used_gb_float))))
+    old_expire_for_calc = old_expire_at
+    if old_expire_for_calc.tzinfo is None:
+        old_expire_for_calc = old_expire_for_calc.replace(tzinfo=timezone.utc)
+    remaining_days = max(0, int(math.ceil((old_expire_for_calc - now).total_seconds() / 86400)))
+    base_expire = old_expire_for_calc if old_expire_for_calc > now else now
+
+    renewal_policy = str(policy.get("renewal_policy") or "add_time_and_volume")
+    reset_usage = renewal_policy in {"reset_time_and_volume", "reset_time_carry_volume", "reset_volume_carry_time"}
+    if renewal_policy == "reset_time_and_volume":
+        new_expire_at = now + timedelta(days=int(payload.days))
+        new_total_gb = int(payload.total_gb)
+    elif renewal_policy == "reset_time_carry_volume":
+        new_expire_at = now + timedelta(days=int(payload.days))
+        new_total_gb = int(payload.total_gb) + remaining_gb
+    elif renewal_policy == "reset_volume_carry_time":
+        new_expire_at = now + timedelta(days=int(payload.days) + remaining_days)
+        new_total_gb = int(payload.total_gb)
+    else:
+        new_expire_at = base_expire + timedelta(days=int(payload.days))
+        new_total_gb = old_total_gb + int(payload.total_gb)
+
+    order = Order(
+        reseller_id=reseller.id,
+        user_id=user.id,
+        type=OrderType.extend,
+        status=OrderStatus.pending,
+        purchased_gb=int(payload.total_gb),
+        price_per_gb_snapshot=reseller.price_per_gb,
+    )
+    db.add(order)
+    await db.flush()
+
+    remote_sync_errors: list[str] = []
+    remote_synced_ok: list[tuple[SubAccount, Node]] = []
+    for s in subs:
+        n = node_map.get(s.node_id)
+        if not n:
+            remote_sync_errors.append(f"node#{s.node_id}: node not found")
+            continue
+        try:
+            adapter = get_adapter(n)
+            await adapter.update_user_limits(s.remote_identifier, total_gb=new_total_gb, expire_at=new_expire_at)
+            if reset_usage:
+                await adapter.reset_usage(s.remote_identifier)
+                s.used_bytes = 0
+            await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
+        except Exception as e:
+            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            continue
+        remote_synced_ok.append((s, n))
+
+    if remote_sync_errors:
+        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
+        _raise_remote_sync_failed_with_rollback("Renew", remote_sync_errors, rollback_errors)
+
+    user.total_gb = new_total_gb
+    user.expire_at = new_expire_at
+    user.status = UserStatus.active
+    if reset_usage:
+        user.used_bytes = 0
+
+    reseller.balance -= total_amount
+    db.add(
+        LedgerTransaction(
+            reseller_id=reseller.id,
+            order_id=order.id,
+            amount=-total_amount,
+            reason=f"renew_{renewal_policy}",
+            balance_after=reseller.balance,
+            occurred_at=now,
+        )
+    )
+    order.status = OrderStatus.completed
+    await db.commit()
+    return OpResult(ok=True, charged_amount=total_amount, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+
+
 @router.post("/{user_id}/decrease-time", response_model=OpResult)
 async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
@@ -301,6 +448,7 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSes
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_edit_allowed(policy, "Decrease time")
     _enforce_policy_days(policy, payload.days)
 
     order = Order(
@@ -396,6 +544,7 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
+    _enforce_edit_allowed(policy, "Add traffic")
     _enforce_policy_traffic(policy, payload.add_gb)
 
     qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
@@ -571,19 +720,23 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
     return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail=detail)
 
 @router.post("/{user_id}/refund", response_model=OpResult)
-async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(require_reseller)):
+    if reseller.balance <= 0 and payload.action != "delete":
+        raise HTTPException(status_code=403, detail="Balance is zero; only delete is allowed from this endpoint.")
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
 
-    # Determine refundable GB under policy (10 days, remaining GB)
+    # Determine refundable GB under policy (window + remaining GB).
     refundable = refundable_gb_for_user(user, window_days=_policy_window_days(policy))
     if payload.action == "delete":
         _enforce_delete_policy(user, policy)
-        refund_gb = max(0, int(refundable))
+        refund_gb = 0
     else:
+        _enforce_edit_allowed(policy, "Decrease traffic")
         if refundable <= 0:
             raise HTTPException(status_code=400, detail="Refund window expired or no remaining volume")
         if payload.decrease_gb is None:
@@ -598,7 +751,14 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
     create_order = q1.scalars().first()
     price_per_gb = int(create_order.price_per_gb_snapshot) if create_order and create_order.price_per_gb_snapshot is not None else int(reseller.price_per_gb)
 
-    refund_amount = int(refund_gb) * int(price_per_gb)
+    if payload.action == "delete":
+        used_float = min(float(user.total_gb or 0), _user_used_gb_float(user))
+        gross_amount = int(user.total_gb or 0) * int(price_per_gb)
+        used_amount = 0 if used_float < 1.0 else int(round(used_float * int(price_per_gb)))
+        refund_amount = max(0, gross_amount - used_amount)
+        refund_gb = max(0, int(math.floor(refund_amount / int(price_per_gb)))) if int(price_per_gb) > 0 else 0
+    else:
+        refund_amount = int(refund_gb) * int(price_per_gb)
 
     order_type = OrderType.delete if payload.action == "delete" else OrderType.refund
     order = Order(

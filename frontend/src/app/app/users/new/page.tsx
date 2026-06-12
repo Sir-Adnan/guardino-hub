@@ -173,11 +173,12 @@ export default function NewUserPage() {
   const r = useRouter();
   const { push } = useToast();
   const { t } = useI18n();
-  const { refresh: refreshMe } = useAuth();
+  const { me, refresh: refreshMe } = useAuth();
+  const locked = (me?.balance ?? 1) <= 0;
 
   const [label, setLabel] = React.useState("");
   const [randomize, setRandomize] = React.useState(false);
-  const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("on_hold");
+  const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("active");
 
   const [totalGb, setTotalGb] = React.useState<number>(10);
   const [pricingMode, setPricingMode] = React.useState<"per_node" | "bundle">("bundle");
@@ -280,9 +281,8 @@ export default function NewUserPage() {
   }
 
   function randomName() {
-    const v = randomLabel();
-    setLabel(v);
-    if (randomize) setRandomize(false);
+    setLabel(randomLabel());
+    setRandomize(false);
   }
 
   async function loadNodes() {
@@ -459,26 +459,21 @@ export default function NewUserPage() {
   }
 
   function buildLabel(index: number, count: number) {
-    const base = label.trim() || randomLabel();
+    const base = randomize ? randomLabel() : label.trim();
+    if (!base) {
+      throw new Error("نام کاربری را وارد کنید یا گزینه رندوم را فعال کنید.");
+    }
     const indexed = count > 1 ? `${base}-${index}` : base;
     return `${defaults.label_prefix || ""}${indexed}${defaults.label_suffix || ""}`;
   }
 
-  function buildUsername(index: number, count: number): string | undefined {
-    if (randomize) return undefined;
-    const base = label.trim();
-    if (!base) return undefined;
-    const indexed = count > 1 ? `${base}_${index}` : base;
-    return indexed;
-  }
-
-  function buildPayload(labelValue: string, usernameValue: string | undefined) {
+  function buildPayload(labelValue: string) {
     const node_ids = nodeMode === "manual" ? selectedNodeIds : undefined;
     const node_group = nodeMode === "group" ? nodeGroup || undefined : undefined;
     return {
       label: labelValue,
-      username: usernameValue || undefined,
-      randomize_username: randomize,
+      username: labelValue,
+      randomize_username: false,
       total_gb: totalGb,
       days,
       duration_preset: preset || undefined,
@@ -490,6 +485,9 @@ export default function NewUserPage() {
   }
 
   function validateBeforeSubmit() {
+    if (!randomize && !label.trim()) {
+      throw new Error("نام کاربری را وارد کنید یا گزینه رندوم را فعال کنید.");
+    }
     if (nodeMode === "manual" && selectedNodeIds.length === 0) {
       throw new Error(t("newUser.nodeSelectRequired"));
     }
@@ -539,7 +537,7 @@ export default function NewUserPage() {
     try {
       validateBeforeSubmit();
       const labelValue = buildLabel(1, 1);
-      const payload = buildPayload(labelValue, buildUsername(1, 1));
+      const payload = buildPayload(labelValue);
       const res = await apiFetch<QuoteResp>("/api/v1/reseller/user-ops/quote", { method: "POST", body: JSON.stringify(payload) });
       setQuote(res);
       push({ title: "پیش‌فاکتور آماده شد", type: "success" });
@@ -575,7 +573,7 @@ export default function NewUserPage() {
 
         const labelValue = buildLabel(i, count);
         setCreateCurrentLabel(labelValue);
-        const payload = buildPayload(labelValue, buildUsername(i, count));
+        const payload = buildPayload(labelValue);
         const ctrl = new AbortController();
         activeRequestRef.current = ctrl;
         try {
@@ -736,7 +734,7 @@ export default function NewUserPage() {
           <div className="text-lg font-semibold">مشخصات کاربر</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">اطلاعات پایه، پلن، نودها و پیش‌فاکتور</div>
           {defaultsLoaded ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--surface-card-1))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
+            <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--surface-card-1))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70 break-words [overflow-wrap:anywhere]">
               <div className="flex flex-wrap items-center gap-2">
                 <Sparkles size={14} />
                 <span>
@@ -759,23 +757,36 @@ export default function NewUserPage() {
               <label className="text-sm flex items-center gap-2">
                 نام کاربر <HelpTip text="هم برای نمایش داخل گاردینو استفاده می‌شود و هم نام کاربر پنل‌های مرزبان/پاسارگارد از همین مقدار ساخته می‌شود." />
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً customer-01" />
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                <div className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
+                  {defaults.label_prefix ? (
+                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap border-l border-[hsl(var(--border))] px-3 text-xs text-[hsl(var(--fg))]/70">
+                      {defaults.label_prefix}
+                    </span>
+                  ) : null}
+                  <Input
+                    className="min-w-0 flex-1 border-0 bg-transparent"
+                    value={label}
+                    disabled={randomize}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder={randomize ? "نام رندوم ساخته می‌شود" : "مثلاً customer-01"}
+                  />
+                  {defaults.label_suffix ? (
+                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap border-r border-[hsl(var(--border))] px-3 text-xs text-[hsl(var(--fg))]/70">
+                      {defaults.label_suffix}
+                    </span>
+                  ) : null}
+                </div>
                 <Button type="button" variant="outline" onClick={randomName}>{t("newUser.random")}</Button>
               </div>
               {(defaults.label_prefix || defaults.label_suffix) ? (
-                <div className="text-xs text-[hsl(var(--fg))]/60">
-                  پیشوند/پسوند Label از تنظیمات: <span dir="ltr">{defaults.label_prefix || ""}[label]{defaults.label_suffix || ""}</span>
-                </div>
-              ) : null}
-              {(defaults.username_prefix || defaults.username_suffix) ? (
-                <div className="text-xs text-[hsl(var(--fg))]/60">
-                  تنظیمات قدیمی پیشوند/پسوند Username دیگر در فرم ساده استفاده نمی‌شود تا نام نمایش و نام پنل یکی بمانند.
+                <div className="max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/60 [overflow-wrap:anywhere]">
+                  الگوی نام نهایی: <span dir="ltr">{defaults.label_prefix || ""}[username]{defaults.label_suffix || ""}</span>
                 </div>
               ) : null}
               <label className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/70">
                 <input type="checkbox" checked={randomize} onChange={(e) => setRandomize(e.target.checked)} />
-                {t("newUser.serverRandom")}
+                ساخت خودکار نام رندوم با رعایت پیشوند/پسوند
               </label>
             </div>
           </div>
@@ -891,13 +902,13 @@ export default function NewUserPage() {
             </div>
           </div>
 
-          <details className="group rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-1 py-1 text-sm font-semibold">
+          <details className="group max-w-full overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
+            <summary className="flex cursor-pointer list-none flex-col items-start gap-2 rounded-xl px-1 py-1 text-sm font-semibold sm:flex-row sm:items-center sm:justify-between">
               <span className="flex items-center gap-2">
                 <Settings2 size={16} />
                 تنظیمات پیشرفته
               </span>
-              <span className="text-xs font-normal text-[hsl(var(--fg))]/65">
+              <span className="max-w-full break-words text-xs font-normal leading-5 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
                 {createStatus === "on_hold" ? "On Hold" : "Active"} • {pricingMode === "bundle" ? "Bundle" : "Per Node"} • {nodeMode === "all" ? "همه نودها" : nodeMode === "manual" ? "انتخاب دستی" : "گروهی"}
               </span>
             </summary>
@@ -1045,8 +1056,13 @@ export default function NewUserPage() {
           </div>
 
           <div className="flex flex-wrap gap-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-            <Button type="button" variant="outline" disabled={loading} onClick={doQuote}>{t("newUser.quote")}</Button>
-            <Button type="button" disabled={loading} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
+            {locked ? (
+              <div className="basis-full max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
+                {t("users.balanceZero")}
+              </div>
+            ) : null}
+            <Button type="button" variant="outline" disabled={loading || locked} onClick={doQuote}>{t("newUser.quote")}</Button>
+            <Button type="button" disabled={loading || locked} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
             {creating ? (
               <Button type="button" variant="outline" disabled={!creating} onClick={cancelCreate}>توقف ساخت</Button>
             ) : null}
@@ -1104,13 +1120,13 @@ export default function NewUserPage() {
       >
         <div className="space-y-4 text-sm">
           {createSummary ? (
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
               کل: {createSummary.total} • انجام‌شده: {createSummary.done} • موفق: {createSummary.success} • ناموفق: {createSummary.failed}
               {createSummary.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80">
+          <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
             پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.
           </div>
 

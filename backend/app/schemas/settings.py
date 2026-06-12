@@ -28,6 +28,8 @@ class ResellerUserPolicy(BaseModel):
     allow_no_expire: bool = False
     allow_user_delete: bool = True
     allow_reset_usage: bool = True
+    restrict_edit_to_renewal_only: bool = False
+    renewal_policy: str = Field(default="add_time_and_volume", pattern="^(reset_time_and_volume|add_time_and_volume|reset_time_carry_volume|reset_volume_carry_time)$")
     min_days: int = 1
     max_days: int = 3650
     delete_refund_window_days: int = Field(default=10, ge=0, le=36500)

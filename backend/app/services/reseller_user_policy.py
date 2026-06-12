@@ -10,6 +10,12 @@ GLOBAL_USER_POLICY_KEY = "global_user_policy"
 ALLOWED_DURATION_PRESETS = {"7d", "1m", "3m", "6m", "1y", "unlimited"}
 DEFAULT_DURATION_PRESETS = ["7d", "1m", "3m", "6m", "1y"]
 DEFAULT_TRAFFIC_GB = [20, 30, 50, 70, 100, 150, 200]
+ALLOWED_RENEWAL_POLICIES = {
+    "reset_time_and_volume",
+    "add_time_and_volume",
+    "reset_time_carry_volume",
+    "reset_volume_carry_time",
+}
 
 
 def reseller_user_policy_key(reseller_id: int) -> str:
@@ -24,6 +30,8 @@ def base_user_policy() -> dict:
         "allow_no_expire": False,
         "allow_user_delete": True,
         "allow_reset_usage": True,
+        "restrict_edit_to_renewal_only": False,
+        "renewal_policy": "add_time_and_volume",
         "min_days": 1,
         "max_days": 3650,
         "delete_refund_window_days": int(settings.REFUND_WINDOW_DAYS),
@@ -44,6 +52,10 @@ def normalize_user_policy(raw: dict | None) -> dict:
     out["allow_no_expire"] = bool(raw.get("allow_no_expire", out["allow_no_expire"]))
     out["allow_user_delete"] = bool(raw.get("allow_user_delete", out["allow_user_delete"]))
     out["allow_reset_usage"] = bool(raw.get("allow_reset_usage", out["allow_reset_usage"]))
+    out["restrict_edit_to_renewal_only"] = bool(raw.get("restrict_edit_to_renewal_only", out["restrict_edit_to_renewal_only"]))
+    renewal_policy = str(raw.get("renewal_policy", out["renewal_policy"]) or "").strip().lower()
+    if renewal_policy in ALLOWED_RENEWAL_POLICIES:
+        out["renewal_policy"] = renewal_policy
 
     try:
         min_days = int(raw.get("min_days", out["min_days"]))

@@ -9,6 +9,13 @@ from app.schemas.user import UsersPage, UserOut
 
 router = APIRouter()
 
+
+def _create_status_for(user: GuardinoUser) -> str | None:
+    meta = user.meta if isinstance(user.meta, dict) else {}
+    value = str(meta.get("create_status") or "").strip().lower()
+    return value if value in {"active", "on_hold"} else None
+
+
 @router.get("", response_model=UsersPage)
 async def list_users(
     request: Request,
@@ -53,6 +60,7 @@ async def list_users(
             used_bytes=u.used_bytes,
             expire_at=u.expire_at,
             status=u.status.value,
+            create_status=_create_status_for(u),
         )
         for u in q.scalars().all()
     ]
@@ -78,4 +86,5 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db), reseller = 
         used_bytes=u.used_bytes,
         expire_at=u.expire_at,
         status=u.status.value,
+        create_status=_create_status_for(u),
     )

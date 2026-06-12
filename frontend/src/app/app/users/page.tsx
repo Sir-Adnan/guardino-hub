@@ -40,7 +40,7 @@ import {
   Gauge,
 } from "lucide-react";
 
-type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
+type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string; create_status?: string | null };
 type UsersPage = { items: UserOut[]; total: number };
 type ResellerStatsOut = {
   users_total: number;
@@ -65,6 +65,13 @@ type LinksResp = {
 };
 type NodeLinkOut = LinksResp["node_links"][number];
 type NodeLite = { id: number; name: string; base_url: string };
+type ResellerUserPolicy = {
+  enabled: boolean;
+  restrict_edit_to_renewal_only: boolean;
+  renewal_policy: string;
+  allowed_duration_presets: string[];
+  allowed_traffic_gb: number[];
+};
 
 function normalizeUrl(maybeUrl: string, baseUrl?: string) {
   const u = (maybeUrl || "").trim();
@@ -86,6 +93,14 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 const AUTO_REFRESH_MS = 30_000;
+const DURATION_PRESETS = [
+  { key: "7d", label: "7 روز", days: 7 },
+  { key: "1m", label: "1 ماه", days: 31 },
+  { key: "3m", label: "3 ماه", days: 90 },
+  { key: "6m", label: "6 ماه", days: 180 },
+  { key: "1y", label: "1 سال", days: 365 },
+];
+const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
 type StatusFilter = "all" | "active" | "disabled" | "expired";
 type SortMode = "priority" | "expiry" | "usage" | "newest";
@@ -105,12 +120,20 @@ function safeDaysLeft(expire_at: string): number | null {
   return Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function statusBadge(status: string) {
+function statusBadge(status: string, createStatus?: string | null) {
   const s = (status || "").toLowerCase();
-  if (s === "active") return { v: "success" as const, label: "فعال", Icon: CheckCircle2 };
-  if (s === "disabled") return { v: "muted" as const, label: "غیرفعال", Icon: Ban };
-  if (s === "expired") return { v: "danger" as const, label: "منقضی", Icon: Ban };
-  return { v: "default" as const, label: status || "—", Icon: Sparkles };
+  if (s === "active" && String(createStatus || "").toLowerCase() === "on_hold") {
+    return {
+      v: "default" as const,
+      label: "در انتظار اتصال",
+      Icon: Sparkles,
+      className: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
+    };
+  }
+  if (s === "active") return { v: "success" as const, label: "فعال", Icon: CheckCircle2, className: "" };
+  if (s === "disabled") return { v: "muted" as const, label: "غیرفعال", Icon: Ban, className: "" };
+  if (s === "expired") return { v: "danger" as const, label: "منقضی", Icon: Ban, className: "" };
+  return { v: "default" as const, label: status || "—", Icon: Sparkles, className: "" };
 }
 
 function computePriority(u: UserOut) {
@@ -165,6 +188,7 @@ export default function UsersPage() {
   const [viewMode, setViewMode] = React.useState<ViewMode>("grid2");
 
   const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
+  const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy | null>(null);
   const nodeMap = React.useMemo(() => {
     const m = new Map<number, NodeLite>();
     (nodes || []).forEach((n) => m.set(n.id, n));
@@ -185,11 +209,13 @@ export default function UsersPage() {
   const [confirmUser, setConfirmUser] = React.useState<UserOut | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
   const [editUser, setEditUser] = React.useState<UserOut | null>(null);
-  const [quickMode, setQuickMode] = React.useState<"extend" | "add" | "dec" | "time_dec">("extend");
+  const [quickMode, setQuickMode] = React.useState<"renewal" | "extend" | "add" | "dec" | "time_dec">("extend");
   const [editDays, setEditDays] = React.useState(31);
   const [editDecDays, setEditDecDays] = React.useState(7);
   const [editAddGb, setEditAddGb] = React.useState(10);
   const [editDecGb, setEditDecGb] = React.useState(5);
+  const [editRenewDays, setEditRenewDays] = React.useState(31);
+  const [editRenewGb, setEditRenewGb] = React.useState(30);
   const [editTargetDate, setEditTargetDate] = React.useState<Date | null>(null);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(50);
@@ -229,6 +255,15 @@ export default function UsersPage() {
     }
   }
 
+  async function loadPolicy() {
+    try {
+      const policy = await apiFetch<ResellerUserPolicy>("/api/v1/reseller/settings/user-policy");
+      setUserPolicy(policy || null);
+    } catch {
+      // Keep edit UI usable if policy endpoint is temporarily unavailable.
+    }
+  }
+
   React.useEffect(() => {
     load();
   }, [page, pageSize, debouncedQ, filter]);
@@ -254,6 +289,7 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     loadNodes().catch(() => undefined);
+    loadPolicy().catch(() => undefined);
   }, []);
 
   React.useEffect(() => {
@@ -343,6 +379,16 @@ export default function UsersPage() {
   const rawItems = data?.items || [];
   const filtered = applyFilter(rawItems);
   const items = applySort(filtered);
+  const renewalOnly = !!(userPolicy?.enabled && userPolicy.restrict_edit_to_renewal_only);
+  const renewalDurationPresets = React.useMemo(() => {
+    const allowed = new Set((userPolicy?.allowed_duration_presets || []).map((x) => String(x).toLowerCase()));
+    const filtered = DURATION_PRESETS.filter((p) => !allowed.size || allowed.has(p.key));
+    return filtered.length ? filtered : DURATION_PRESETS;
+  }, [userPolicy]);
+  const renewalTrafficPresets = React.useMemo(() => {
+    const allowed = (userPolicy?.allowed_traffic_gb || []).filter((x) => Number.isFinite(x) && x > 0);
+    return allowed.length ? allowed : TRAFFIC_PRESETS;
+  }, [userPolicy]);
 
   const stats = React.useMemo(() => {
     const total = resellerStats?.users_total ?? data?.total ?? rawItems.length;
@@ -521,11 +567,13 @@ export default function UsersPage() {
 
   function openQuickEdit(u: UserOut) {
     setEditUser(u);
-    setQuickMode("extend");
+    setQuickMode(renewalOnly ? "renewal" : "extend");
     setEditDays(31);
     setEditDecDays(7);
     setEditAddGb(10);
     setEditDecGb(5);
+    setEditRenewDays(31);
+    setEditRenewGb(30);
     const exp = new Date(u.expire_at);
     setEditTargetDate(Number.isNaN(exp.getTime()) ? new Date() : exp);
     setEditOpen(true);
@@ -568,8 +616,15 @@ export default function UsersPage() {
               <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.subtitle")} • بروزرسانی خودکار هر ۳۰ ثانیه</div>
             </div>
             <a
-              href="/app/users/new"
-              className="rounded-lg bg-[hsl(var(--accent))] px-4 py-2 text-sm font-semibold text-[hsl(var(--accent-fg))] shadow-soft transition-all duration-200 hover:translate-y-[-1px] hover:brightness-95"
+              href={locked ? undefined : "/app/users/new"}
+              aria-disabled={locked}
+              onClick={(e) => {
+                if (locked) e.preventDefault();
+              }}
+              className={
+                "rounded-lg bg-[hsl(var(--accent))] px-4 py-2 text-sm font-semibold text-[hsl(var(--accent-fg))] shadow-soft transition-all duration-200 hover:translate-y-[-1px] hover:brightness-95 " +
+                (locked ? "pointer-events-none opacity-55" : "")
+              }
             >
               {t("users.create")}
             </a>
@@ -721,7 +776,7 @@ export default function UsersPage() {
             const pr = computePriority(u);
             const expText = pr.days === null ? "—" : pr.days >= 0 ? t("users.expiresIn").replace("{days}", String(pr.days)) : t("users.expired");
 
-            const sb = statusBadge(u.status);
+            const sb = statusBadge(u.status, u.create_status);
             const StatusIcon = sb.Icon;
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
@@ -752,7 +807,7 @@ export default function UsersPage() {
                       <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " text-[hsl(var(--fg))]/75"}>{expText}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={sb.v} className="gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold">
+                      <Badge variant={sb.v} className={`gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${sb.className || ""}`}>
                         <StatusIcon size={14} />
                         {sb.label}
                       </Badge>
@@ -860,7 +915,7 @@ export default function UsersPage() {
                           size="sm"
                           title={t("users.resetUsage")}
                           aria-label={t("users.resetUsage")}
-                          disabled={busy || locked}
+                          disabled={busy || locked || renewalOnly}
                           onClick={(e) => {
                             e.stopPropagation();
                             ask("reset", u);
@@ -874,7 +929,7 @@ export default function UsersPage() {
                           size="sm"
                           title={t("users.revoke")}
                           aria-label={t("users.revoke")}
-                          disabled={busy || locked}
+                          disabled={busy}
                           onClick={(e) => {
                             e.stopPropagation();
                             ask("revoke", u);
@@ -928,7 +983,7 @@ export default function UsersPage() {
                           {
                             label: isActive ? t("common.disable") : t("common.enable"),
                             icon: <Power size={16} />,
-                            disabled: locked || busy,
+                            disabled: locked || busy || renewalOnly,
                             onClick: () => setStatus(u, !isActive),
                           },
                           {
@@ -940,14 +995,14 @@ export default function UsersPage() {
                           {
                             label: t("users.revoke"),
                             icon: <Trash2 size={16} />,
-                            disabled: locked || busy,
+                            disabled: busy,
                             danger: true,
                             onClick: () => ask("revoke", u),
                           },
                           {
                             label: t("users.delete"),
                             icon: <Trash2 size={16} />,
-                            disabled: locked || busy,
+                            disabled: busy,
                             danger: true,
                             onClick: () => ask("delete", u),
                           },
@@ -1009,22 +1064,76 @@ export default function UsersPage() {
       >
         {editUser ? (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
-                تمدید
-              </Button>
-              <Button type="button" size="sm" variant={quickMode === "add" ? "primary" : "outline"} onClick={() => setQuickMode("add")}>
-                افزایش حجم
-              </Button>
-              <Button type="button" size="sm" variant={quickMode === "dec" ? "primary" : "outline"} onClick={() => setQuickMode("dec")}>
-                کاهش حجم
-              </Button>
-              <Button type="button" size="sm" variant={quickMode === "time_dec" ? "primary" : "outline"} onClick={() => setQuickMode("time_dec")}>
-                کاهش زمان
-              </Button>
-            </div>
+            {renewalOnly ? (
+              <div className="max-w-full overflow-hidden rounded-xl border border-violet-500/25 bg-violet-500/10 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75 break-words [overflow-wrap:anywhere]">
+                برای این رسیلر ویرایش آزاد بسته شده است؛ فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
+                  تمدید
+                </Button>
+                <Button type="button" size="sm" variant={quickMode === "add" ? "primary" : "outline"} onClick={() => setQuickMode("add")}>
+                  افزایش حجم
+                </Button>
+                <Button type="button" size="sm" variant={quickMode === "dec" ? "primary" : "outline"} onClick={() => setQuickMode("dec")}>
+                  کاهش حجم
+                </Button>
+                <Button type="button" size="sm" variant={quickMode === "time_dec" ? "primary" : "outline"} onClick={() => setQuickMode("time_dec")}>
+                  کاهش زمان
+                </Button>
+              </div>
+            )}
 
-            {quickMode === "extend" ? (
+            {quickMode === "renewal" ? (
+              <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                <div>
+                  <div className="font-medium">تمدید بسته‌ای</div>
+                  <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">
+                    سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند.
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">مدت تمدید</div>
+                  <div className="flex flex-wrap gap-2">
+                    {renewalDurationPresets.map((p) => (
+                      <Button key={p.key} type="button" size="sm" variant={editRenewDays === p.days ? "primary" : "outline"} onClick={() => setEditRenewDays(p.days)}>
+                        {p.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">حجم تمدید</div>
+                  <div className="flex flex-wrap gap-2">
+                    {renewalTrafficPresets.map((g) => (
+                      <Button key={g} type="button" size="sm" variant={editRenewGb === g ? "primary" : "outline"} onClick={() => setEditRenewGb(g)}>
+                        {g} گیگ
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
+                  <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled />
+                  <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled />
+                  <Button
+                    disabled={busyId === editUser.id || locked}
+                    onClick={async () => {
+                      const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/renew`, {
+                        days: editRenewDays,
+                        total_gb: editRenewGb,
+                        pricing_mode: "bundle",
+                      });
+                      if (ok) setEditOpen(false);
+                    }}
+                  >
+                    اجرا
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {!renewalOnly && quickMode === "extend" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">تمدید زمانی (روز)</div>
                 <div className="flex flex-wrap gap-2">
@@ -1069,7 +1178,7 @@ export default function UsersPage() {
               </div>
             ) : null}
 
-            {quickMode === "add" ? (
+            {!renewalOnly && quickMode === "add" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">افزایش حجم (گیگ)</div>
                 <div className="flex flex-wrap gap-2">
@@ -1094,7 +1203,7 @@ export default function UsersPage() {
               </div>
             ) : null}
 
-            {quickMode === "dec" ? (
+            {!renewalOnly && quickMode === "dec" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش حجم (ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
@@ -1123,7 +1232,7 @@ export default function UsersPage() {
               </div>
             ) : null}
 
-            {quickMode === "time_dec" ? (
+            {!renewalOnly && quickMode === "time_dec" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
                 <div className="flex flex-wrap gap-2">
@@ -1176,7 +1285,7 @@ export default function UsersPage() {
                   type="button"
                   variant="outline"
                   className="gap-2"
-                  disabled={busyId === editUser.id || locked}
+                  disabled={busyId === editUser.id || locked || renewalOnly}
                   onClick={() => {
                     setEditOpen(false);
                     ask("reset", editUser);
@@ -1188,7 +1297,7 @@ export default function UsersPage() {
                   type="button"
                   variant="outline"
                   className="gap-2"
-                  disabled={busyId === editUser.id || locked}
+                  disabled={busyId === editUser.id}
                   onClick={() => {
                     setEditOpen(false);
                     ask("revoke", editUser);
@@ -1220,7 +1329,7 @@ export default function UsersPage() {
 
         {qrLinks ? (
           <div className="space-y-4">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
               QR کد لینک مرکزی و لینک هر نود نمایش داده می‌شود. با Revoke، لینک مرکزی قبلی هم باطل می‌شود.
             </div>
 
@@ -1288,7 +1397,7 @@ export default function UsersPage() {
 
         {links ? (
           <div className="space-y-4 text-sm">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
+            <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
               پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
             </div>
             {links.master_link ? (

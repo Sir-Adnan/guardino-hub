@@ -29,6 +29,15 @@ def _panel_username(base_label: str) -> str:
     return safe or random_username("u")
 
 
+def _canonical_username_from_payload(payload: CreateUserRequest) -> str:
+    if payload.randomize_username:
+        return random_username("u")
+    candidate = sanitize_username(payload.username or payload.label)
+    if not candidate:
+        raise HTTPException(status_code=400, detail="Username is required unless random is enabled.")
+    return candidate
+
+
 def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
     if not direct:
         return None
@@ -95,6 +104,7 @@ async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), 
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
+    _canonical_username_from_payload(payload)
     total, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
     return PriceQuoteResponse(total_amount=total, per_node_amount=per_node, time_amount=time_amount)
 
@@ -105,10 +115,11 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
+    remote_label = _canonical_username_from_payload(payload)
 
-    total_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
+    estimated_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
 
-    if reseller.balance < total_amount:
+    if reseller.balance < estimated_amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
     order = Order(
@@ -127,19 +138,11 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     expire_at = now + timedelta(days=36500 if int(days_final) == 0 else int(days_final))
     token = secrets.token_hex(16)
 
-    # username handling
-    effective_username: str | None = None
-    if payload.randomize_username:
-        effective_username = random_username("u")
-    elif payload.username:
-        effective_username = sanitize_username(payload.username) or None
-
-    remote_label = effective_username or payload.label
     create_status = "on_hold" if str(payload.create_status or "").strip().lower() == "on_hold" else "active"
 
     user = GuardinoUser(
         owner_reseller_id=reseller.id,
-        label=payload.label,
+        label=remote_label,
         total_gb=payload.total_gb,
         used_bytes=0,
         expire_at=expire_at,
@@ -158,16 +161,22 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
     await db.flush()
 
     provisioned: list[int] = []
+    provisioned_nodes = []
+    provision_errors: list[str] = []
     try:
         for n in nodes:
-            adapter = get_adapter(n)
-            panel_username = _panel_username(remote_label)
-            pr = await adapter.provision_user(
-                label=panel_username,
-                total_gb=payload.total_gb,
-                expire_at=expire_at,
-                status=create_status,
-            )
+            try:
+                adapter = get_adapter(n)
+                panel_username = _panel_username(remote_label)
+                pr = await adapter.provision_user(
+                    label=panel_username,
+                    total_gb=payload.total_gb,
+                    expire_at=expire_at,
+                    status=create_status,
+                )
+            except Exception as e:
+                provision_errors.append(f"node#{n.id}: {str(e).strip()[:160]}")
+                continue
             direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
             sa = SubAccount(
                 user_id=user.id,
@@ -180,6 +189,24 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
             )
             db.add(sa)
             provisioned.append(n.id)
+            provisioned_nodes.append(n)
+
+        if not provisioned_nodes:
+            raise HTTPException(status_code=502, detail="Provision failed on all selected nodes")
+
+        total_amount, per_node, time_amount = await calculate_price(
+            db,
+            reseller,
+            provisioned_nodes,
+            payload.total_gb,
+            days_final,
+            pricing_mode=payload.pricing_mode,
+        )
+        if reseller.balance < total_amount:
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+
+        if provision_errors:
+            user.meta = {**(user.meta or {}), "provision_errors": provision_errors}
 
         reseller.balance -= total_amount
         ledger = LedgerTransaction(

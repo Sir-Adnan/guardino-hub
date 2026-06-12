@@ -21,7 +21,7 @@ import { copyText } from "@/lib/copy";
 import { fmtNumber } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
 
-type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string };
+type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string; create_status?: string | null };
 type LinksResp = {
   user_id: number;
   master_link?: string | null;
@@ -38,8 +38,23 @@ type LinksResp = {
 };
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 type NodeLite = { id: number; name: string; base_url: string };
-type OpMode = "extend" | "traffic_up" | "traffic_down" | "time_down" | "controls";
+type OpMode = "renewal" | "extend" | "traffic_up" | "traffic_down" | "time_down" | "controls";
+type ResellerUserPolicy = {
+  enabled: boolean;
+  restrict_edit_to_renewal_only: boolean;
+  renewal_policy: string;
+  allowed_duration_presets: string[];
+  allowed_traffic_gb: number[];
+};
 const AUTO_REFRESH_MS = 30_000;
+const DURATION_PRESETS = [
+  { key: "7d", label: "7 روز", days: 7 },
+  { key: "1m", label: "1 ماه", days: 31 },
+  { key: "3m", label: "3 ماه", days: 90 },
+  { key: "6m", label: "6 ماه", days: 180 },
+  { key: "1y", label: "1 سال", days: 365 },
+];
+const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
 function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
@@ -73,12 +88,19 @@ function panelLabel(panelType?: string) {
   return "لینک امن";
 }
 
-function statusMeta(raw: string) {
+function statusMeta(raw: string, createStatus?: string | null) {
   const s = String(raw || "").toLowerCase();
-  if (s === "active") return { variant: "success" as const, label: "فعال" };
-  if (s === "disabled") return { variant: "warning" as const, label: "غیرفعال" };
-  if (s === "deleted") return { variant: "danger" as const, label: "حذف‌شده" };
-  return { variant: "muted" as const, label: raw || "نامشخص" };
+  if (s === "active" && String(createStatus || "").toLowerCase() === "on_hold") {
+    return {
+      variant: "default" as const,
+      label: "در انتظار اتصال",
+      className: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
+    };
+  }
+  if (s === "active") return { variant: "success" as const, label: "فعال", className: "" };
+  if (s === "disabled") return { variant: "warning" as const, label: "غیرفعال", className: "" };
+  if (s === "deleted") return { variant: "danger" as const, label: "حذف‌شده", className: "" };
+  return { variant: "muted" as const, label: raw || "نامشخص", className: "" };
 }
 
 export default function UserDetailPage() {
@@ -95,6 +117,7 @@ export default function UserDetailPage() {
 
   const [user, setUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
+  const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy | null>(null);
   const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
@@ -105,6 +128,8 @@ export default function UserDetailPage() {
   const [decreaseDays, setDecreaseDays] = React.useState(7);
   const [addGb, setAddGb] = React.useState(10);
   const [decreaseGb, setDecreaseGb] = React.useState(5);
+  const [renewDays, setRenewDays] = React.useState(31);
+  const [renewGb, setRenewGb] = React.useState(30);
   const [targetDate, setTargetDate] = React.useState<Date | null>(null);
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -137,8 +162,10 @@ export default function UserDetailPage() {
 
       const u = await apiFetch<UserOut>(`/api/v1/reseller/users/${userId}`);
       const lr = await apiFetch<LinksResp>(`/api/v1/reseller/users/${userId}/links?refresh=true`);
+      const policy = await apiFetch<ResellerUserPolicy>("/api/v1/reseller/settings/user-policy");
       setUser(u || null);
       setLinks(lr || null);
+      setUserPolicy(policy || null);
       if (u?.expire_at) {
         const exp = new Date(u.expire_at);
         setTargetDate(Number.isNaN(exp.getTime()) ? new Date() : exp);
@@ -154,6 +181,21 @@ export default function UserDetailPage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, hasValidUserId]);
+
+  const renewalOnly = !!(userPolicy?.enabled && userPolicy.restrict_edit_to_renewal_only);
+  const renewalDurationPresets = React.useMemo(() => {
+    const allowed = new Set((userPolicy?.allowed_duration_presets || []).map((x) => String(x).toLowerCase()));
+    const filtered = DURATION_PRESETS.filter((p) => !allowed.size || allowed.has(p.key));
+    return filtered.length ? filtered : DURATION_PRESETS;
+  }, [userPolicy]);
+  const renewalTrafficPresets = React.useMemo(() => {
+    const allowed = (userPolicy?.allowed_traffic_gb || []).filter((x) => Number.isFinite(x) && x > 0);
+    return allowed.length ? allowed : TRAFFIC_PRESETS;
+  }, [userPolicy]);
+
+  React.useEffect(() => {
+    if (renewalOnly) setOpMode("renewal");
+  }, [renewalOnly]);
 
   React.useEffect(() => {
     if (!hasValidUserId) return;
@@ -226,7 +268,7 @@ export default function UserDetailPage() {
     return { ok: true as const, direction: diffMs >= 0 ? "up" : "down", diffDays };
   }
 
-  const status = statusMeta(user?.status || "");
+  const status = statusMeta(user?.status || "", user?.create_status);
   const totalBytes = (user?.total_gb || 0) * 1024 * 1024 * 1024;
   const usedGb = bytesToGb(user?.used_bytes || 0);
   const usagePct = Math.round(clamp01(totalBytes > 0 ? (user?.used_bytes || 0) / totalBytes : 0) * 100);
@@ -251,7 +293,7 @@ export default function UserDetailPage() {
           <Button variant="outline" className="gap-2" onClick={refresh} disabled={busy}>
             <RefreshCcw size={16} /> {t("user.refresh")}
           </Button>
-          <Button variant="ghost" onClick={() => router.push("/app/users/new")}>
+          <Button variant="ghost" onClick={() => router.push("/app/users/new")} disabled={locked}>
             {t("user.new")}
           </Button>
         </div>
@@ -261,7 +303,7 @@ export default function UserDetailPage() {
       </div>
 
       {locked ? (
-        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80">
+        <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
           {t("users.balanceZero")}
         </div>
       ) : null}
@@ -283,7 +325,7 @@ export default function UserDetailPage() {
                   <div className="mt-1 text-2xl font-semibold break-all">{user ? user.label : `#${userId}`}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={status.variant}>{status.label}</Badge>
+                  <Badge variant={status.variant} className={status.className}>{status.label}</Badge>
                   {user ? (
                     (user.status || "").toLowerCase() === "active" ? (
                       <Button variant="outline" disabled={locked || busy} onClick={() => runOp(`/api/v1/reseller/users/${userId}/set-status`, { status: "disabled" }, "کاربر غیرفعال شد")}>
@@ -476,24 +518,62 @@ export default function UserDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <Button variant={opMode === "extend" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("extend")} type="button">
-                  <CalendarDays size={15} /> تمدید
-                </Button>
-                <Button variant={opMode === "traffic_up" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_up")} type="button">
-                  <Gauge size={15} /> افزایش حجم
-                </Button>
-                <Button variant={opMode === "traffic_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_down")} type="button">
-                  <Sparkles size={15} /> کاهش حجم
-                </Button>
-                <Button variant={opMode === "time_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("time_down")} type="button">
-                  <CalendarDays size={15} /> کاهش زمان
-                </Button>
-                <Button variant={opMode === "controls" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("controls")} type="button">
-                  <ShieldAlert size={15} /> کنترل سرویس
-                </Button>
+                {renewalOnly ? (
+                  <Button variant="primary" className="gap-2 sm:col-span-3" onClick={() => setOpMode("renewal")} type="button">
+                    <CalendarDays size={15} /> تمدید بسته‌ای
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant={opMode === "extend" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("extend")} type="button">
+                      <CalendarDays size={15} /> تمدید
+                    </Button>
+                    <Button variant={opMode === "traffic_up" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_up")} type="button">
+                      <Gauge size={15} /> افزایش حجم
+                    </Button>
+                    <Button variant={opMode === "traffic_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_down")} type="button">
+                      <Sparkles size={15} /> کاهش حجم
+                    </Button>
+                    <Button variant={opMode === "time_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("time_down")} type="button">
+                      <CalendarDays size={15} /> کاهش زمان
+                    </Button>
+                    <Button variant={opMode === "controls" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("controls")} type="button">
+                      <ShieldAlert size={15} /> کنترل سرویس
+                    </Button>
+                  </>
+                )}
               </div>
 
-              {opMode === "extend" ? (
+              {opMode === "renewal" ? (
+                <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
+                  <div className="text-sm font-medium">تمدید بسته‌ای طبق سیاست سوپرادمین</div>
+                  <div className="flex flex-wrap gap-2">
+                    {renewalDurationPresets.map((p) => (
+                      <Button key={p.key} type="button" size="sm" variant={renewDays === p.days ? "primary" : "outline"} onClick={() => setRenewDays(p.days)}>
+                        {p.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {renewalTrafficPresets.map((g) => (
+                      <Button key={g} type="button" size="sm" variant={renewGb === g ? "primary" : "outline"} onClick={() => setRenewGb(g)}>
+                        {g} گیگ
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Input className="min-w-[120px] flex-1" type="number" min={1} value={renewDays} disabled={renewalOnly} onChange={(e) => setRenewDays(Math.max(1, Number(e.target.value) || 1))} />
+                    <Input className="min-w-[120px] flex-1" type="number" min={1} value={renewGb} disabled={renewalOnly} onChange={(e) => setRenewGb(Math.max(1, Number(e.target.value) || 1))} />
+                    <Button
+                      disabled={locked || busy}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/renew`, { days: renewDays, total_gb: renewGb, pricing_mode: "bundle" }, "تمدید بسته‌ای انجام شد")}
+                    >
+                      اجرا
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {!renewalOnly && opMode === "extend" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">تمدید مدت زمان کاربر</div>
                   <div className="flex flex-wrap gap-2">
@@ -535,7 +615,7 @@ export default function UserDetailPage() {
                 </div>
               ) : null}
 
-              {opMode === "traffic_up" ? (
+              {!renewalOnly && opMode === "traffic_up" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">افزایش حجم کاربر</div>
                   <div className="flex flex-wrap gap-2">
@@ -557,7 +637,7 @@ export default function UserDetailPage() {
                 </div>
               ) : null}
 
-              {opMode === "traffic_down" ? (
+              {!renewalOnly && opMode === "traffic_down" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش حجم (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
@@ -582,7 +662,7 @@ export default function UserDetailPage() {
                 </div>
               ) : null}
 
-              {opMode === "time_down" ? (
+              {!renewalOnly && opMode === "time_down" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
                   <div className="flex flex-wrap gap-2">
@@ -625,21 +705,21 @@ export default function UserDetailPage() {
                 </div>
               ) : null}
 
-              {opMode === "controls" ? (
+              {!renewalOnly && opMode === "controls" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.3)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                   <div className="text-sm font-medium">عملیات کنترلی</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("reset")}>
                       ریست مصرف
                     </Button>
-                    <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("revoke")}>
+                    <Button type="button" variant="outline" disabled={busy} onClick={() => ask("revoke")}>
                       بازسازی ساب‌لینک
                     </Button>
                   </div>
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                  <div className="max-w-full overflow-hidden rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 break-words [overflow-wrap:anywhere]">
                     حذف کاربر همراه ریفاند فقط وقتی استفاده شود که از حذف مطمئن هستید.
                   </div>
-                  <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("delete")}>
+                  <Button type="button" variant="outline" disabled={busy} onClick={() => ask("delete")}>
                     حذف کاربر + ریفاند
                   </Button>
                 </div>

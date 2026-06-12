@@ -11,6 +11,11 @@ class DecreaseTimeRequest(BaseModel):
 class AddTrafficRequest(BaseModel):
     add_gb: int = Field(gt=0, le=100000)
 
+class RenewRequest(BaseModel):
+    days: int = Field(gt=0, le=3650)
+    total_gb: int = Field(gt=0, le=100000)
+    pricing_mode: str = Field(default="bundle", pattern="^(per_node|bundle)$")
+
 class ChangeNodesRequest(BaseModel):
     add_node_ids: Optional[List[int]] = None
     remove_node_ids: Optional[List[int]] = None

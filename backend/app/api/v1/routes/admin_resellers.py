@@ -167,12 +167,22 @@ async def credit_reseller(reseller_id: int, payload: CreditRequest, db: AsyncSes
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
 
-    r.balance += payload.amount
+    amount = int(payload.amount)
+    if amount == 0:
+        raise HTTPException(status_code=400, detail="Amount cannot be zero")
+    if r.balance + amount < 0:
+        raise HTTPException(status_code=400, detail="Balance cannot become negative")
+
+    reason = (payload.reason or "").strip()
+    if not reason or (amount < 0 and reason == "manual_credit"):
+        reason = "manual_debit" if amount < 0 else "manual_credit"
+
+    r.balance += amount
     tx = LedgerTransaction(
         reseller_id=r.id,
         order_id=None,
-        amount=payload.amount,
-        reason=payload.reason,
+        amount=amount,
+        reason=reason,
         balance_after=r.balance,
     )
     db.add(tx)

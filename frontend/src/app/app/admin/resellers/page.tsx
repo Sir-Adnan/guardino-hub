@@ -38,6 +38,8 @@ type ResellerUserPolicy = {
   allow_no_expire: boolean;
   allow_user_delete: boolean;
   allow_reset_usage: boolean;
+  restrict_edit_to_renewal_only: boolean;
+  renewal_policy: "reset_time_and_volume" | "add_time_and_volume" | "reset_time_carry_volume" | "reset_volume_carry_time";
   min_days: number;
   max_days: number;
   delete_refund_window_days: number;
@@ -67,6 +69,8 @@ function defaultUserPolicy(): ResellerUserPolicy {
     allow_no_expire: false,
     allow_user_delete: true,
     allow_reset_usage: true,
+    restrict_edit_to_renewal_only: false,
+    renewal_policy: "add_time_and_volume",
     min_days: 1,
     max_days: 3650,
     delete_refund_window_days: 10,
@@ -98,6 +102,10 @@ function normalizePolicy(p: ResellerUserPolicy): ResellerUserPolicy {
     allow_no_expire: !!p.allow_no_expire,
     allow_user_delete: !!p.allow_user_delete,
     allow_reset_usage: !!p.allow_reset_usage,
+    restrict_edit_to_renewal_only: !!p.restrict_edit_to_renewal_only,
+    renewal_policy: ["reset_time_and_volume", "add_time_and_volume", "reset_time_carry_volume", "reset_volume_carry_time"].includes(String(p.renewal_policy))
+      ? (p.renewal_policy as ResellerUserPolicy["renewal_policy"])
+      : "add_time_and_volume",
     min_days: Math.max(1, Number(p.min_days) || 1),
     max_days: Math.max(1, Number(p.max_days) || 3650),
     delete_refund_window_days: Math.max(0, Math.min(36500, Number(p.delete_refund_window_days ?? 10) || 0)),
@@ -209,6 +217,7 @@ export default function AdminResellersPage() {
   const [creditId, setCreditId] = React.useState<number | "">("");
   const [creditQuery, setCreditQuery] = React.useState("");
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
+  const [creditMode, setCreditMode] = React.useState<"credit" | "debit">("credit");
 
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
   const [confirmToggleStatus, setConfirmToggleStatus] = React.useState<{ r: ResellerOut; to: "active" | "disabled" } | null>(null);
@@ -377,11 +386,14 @@ async function assignAllNodesForReseller(resellerId: number) {
   async function credit() {
     try {
       if (creditId === "") throw new Error(t("adminResellers.errCreditId"));
+      const rawAmount = Math.abs(Number(creditAmount) || 0);
+      if (rawAmount <= 0) throw new Error("Amount must be greater than zero");
+      const signedAmount = creditMode === "debit" ? -rawAmount : rawAmount;
       const res = await apiFetch<any>(`/api/v1/admin/resellers/${Number(creditId)}/credit`, {
         method: "POST",
-        body: JSON.stringify({ amount: Number(creditAmount) || 0, reason: "manual_credit" }),
+        body: JSON.stringify({ amount: signedAmount, reason: creditMode === "debit" ? "manual_debit" : "manual_credit" }),
       });
-      push({ title: t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
+      push({ title: creditMode === "debit" ? "موجودی کم شد" : t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
       await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -408,6 +420,8 @@ async function assignAllNodesForReseller(resellerId: number) {
   }, [userPolicy.allowed_traffic_gb]);
   const selectClass =
     "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+  const guideBoxClass =
+    "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
   const metricCardClass =
     "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
   const stats = React.useMemo(() => {
@@ -551,6 +565,10 @@ async function assignAllNodesForReseller(resellerId: number) {
                   />
                   <span className="text-xs text-[hsl(var(--fg))]/75">{userPolicy.enabled ? "فعال" : "غیرفعال"}</span>
                 </div>
+              </div>
+
+              <div className={guideBoxClass}>
+                این بخش سیاست اختصاصی همین رسیلر است و روی سیاست سراسری اولویت دارد. محدودیت روز/حجم هنگام ساخت کنترل می‌شود و اگر گزینه «فقط تمدید بسته‌ای» روشن باشد، در ویرایش فقط تمدید طبق پکیج‌های آماده مجاز می‌ماند. در سیاست حذف، عدد 0 برای حد مصرف یعنی نامحدود؛ عدد 0.5 یعنی حدود 500 مگابایت. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد قابل حذف نیست، و در حذف کاربر، مصرف زیر 1 گیگ از کیف پول کم نمی‌شود.
               </div>
 
               {userPolicy.enabled ? (
@@ -715,6 +733,31 @@ async function assignAllNodesForReseller(resellerId: number) {
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/65">برای بستن ریست فقط این گزینه را خاموش کنید؛ محدودیت ساخت لازم نیست فعال باشد.</div>
                 </div>
+
+                <div className="space-y-3 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 md:col-span-2 break-words [overflow-wrap:anywhere]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">سیاست ویرایش و تمدید</div>
+                      <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
+                        اگر روشن باشد، رسیلر فقط تمدید بسته‌ای طبق پکیج‌های آماده انجام می‌دهد و افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود.
+                      </div>
+                    </div>
+                    <Switch
+                      checked={userPolicy.restrict_edit_to_renewal_only}
+                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))}
+                    />
+                  </div>
+                  <select
+                    className={selectClass}
+                    value={userPolicy.renewal_policy}
+                    onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
+                  >
+                    <option value="reset_time_and_volume">ریست زمان و حجم</option>
+                    <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
+                    <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
+                    <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -739,6 +782,9 @@ async function assignAllNodesForReseller(resellerId: number) {
 	              <div className="text-xs text-[hsl(var(--fg))]/70">{t("adminResellers.creditSubtitle")}</div>
 	            </CardHeader>
             <CardContent className="grid gap-2 md:grid-cols-4">
+  <div className={guideBoxClass + " md:col-span-4"}>
+    برای افزایش موجودی حالت «افزایش» و برای کم کردن موجودی حالت «کاهش» را انتخاب کنید. مبلغ را همیشه مثبت وارد کنید؛ سیستم خودش علامت را اعمال می‌کند و اجازه منفی شدن موجودی رسیلر را نمی‌دهد.
+  </div>
   <div className="md:col-span-2 grid gap-2 sm:grid-cols-2">
     <Input
       placeholder={t("common.search")}
@@ -764,11 +810,20 @@ async function assignAllNodesForReseller(resellerId: number) {
   <Input
     placeholder={t("adminResellers.amount")}
     type="number"
+    min={0}
     value={creditAmount}
-    onChange={(e) => setCreditAmount(Number(e.target.value))}
+    onChange={(e) => setCreditAmount(Math.abs(Number(e.target.value) || 0))}
   />
+  <div className="grid gap-2 sm:grid-cols-2">
+    <Button type="button" variant={creditMode === "credit" ? "primary" : "outline"} onClick={() => setCreditMode("credit")}>
+      افزایش
+    </Button>
+    <Button type="button" variant={creditMode === "debit" ? "primary" : "outline"} onClick={() => setCreditMode("debit")}>
+      کاهش
+    </Button>
+  </div>
   <Button type="button" variant="outline" onClick={credit}>
-    {t("adminResellers.credit")}
+    {creditMode === "debit" ? "اعمال کاهش" : t("adminResellers.credit")}
   </Button>
 </CardContent>
           </Card>

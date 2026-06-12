@@ -63,14 +63,18 @@ async def require_reseller(principal=Depends(get_current_principal)) -> Reseller
 
 
 def enforce_balance_or_readonly_users(reseller: Reseller, request_path: str, request_method: str) -> None:
-    # If balance <= 0, reseller can ONLY GET the exact users list endpoint.
+    # Balance-zero resellers can still view subscriptions and revoke links.
+    # Deletion is handled by the refund endpoint after inspecting the request body.
     if reseller.balance > 0:
         return
-    allowed = (request_method == "GET" and request_path == "/api/v1/reseller/users")
+    allowed = (
+        (request_method == "GET" and request_path.startswith("/api/v1/reseller/users"))
+        or (request_method == "POST" and request_path.endswith("/revoke"))
+    )
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="بالانس شما صفر است و فقط مشاهده لیست کاربران مجاز است.",
+            detail="موجودی شما صفر است؛ ساخت و ویرایش کاربر غیرفعال است.",
         )
 
 

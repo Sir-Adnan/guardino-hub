@@ -312,6 +312,10 @@ export default function AllocationsPage() {
           <div className="text-sm text-[hsl(var(--fg))]/70">{t("adminAllocations.subtitle")}</div>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75 break-words [overflow-wrap:anywhere]">
+            تخصیص مشخص می‌کند هر رسیلر اجازه ساخت کاربر روی کدام نود را دارد. گزینه «فعال» یعنی این نود برای ساخت و ساب قابل استفاده است. گزینه «پیش‌فرض برای رسیلر» می‌تواند روی چند نود همزمان روشن باشد؛ وقتی رسیلر موقع ساخت کاربر نودی انتخاب نکند، فقط همین نودهای پیش‌فرض استفاده می‌شوند. اگر هیچ نود پیش‌فرضی تعیین نشده باشد، سیستم برای سازگاری قبلی از همه تخصیص‌های فعال استفاده می‌کند. اگر یک نود مقصد قطع باشد، ساخت کاربر روی نودهای سالم ادامه پیدا می‌کند و خطای نود قطع‌شده در اطلاعات داخلی کاربر ثبت می‌شود.
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm flex items-center gap-2">

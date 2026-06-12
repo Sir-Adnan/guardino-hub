@@ -41,7 +41,7 @@ class SetResellerStatusRequest(BaseModel):
     status: str = Field(min_length=3, max_length=16)  # active|disabled
 
 class CreditRequest(BaseModel):
-    amount: int = Field(gt=0)
+    amount: int
     reason: str = Field(default="manual_credit")
 
 class CreateNodeRequest(BaseModel):

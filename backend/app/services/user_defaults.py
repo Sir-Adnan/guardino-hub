@@ -59,6 +59,11 @@ def normalize_user_defaults(raw: dict | None) -> dict:
             v = ""
         out[k] = str(v).strip()[:64]
 
+    # Label and remote username are intentionally unified. Keep the legacy
+    # username fields mirrored for older clients that still read them.
+    out["username_prefix"] = out["label_prefix"]
+    out["username_suffix"] = out["label_suffix"]
+
     out["show_guardino_master_sub"] = bool(raw.get("show_guardino_master_sub", out["show_guardino_master_sub"]))
 
     return out

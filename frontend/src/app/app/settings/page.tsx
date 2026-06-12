@@ -33,6 +33,8 @@ type ResellerUserPolicy = {
   allow_no_expire: boolean;
   allow_user_delete: boolean;
   allow_reset_usage: boolean;
+  restrict_edit_to_renewal_only: boolean;
+  renewal_policy: "reset_time_and_volume" | "add_time_and_volume" | "reset_time_carry_volume" | "reset_volume_carry_time";
   min_days: number;
   max_days: number;
   delete_refund_window_days: number;
@@ -73,6 +75,8 @@ const EMPTY_POLICY: ResellerUserPolicy = {
   allow_no_expire: false,
   allow_user_delete: true,
   allow_reset_usage: true,
+  restrict_edit_to_renewal_only: false,
+  renewal_policy: "add_time_and_volume",
   min_days: 1,
   max_days: 3650,
   delete_refund_window_days: 10,
@@ -91,6 +95,10 @@ function normalizePolicy(raw: Partial<ResellerUserPolicy> | null | undefined): R
     allow_no_expire: !!p.allow_no_expire,
     allow_user_delete: !!p.allow_user_delete,
     allow_reset_usage: !!p.allow_reset_usage,
+    restrict_edit_to_renewal_only: !!p.restrict_edit_to_renewal_only,
+    renewal_policy: ["reset_time_and_volume", "add_time_and_volume", "reset_time_carry_volume", "reset_volume_carry_time"].includes(String(p.renewal_policy))
+      ? (p.renewal_policy as ResellerUserPolicy["renewal_policy"])
+      : "add_time_and_volume",
     min_days: Math.max(1, Number(p.min_days) || 1),
     max_days: Math.max(1, Number(p.max_days) || 3650),
     delete_refund_window_days: Math.max(0, Math.min(36500, Number(p.delete_refund_window_days ?? 10) || 0)),
@@ -211,6 +219,8 @@ export default function SettingsPage() {
     try {
       const payload: UserDefaults = {
         ...resellerDefaults,
+        username_prefix: resellerDefaults.label_prefix,
+        username_suffix: resellerDefaults.label_suffix,
         default_node_ids: (resellerDefaults.default_node_ids || []).filter((id) => resellerNodes.some((n) => n.id === id)),
       };
       const saved = await apiFetch<UserDefaults>("/api/v1/reseller/settings/user-defaults", {
@@ -228,6 +238,8 @@ export default function SettingsPage() {
     try {
       const payload: UserDefaults = {
         ...globalDefaults,
+        username_prefix: globalDefaults.label_prefix,
+        username_suffix: globalDefaults.label_suffix,
         default_node_ids: (globalDefaults.default_node_ids || []).filter((id) => adminNodes.some((n) => n.id === id)),
       };
       const saved = await apiFetch<UserDefaults>("/api/v1/admin/settings/user-defaults", {
@@ -293,6 +305,8 @@ export default function SettingsPage() {
     "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_55%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.32)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.30)]";
   const choiceCardClass =
     "rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
+  const guideBoxClass =
+    "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
 
   return (
     <div className="space-y-6">
@@ -431,11 +445,11 @@ export default function SettingsPage() {
                   </select>
                 </div>
 
-                <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                <div className="space-y-2 md:col-span-2 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-xs font-medium">ساب مرکزی Guardino</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/70">نمایش لینک تجمیعی گاردینو بعد از لینک‌های مستقیم</div>
+                      <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">اگر روشن باشد لینک تجمیعی Guardino کنار لینک‌های مستقیم کاربر نمایش داده می‌شود. اگر خاموش باشد فقط لینک‌های مستقیم پنل‌ها دیده می‌شوند.</div>
                     </div>
                     <Switch
                       checked={!!resellerDefaults.show_guardino_master_sub}
@@ -489,20 +503,15 @@ export default function SettingsPage() {
                 ) : null}
 
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند Label</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند نام کاربری</div>
                   <Input value={resellerDefaults.label_prefix} onChange={(e) => setResellerDefaults((v) => ({ ...v, label_prefix: e.target.value }))} />
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پسوند Label</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">پسوند نام کاربری</div>
                   <Input value={resellerDefaults.label_suffix} onChange={(e) => setResellerDefaults((v) => ({ ...v, label_suffix: e.target.value }))} />
                 </div>
-                <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند Username</div>
-                  <Input value={resellerDefaults.username_prefix} onChange={(e) => setResellerDefaults((v) => ({ ...v, username_prefix: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پسوند Username</div>
-                  <Input value={resellerDefaults.username_suffix} onChange={(e) => setResellerDefaults((v) => ({ ...v, username_suffix: e.target.value }))} />
+                <div className="md:col-span-2 max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
+                  همین مقدار هم در گاردینو و هم در پنل‌های مقصد به عنوان نام کاربری نهایی استفاده می‌شود.
                 </div>
               </div>
               <div className="flex gap-2">
@@ -549,11 +558,11 @@ export default function SettingsPage() {
                     </select>
                   </div>
 
-                  <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                  <div className="space-y-2 md:col-span-2 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-medium">ساب مرکزی Guardino</div>
-                        <div className="text-xs text-[hsl(var(--fg))]/70">نمایش لینک تجمیعی گاردینو برای رسیلرهای بدون تنظیم اختصاصی</div>
+                        <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">مقدار پیش‌فرض برای رسیلرهایی است که تنظیم اختصاصی ندارند. روشن بودن این گزینه فقط نمایش لینک مرکزی را فعال می‌کند؛ لینک‌های مستقیم همیشه جداگانه باقی می‌مانند.</div>
                       </div>
                       <Switch
                         checked={!!globalDefaults.show_guardino_master_sub}
@@ -607,20 +616,15 @@ export default function SettingsPage() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند Label</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند نام کاربری</div>
                     <Input value={globalDefaults.label_prefix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, label_prefix: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پسوند Label</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">پسوند نام کاربری</div>
                     <Input value={globalDefaults.label_suffix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, label_suffix: e.target.value }))} />
                   </div>
-                  <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند Username</div>
-                    <Input value={globalDefaults.username_prefix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, username_prefix: e.target.value }))} />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پسوند Username</div>
-                    <Input value={globalDefaults.username_suffix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, username_suffix: e.target.value }))} />
+                  <div className="md:col-span-2 max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
+                    بخش Label و Username یکی شده است؛ همین الگو برای نمایش گاردینو و ساخت کاربر در پاسارگارد/مرزبان استفاده می‌شود.
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -636,6 +640,9 @@ export default function SettingsPage() {
                 <div className="text-xs text-[hsl(var(--fg))]/70">این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.</div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className={guideBoxClass}>
+                  این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست.
+                </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                     <span className="text-sm">اجازه حذف و ریفاند کاربر</span>
@@ -655,7 +662,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">حداکثر مصرف کاربر منقضی برای حذف (GB)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">حداکثر مصرف مجاز برای حذف (GB)</div>
                     <Input
                       type="number"
                       min={0}
@@ -663,6 +670,23 @@ export default function SettingsPage() {
                       value={globalPolicy.delete_expired_used_gb_limit}
                       onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
                     />
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 md:col-span-2">
+                    <span className="text-sm">در ویرایش فقط تمدید بسته‌ای مجاز باشد</span>
+                    <Switch checked={globalPolicy.restrict_edit_to_renewal_only} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">سیاست تمدید بسته‌ای</div>
+                    <select
+                      className={selectClass}
+                      value={globalPolicy.renewal_policy}
+                      onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
+                    >
+                      <option value="reset_time_and_volume">ریست زمان و حجم</option>
+                      <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
+                      <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
+                      <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
+                    </select>
                   </div>
                 </div>
                 <div className="flex gap-2">
