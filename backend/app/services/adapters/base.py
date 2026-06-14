@@ -9,6 +9,10 @@ class AdapterError(Exception):
     """Generic adapter error (network/auth/panel response)."""
 
 
+class RemoteUserNotFound(AdapterError):
+    """Raised when the panel explicitly reports that the remote user is gone."""
+
+
 @dataclass
 class TestConnectionResult:
     ok: bool
@@ -21,6 +25,13 @@ class ProvisionResult:
     remote_identifier: str
     direct_sub_url: str | None = None
     meta: dict[str, Any] | None = None
+
+
+@dataclass
+class RemoteUserSnapshot:
+    status: str | None = None
+    used_bytes: int | None = None
+    raw: dict[str, Any] | None = None
 
 
 class PanelAdapter(Protocol):
@@ -45,3 +56,5 @@ class PanelAdapter(Protocol):
     async def reset_usage(self, remote_identifier: str) -> None: ...
 
     async def get_used_bytes(self, remote_identifier: str) -> int | None: ...
+
+    async def get_user_snapshot(self, remote_identifier: str) -> RemoteUserSnapshot: ...

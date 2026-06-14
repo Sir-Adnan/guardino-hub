@@ -17,7 +17,8 @@ from app.schemas.admin import (
 )
 from app.schemas.settings import ResellerUserPolicy
 from app.services.reseller_user_policy import (
-    get_effective_user_policy,
+    delete_user_policy_setting,
+    get_user_policy_setting_optional,
     reseller_user_policy_key,
     set_user_policy_setting,
 )
@@ -55,7 +56,7 @@ async def list_resellers(
     rows = q.scalars().all()
     items: list[ResellerOut] = []
     for r in rows:
-        policy = await get_effective_user_policy(db, r.id)
+        policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
         items.append(_to_out(r, policy))
     return ResellerList(items=items, total=total)
 
@@ -66,7 +67,7 @@ async def get_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), adm
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
-    policy = await get_effective_user_policy(db, r.id)
+    policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
     return _to_out(r, policy)
 
 @router.post("", response_model=ResellerOut)
@@ -92,7 +93,7 @@ async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Dep
     if payload.user_policy is not None:
         await set_user_policy_setting(db, reseller_user_policy_key(r.id), payload.user_policy.model_dump())
 
-    policy = await get_effective_user_policy(db, r.id)
+    policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
     return _to_out(r, policy)
 
 
@@ -124,9 +125,12 @@ async def update_reseller(
     user_policy_payload = payload.user_policy
     await db.commit()
     await db.refresh(r)
-    if user_policy_payload is not None:
-        await set_user_policy_setting(db, reseller_user_policy_key(r.id), user_policy_payload.model_dump())
-    policy = await get_effective_user_policy(db, r.id)
+    if "user_policy" in fields:
+        if user_policy_payload is None:
+            await delete_user_policy_setting(db, reseller_user_policy_key(r.id))
+        else:
+            await set_user_policy_setting(db, reseller_user_policy_key(r.id), user_policy_payload.model_dump())
+    policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
     return _to_out(r, policy)
 
 

@@ -184,7 +184,8 @@ function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warnin
 }
 
 function policySummary(policy: ResellerUserPolicy | null | undefined): string {
-  if (!policy || !policy.enabled) return "بدون محدودیت";
+  if (!policy) return "سیاست سراسری";
+  if (!policy.enabled) return "اختصاصی: بدون محدودیت ساخت";
   const p = normalizePolicy(policy);
   const daysMode = p.allow_custom_days ? "روز دستی: روشن" : "روز دستی: خاموش";
   const trafficMode = p.allow_custom_traffic ? "حجم دستی: روشن" : `حجم‌ها: ${p.allowed_traffic_gb.join(", ")}`;
@@ -211,6 +212,7 @@ export default function AdminResellersPage() {
   const [priceDay, setPriceDay] = React.useState<number>(0);
   const [canCreateSub, setCanCreateSub] = React.useState(true);
   const [assignAllNodes, setAssignAllNodes] = React.useState(true);
+  const [useCustomPolicy, setUseCustomPolicy] = React.useState(false);
   const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
   const [trafficInput, setTrafficInput] = React.useState(TRAFFIC_PRESET_OPTIONS.join(", "));
 
@@ -233,6 +235,7 @@ export default function AdminResellersPage() {
     setPriceDay(0);
     setCanCreateSub(true);
     setAssignAllNodes(true);
+    setUseCustomPolicy(false);
     const p = defaultUserPolicy();
     setUserPolicy(p);
     setTrafficInput(p.allowed_traffic_gb.join(", "));
@@ -269,14 +272,14 @@ async function assignAllNodesForReseller(resellerId: number) {
   const nodes = await fetchAllNodesForAdmin();
   const enabled = nodes.filter((n) => n.is_enabled);
   await Promise.all(
-    enabled.map((n) =>
+    enabled.map((n, idx) =>
       apiFetch("/api/v1/admin/allocations", {
         method: "POST",
         body: JSON.stringify({
           reseller_id: resellerId,
           node_id: n.id,
           enabled: true,
-          default_for_reseller: true,
+          default_for_reseller: idx === 0,
           price_per_gb_override: null,
         }),
       }).catch(() => null)
@@ -299,7 +302,7 @@ async function assignAllNodesForReseller(resellerId: number) {
             bundle_price_per_gb: Number(bundleGb) || 0,
             price_per_day: Number(priceDay) || 0,
             can_create_subreseller: canCreateSub,
-            user_policy: normalizePolicy(userPolicy),
+            user_policy: useCustomPolicy ? normalizePolicy(userPolicy) : null,
           }),
         });
         push({ title: t("adminResellers.created"), desc: `ID: ${res.id}`, type: "success" });
@@ -325,7 +328,7 @@ async function assignAllNodesForReseller(resellerId: number) {
             bundle_price_per_gb: Number(bundleGb),
             price_per_day: Number(priceDay),
             can_create_subreseller: canCreateSub,
-            user_policy: normalizePolicy(userPolicy),
+            user_policy: useCustomPolicy ? normalizePolicy(userPolicy) : null,
           }),
         });
         push({ title: t("adminResellers.saved"), desc: `ID: ${res.id}`, type: "success" });
@@ -348,6 +351,7 @@ async function assignAllNodesForReseller(resellerId: number) {
       setBundleGb((detail.bundle_price_per_gb ?? 0) as number);
       setPriceDay((detail.price_per_day ?? 0) as number);
       setCanCreateSub(detail.can_create_subreseller ?? true);
+      setUseCustomPolicy(!!detail.user_policy);
       const p = normalizePolicy(detail.user_policy || defaultUserPolicy());
       setUserPolicy(p);
       setTrafficInput((p.allowed_traffic_gb || []).join(", "));
@@ -551,6 +555,24 @@ async function assignAllNodesForReseller(resellerId: number) {
             </div>
 
 	            <div className="space-y-3 md:col-span-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">سیاست‌های اختصاصی رسیلر</div>
+                  <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
+                    خاموش باشد، تنظیمات سراسری سوپرادمین اعمال می‌شود. روشن باشد، تنظیمات همین باکس روی سیاست‌های کلی اولویت دارد.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2">
+                  <Switch checked={useCustomPolicy} onCheckedChange={setUseCustomPolicy} />
+                  <span className="text-xs text-[hsl(var(--fg))]/75">{useCustomPolicy ? "اختصاصی" : "سراسری"}</span>
+                </div>
+              </div>
+              {!useCustomPolicy ? (
+                <div className={guideBoxClass}>
+                  برای این رسیلر تنظیم اختصاصی ذخیره نمی‌شود و سیاست حذف/ریفاند، ریست مصرف، ویرایش/تمدید و محدودیت ساخت از بخش تنظیمات سراسری سوپرادمین خوانده می‌شود.
+                </div>
+              ) : null}
+              <div className={useCustomPolicy ? "space-y-3" : "hidden"}>
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium">سیاست ساخت کاربر برای رسیلر</div>
@@ -693,71 +715,81 @@ async function assignAllNodesForReseller(resellerId: number) {
               ) : (
                 <div className="text-xs text-[hsl(var(--fg))]/70">در حالت غیرفعال، محدودیتی برای روز/حجم اعمال نمی‌شود.</div>
               )}
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">سیاست حذف و ریفاند</div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs">اجازه حذف کاربر</span>
-                    <Switch
-                      checked={userPolicy.allow_user_delete}
-                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      value={userPolicy.delete_refund_window_days}
-                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
-                      placeholder="روز مجاز"
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={userPolicy.delete_expired_used_gb_limit}
-                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
-                      placeholder="حد مصرف GB"
-                    />
+              <div className="space-y-3 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
+                <div>
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/80">سیاست‌های حذف، ریست، ویرایش و تمدید</div>
+                  <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
+                    این سه بخش یکجا برای همین رسیلر ذخیره می‌شوند. اگر تنظیم اختصاصی خاموش باشد، مقدارهای سراسری سوپرادمین استفاده می‌شود.
                   </div>
                 </div>
-
-                <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">سیاست ریست مصرف</div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs">اجازه ریست کاربر</span>
-                    <Switch
-                      checked={userPolicy.allow_reset_usage}
-                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))}
-                    />
-                  </div>
-                  <div className="text-xs text-[hsl(var(--fg))]/65">برای بستن ریست فقط این گزینه را خاموش کنید؛ محدودیت ساخت لازم نیست فعال باشد.</div>
-                </div>
-
-                <div className="space-y-3 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 md:col-span-2 break-words [overflow-wrap:anywhere]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs text-[hsl(var(--fg))]/70">سیاست ویرایش و تمدید</div>
-                      <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
-                        اگر روشن باشد، رسیلر فقط تمدید بسته‌ای طبق پکیج‌های آماده انجام می‌دهد و افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود.
-                      </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">حذف و ریفاند</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">اجازه حذف کاربر</span>
+                      <Switch
+                        checked={userPolicy.allow_user_delete}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))}
+                      />
                     </div>
-                    <Switch
-                      checked={userPolicy.restrict_edit_to_renewal_only}
-                      onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))}
-                    />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={userPolicy.delete_refund_window_days}
+                        onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                        placeholder="روز مجاز"
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={userPolicy.delete_expired_used_gb_limit}
+                        onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                        placeholder="حد مصرف GB"
+                      />
+                    </div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">عدد 0 برای حد مصرف یعنی نامحدود؛ 0.5 یعنی حدود ۵۰۰ مگابایت.</div>
                   </div>
-                  <select
-                    className={selectClass}
-                    value={userPolicy.renewal_policy}
-                    onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
-                  >
-                    <option value="reset_time_and_volume">ریست زمان و حجم</option>
-                    <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
-                    <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
-                    <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
-                  </select>
+
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/70">ریست مصرف</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs">اجازه ریست کاربر</span>
+                      <Switch
+                        checked={userPolicy.allow_reset_usage}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))}
+                      />
+                    </div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">خاموش باشد، رسیلر نمی‌تواند مصرف کاربر را ریست کند.</div>
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3 md:col-span-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-[hsl(var(--fg))]/70">ویرایش و تمدید</div>
+                        <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
+                          اگر روشن باشد، رسیلر فقط تمدید بسته‌ای طبق پکیج‌های آماده انجام می‌دهد و افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود.
+                        </div>
+                      </div>
+                      <Switch
+                        checked={userPolicy.restrict_edit_to_renewal_only}
+                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))}
+                      />
+                    </div>
+                    <select
+                      className={selectClass}
+                      value={userPolicy.renewal_policy}
+                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
+                    >
+                      <option value="reset_time_and_volume">ریست زمان و حجم</option>
+                      <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
+                      <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
+                      <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
+                    </select>
+                  </div>
                 </div>
+              </div>
               </div>
             </div>
           </div>

@@ -11,12 +11,33 @@ from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.factory import get_adapter
+from app.services.adapters.base import RemoteUserNotFound
 from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
 from app.services.task_metrics import TaskRunStats
 
 BYTES_PER_GB = 1024 ** 3
 logger = logging.getLogger(__name__)
+
+
+def _sync_create_status_meta(user: GuardinoUser, remote_status: str | None, used_bytes: int, now: datetime) -> None:
+    meta = user.meta if isinstance(user.meta, dict) else {}
+    current = str(meta.get("create_status") or "").strip().lower()
+    normalized_remote = str(remote_status or "").strip().lower()
+    next_status: str | None = None
+
+    if normalized_remote == "on_hold":
+        next_status = "on_hold"
+    elif normalized_remote in {"active", "disabled", "limited", "expired"}:
+        next_status = "active"
+    elif used_bytes > 0 and current == "on_hold":
+        next_status = "active"
+
+    if next_status and current != next_status:
+        extra: dict[str, str] = {"create_status": next_status}
+        if next_status == "active" and current == "on_hold":
+            extra["first_connection_synced_at"] = now.isoformat()
+        user.meta = {**meta, **extra}
 
 @celery_app.task(name="app.tasks.usage.sync_usage")
 def sync_usage():
@@ -38,7 +59,7 @@ async def _sync_usage_async():
         while True:
             q = await db.execute(
                 select(GuardinoUser)
-                .where(GuardinoUser.status == UserStatus.active, GuardinoUser.id > last_id)
+                .where(GuardinoUser.status != UserStatus.deleted, GuardinoUser.id > last_id)
                 .order_by(GuardinoUser.id.asc())
                 .limit(batch_size)
             )
@@ -113,6 +134,8 @@ async def _sync_usage_async():
 
                 # Sync usage from remote. If a node is temporarily unreachable,
                 # keep the previous local usage snapshot for that subaccount.
+                missing_subs = 0
+                missing_sub_ids: set[int] = set()
                 for s in u_subs:
                     effective_used = max(0, int(s.used_bytes or 0))
                     n = nodes.get(s.node_id)
@@ -156,12 +179,19 @@ async def _sync_usage_async():
                         effective_used = max(0, int(used))
                         s.used_bytes = effective_used
                         s.last_sync_at = now
+                        _sync_create_status_meta(u, None, effective_used, now)
                         remote_success_count += 1
                         stats.remote_success += 1
                         total_used += effective_used
                         continue
                     try:
-                        used = await adapter.get_used_bytes(s.remote_identifier)
+                        remote_status = None
+                        if hasattr(adapter, "get_user_snapshot"):
+                            snapshot = await adapter.get_user_snapshot(s.remote_identifier)  # type: ignore[attr-defined]
+                            used = snapshot.used_bytes
+                            remote_status = snapshot.status
+                        else:
+                            used = await adapter.get_used_bytes(s.remote_identifier)
                         if used is None:
                             stats.remote_skipped += 1
                             total_used += effective_used
@@ -169,9 +199,27 @@ async def _sync_usage_async():
                         effective_used = max(0, int(used))
                         s.used_bytes = effective_used
                         s.last_sync_at = now
+                        _sync_create_status_meta(u, remote_status, effective_used, now)
                         remote_success_count += 1
                         stats.remote_success += 1
                         total_used += effective_used
+                    except RemoteUserNotFound:
+                        missing_subs += 1
+                        missing_sub_ids.add(s.id)
+                        stats.remote_missing += 1
+                        try:
+                            await db.delete(s)
+                        except Exception:
+                            stats.errors += 1
+                        if failure_log_budget > 0:
+                            logger.info(
+                                "sync_usage remote user missing user_id=%s node_id=%s remote_identifier=%s",
+                                u.id,
+                                s.node_id,
+                                s.remote_identifier,
+                            )
+                            failure_log_budget -= 1
+                        continue
                     except Exception as e:
                         stats.remote_failures += 1
                         if failure_log_budget > 0:
@@ -186,8 +234,20 @@ async def _sync_usage_async():
                         total_used += effective_used
                         continue
 
+                if u_subs and missing_subs >= len(u_subs):
+                    meta = u.meta if isinstance(u.meta, dict) else {}
+                    u.status = UserStatus.deleted
+                    u.meta = {
+                        **meta,
+                        "remote_deleted_at": now.isoformat(),
+                        "remote_deleted_reason": "missing_in_panel",
+                    }
+                    stats.remote_deleted_users += 1
+                    stats.affected_users += 1
+                    continue
+
                 u.used_bytes = int(total_used)
-                if u_subs and remote_success_count == 0:
+                if u_subs and missing_subs < len(u_subs) and remote_success_count == 0:
                     stats.users_with_stale_usage += 1
 
                 # enforce volume exhaustion
@@ -195,6 +255,8 @@ async def _sync_usage_async():
                     u.status = UserStatus.disabled
                     stats.affected_users += 1
                     for s in u_subs:
+                        if s.id in missing_sub_ids:
+                            continue
                         n = nodes.get(s.node_id)
                         if not n:
                             continue

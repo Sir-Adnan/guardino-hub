@@ -42,7 +42,7 @@ export function AppHeader({
 
   return (
     <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[linear-gradient(120deg,hsl(var(--card))/0.96_0%,hsl(var(--muted))/0.38_100%)] backdrop-blur">
-      <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
         <div className="min-w-0">
           <div className="text-lg font-semibold truncate">{t(key)}</div>
           {locked ? (
@@ -76,10 +76,16 @@ export function AppHeader({
           ) : null}
 
           {showCreateUser ? (
-            <Link href="/app/users/new">
-              <Button className="gap-2">
-                <Plus size={16} />
-                {t("users.create")}
+            <Link href="/app/users/new" className={locked ? "pointer-events-none" : ""} aria-disabled={locked}>
+              <Button
+                size="sm"
+                disabled={locked}
+                className="h-9 w-9 rounded-xl p-0 shadow-[0_10px_22px_-18px_hsl(var(--accent))] sm:w-auto sm:px-3"
+                title={t("users.create")}
+                aria-label={t("users.create")}
+              >
+                <Plus size={15} />
+                <span className="hidden sm:inline">{t("users.create")}</span>
               </Button>
             </Link>
           ) : null}

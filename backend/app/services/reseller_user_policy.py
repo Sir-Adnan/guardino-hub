@@ -155,3 +155,11 @@ async def set_user_policy_setting(db: AsyncSession, key: str, value: dict) -> di
     await db.commit()
     return normalized
 
+
+async def delete_user_policy_setting(db: AsyncSession, key: str) -> None:
+    q = await db.execute(select(AppSetting).where(AppSetting.key == key))
+    row = q.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await db.commit()
+

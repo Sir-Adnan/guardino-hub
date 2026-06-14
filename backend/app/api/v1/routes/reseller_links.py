@@ -10,6 +10,7 @@ from app.api.deps import block_if_balance_zero
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
+from app.services.adapters.base import RemoteUserNotFound
 from app.services.adapters.factory import get_adapter
 from app.schemas.links import UserLinksResponse, NodeLink
 from app.services.user_defaults import (
@@ -44,6 +45,26 @@ def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
 router = APIRouter()
 
 
+def _sync_create_status_meta(user: GuardinoUser, remote_status: str | None, used_bytes: int, now: datetime) -> None:
+    meta = user.meta if isinstance(user.meta, dict) else {}
+    current = str(meta.get("create_status") or "").strip().lower()
+    normalized_remote = str(remote_status or "").strip().lower()
+    next_status: str | None = None
+
+    if normalized_remote == "on_hold":
+        next_status = "on_hold"
+    elif normalized_remote in {"active", "disabled", "limited", "expired"}:
+        next_status = "active"
+    elif used_bytes > 0 and current == "on_hold":
+        next_status = "active"
+
+    if next_status and current != next_status:
+        extra: dict[str, str] = {"create_status": next_status}
+        if next_status == "active" and current == "on_hold":
+            extra["first_connection_synced_at"] = now.isoformat()
+        user.meta = {**meta, **extra}
+
+
 async def _show_guardino_master_sub(db: AsyncSession, reseller_id: int) -> bool:
     effective = await get_effective_user_defaults(db, reseller_id)
     return bool(effective.get("show_guardino_master_sub", False))
@@ -73,6 +94,8 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
 
     node_links: list[NodeLink] = []
     now = datetime.now(timezone.utc)
+    missing_subs = 0
+    missing_sub_ids: set[int] = set()
 
     for sa in subs:
         node = node_map.get(sa.node_id)
@@ -92,6 +115,11 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
         if refresh and sa.node_id in node_map and (node_panel_type != "wg_dashboard"):
             try:
                 adapter = get_adapter(node_map[sa.node_id])
+                if hasattr(adapter, "get_user_snapshot"):
+                    snapshot = await adapter.get_user_snapshot(sa.remote_identifier)  # type: ignore[attr-defined]
+                    if snapshot.used_bytes is not None:
+                        sa.used_bytes = max(0, int(snapshot.used_bytes))
+                    _sync_create_status_meta(user, snapshot.status, int(sa.used_bytes or 0), now)
                 direct_new = await adapter.get_direct_subscription_url(sa.remote_identifier)
                 if direct_new:
                     normalized_new = _normalize_url(direct_new, node.base_url if node else None)
@@ -101,6 +129,13 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                     status = "ok"
                 else:
                     status = "missing"
+            except RemoteUserNotFound:
+                missing_subs += 1
+                missing_sub_ids.add(sa.id)
+                await db.delete(sa)
+                direct = None
+                status = "missing"
+                detail = "Remote user not found"
             except Exception as e:
                 status = "error"
                 detail = str(e)[:160]
@@ -123,9 +158,18 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
         )
 
     if refresh:
+        user.used_bytes = sum(max(0, int(sa.used_bytes or 0)) for sa in subs if sa.id not in missing_sub_ids)
+        if missing_subs >= len(subs):
+            meta = user.meta if isinstance(user.meta, dict) else {}
+            user.status = UserStatus.deleted
+            user.meta = {
+                **meta,
+                "remote_deleted_at": now.isoformat(),
+                "remote_deleted_reason": "missing_in_panel",
+            }
         await db.commit()
 
     master = None
-    if await _show_guardino_master_sub(db, reseller.id):
+    if user.status != UserStatus.deleted and await _show_guardino_master_sub(db, reseller.id):
         master = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
     return UserLinksResponse(user_id=user.id, master_link=master, node_links=node_links)

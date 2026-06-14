@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
 import { useAuth } from "@/components/auth-context";
+import { formatJalaliDateTime } from "@/lib/jalali";
 
 type ResellerMini = { id: number; username: string };
 type OrderRow = {
@@ -41,11 +42,12 @@ async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]>
   return all;
 }
 
-function orderTypeMeta(type: string): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+function orderTypeMeta(row: Pick<OrderRow, "type" | "purchased_gb">): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+  const type = row.type;
   const m: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
     create: { label: "ساخت کاربر", variant: "danger" },
     add_traffic: { label: "افزایش حجم", variant: "danger" },
-    extend: { label: "تمدید", variant: "warning" },
+    extend: { label: row.purchased_gb != null ? "تمدید بسته‌ای" : "افزایش زمان", variant: "warning" },
     change_nodes: { label: "تغییر نود", variant: "warning" },
     refund: { label: "بازگشت وجه", variant: "success" },
     delete: { label: "حذف کاربر", variant: "muted" },
@@ -61,6 +63,11 @@ function orderStatusMeta(status: string): { label: string; variant: "success" | 
     rolled_back: { label: "برگشت‌خورده", variant: "muted" },
   };
   return m[(status || "").toLowerCase()] || { label: status || "نامشخص", variant: "muted" };
+}
+
+function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean) {
+  if (!isAdmin) return "حساب شما";
+  return resellerMap[resellerId] || `ریسیلر #${resellerId}`;
 }
 
 export default function OrdersPage() {
@@ -234,7 +241,7 @@ export default function OrdersPage() {
 
           <div className="space-y-2 md:hidden">
             {items.map((o) => {
-              const tm = orderTypeMeta(o.type);
+              const tm = orderTypeMeta(o);
               const sm = orderStatusMeta(o.status);
               return (
                 <div key={o.id} className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs">
@@ -245,10 +252,13 @@ export default function OrdersPage() {
                       <Badge variant={sm.variant}>{sm.label}</Badge>
                     </div>
                   </div>
-                  <div>ریسیلر: {isAdmin ? resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : `#${o.reseller_id}` : `#${o.reseller_id}`}</div>
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--surface-card-1))] px-2 py-1">
+                    <span className="text-[hsl(var(--fg))]/65">ریسیلر</span>
+                    <span className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin)}</span>
+                  </div>
                   <div>کاربر: {o.user_id ? `#${o.user_id}` : "-"}</div>
                   <div>حجم سفارش: {o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</div>
-                  <div className="text-[hsl(var(--fg))]/65">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</div>
+                  <div className="text-[hsl(var(--fg))]/65">{o.created_at ? formatJalaliDateTime(o.created_at) : "-"}</div>
                 </div>
               );
             })}
@@ -270,12 +280,15 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {items.map((o) => {
-                  const tm = orderTypeMeta(o.type);
+                  const tm = orderTypeMeta(o);
                   const sm = orderStatusMeta(o.status);
                   return (
                     <tr key={o.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                       <td className="py-2">{o.id}</td>
-                      <td className="py-2">{isAdmin ? resellerMap[o.reseller_id] ? `${resellerMap[o.reseller_id]} (#${o.reseller_id})` : o.reseller_id : o.reseller_id}</td>
+                      <td className="py-2">
+                        <div className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin)}</div>
+                        {isAdmin ? <div className="text-xs text-[hsl(var(--fg))]/55">#{o.reseller_id}</div> : null}
+                      </td>
                       <td className="py-2">
                         {o.user_id ? (
                           <a className="underline" href={`/app/users/${o.user_id}`}>#{o.user_id}</a>
@@ -286,7 +299,7 @@ export default function OrdersPage() {
                       <td className="py-2"><Badge variant={tm.variant}>{tm.label}</Badge></td>
                       <td className="py-2"><Badge variant={sm.variant}>{sm.label}</Badge></td>
                       <td className="py-2">{o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</td>
-                      <td className="py-2">{o.created_at ? new Date(o.created_at).toLocaleString() : "-"}</td>
+                      <td className="py-2">{o.created_at ? formatJalaliDateTime(o.created_at) : "-"}</td>
                     </tr>
                   );
                 })}

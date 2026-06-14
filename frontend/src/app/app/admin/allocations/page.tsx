@@ -78,6 +78,7 @@ export default function AllocationsPage() {
   const [resellerId, setResellerId] = React.useState<number | "">("");
   const [nodeId, setNodeId] = React.useState<number | "">("");
   const [nodeIds, setNodeIds] = React.useState<number[]>([]);
+  const [defaultNodeIds, setDefaultNodeIds] = React.useState<number[]>([]);
   const [nodePickQ, setNodePickQ] = React.useState("");
   const [priceOverride, setPriceOverride] = React.useState<number | "">("");
   const [enabled, setEnabled] = React.useState(true);
@@ -104,6 +105,7 @@ export default function AllocationsPage() {
     setResellerId("");
     setNodeId("");
     setNodeIds([]);
+    setDefaultNodeIds([]);
     setNodePickQ("");
     setPriceOverride("");
     setEnabled(true);
@@ -153,13 +155,19 @@ export default function AllocationsPage() {
       if (editingId == null) {
         const targets = nodeIds.length ? nodeIds : (nodeId === "" ? [] : [Number(nodeId)]);
         if (!targets.length) throw new Error(t("adminAllocations.errSelect"));
+        const defaultSet = new Set((defaultNodeIds.length ? defaultNodeIds : targets.length === 1 ? targets : []).map(Number));
 
         setBusy(true);
         const results = await Promise.allSettled(
           targets.map((nid) =>
             apiFetch<AllocationOut>("/api/v1/admin/allocations", {
               method: "POST",
-              body: JSON.stringify({ reseller_id: Number(resellerId), node_id: Number(nid), ...payload }),
+              body: JSON.stringify({
+                reseller_id: Number(resellerId),
+                node_id: Number(nid),
+                ...payload,
+                default_for_reseller: defaultSet.has(Number(nid)),
+              }),
             })
           )
         );
@@ -193,6 +201,7 @@ export default function AllocationsPage() {
     setResellerId(a.reseller_id);
     setNodeId(a.node_id);
     setNodeIds([]);
+    setDefaultNodeIds([]);
     setNodePickQ("");
     setEnabled(a.enabled);
     setDef(a.default_for_reseller);
@@ -205,14 +214,34 @@ export default function AllocationsPage() {
     return nodes.filter((n) => `${n.id} ${n.name} ${n.panel_type}`.toLowerCase().includes(qq));
   }, [nodes, nodePickQ]);
 
+  const selectedNodeSet = React.useMemo(() => new Set(nodeIds), [nodeIds]);
+  const defaultableNodes = React.useMemo(() => nodes.filter((n) => selectedNodeSet.has(n.id)), [nodes, selectedNodeSet]);
   const allSelected = nodes.length > 0 && nodeIds.length === nodes.length;
+  function applyNodeSelection(next: number[]) {
+    const cleaned = Array.from(new Set(next.map(Number).filter((x) => Number.isInteger(x) && x > 0)));
+    setNodeIds(cleaned);
+    setDefaultNodeIds((prev) => {
+      const kept = prev.filter((id) => cleaned.includes(id));
+      if (kept.length) return kept;
+      return cleaned.length ? [cleaned[0]] : [];
+    });
+  }
+
   function toggleAll(v: boolean) {
-    setNodeIds(v ? nodes.map((n) => n.id) : []);
+    applyNodeSelection(v ? nodes.map((n) => n.id) : []);
   }
 
   function toggleOne(id: number, v: boolean) {
-    setNodeIds((prev) => {
-      const s = new Set(prev);
+    const s = new Set(nodeIds);
+    if (v) s.add(id);
+    else s.delete(id);
+    applyNodeSelection(Array.from(s));
+  }
+
+  function toggleDefaultNode(id: number, v: boolean) {
+    if (!selectedNodeSet.has(id)) return;
+    setDefaultNodeIds((prev) => {
+      const s = new Set(prev.filter((x) => selectedNodeSet.has(x)));
       if (v) s.add(id);
       else s.delete(id);
       return Array.from(s);
@@ -313,7 +342,7 @@ export default function AllocationsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75 break-words [overflow-wrap:anywhere]">
-            تخصیص مشخص می‌کند هر رسیلر اجازه ساخت کاربر روی کدام نود را دارد. گزینه «فعال» یعنی این نود برای ساخت و ساب قابل استفاده است. گزینه «پیش‌فرض برای رسیلر» می‌تواند روی چند نود همزمان روشن باشد؛ وقتی رسیلر موقع ساخت کاربر نودی انتخاب نکند، فقط همین نودهای پیش‌فرض استفاده می‌شوند. اگر هیچ نود پیش‌فرضی تعیین نشده باشد، سیستم برای سازگاری قبلی از همه تخصیص‌های فعال استفاده می‌کند. اگر یک نود مقصد قطع باشد، ساخت کاربر روی نودهای سالم ادامه پیدا می‌کند و خطای نود قطع‌شده در اطلاعات داخلی کاربر ثبت می‌شود.
+            تخصیص مشخص می‌کند هر رسیلر اجازه ساخت کاربر روی کدام نود را دارد. می‌توانید همه نودها را برای رسیلر مجاز کنید، اما فقط یک یا چند نود را به‌عنوان پیش‌فرض فرم ساخت انتخاب کنید. اگر نود پیش‌فرض تعیین شود، فرم ساخت کاربر برای آن رسیلر به‌صورت دستی روی همان نودها باز می‌شود و قیمت‌گذاری پیش‌فرض Per Node خواهد بود؛ تنظیمات ذخیره‌شده خود رسیلر همچنان اولویت نهایی را دارد.
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -398,6 +427,50 @@ export default function AllocationsPage() {
                   <div className="text-xs text-[hsl(var(--fg))]/70">
                     {t("adminAllocations.nodeHint")} • {nodeIds.length ? `${nodeIds.length} selected` : "—"}
                   </div>
+
+                  {nodeIds.length ? (
+                    <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-medium text-[hsl(var(--fg))]/80">نودهای پیش‌فرض فرم ساخت</div>
+                          <div className="text-xs leading-5 text-[hsl(var(--fg))]/65">
+                            این نودها هنگام ساخت کاربر برای رسیلر به‌صورت پیش‌فرض انتخاب می‌شوند.
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setDefaultNodeIds(nodeIds.length ? [nodeIds[0]] : [])}>
+                            تک نود
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setDefaultNodeIds([...nodeIds])}>
+                            همه انتخاب‌شده‌ها
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" disabled={nodeIds.length === 1} onClick={() => setDefaultNodeIds([])}>
+                            بدون پیش‌فرض
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {defaultableNodes.map((n) => (
+                          <label
+                            key={`default-${n.id}`}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-sm"
+                          >
+                            <span className="min-w-0 truncate">{n.name} • #{n.id}</span>
+                            <input
+                              type="checkbox"
+                              checked={defaultNodeIds.includes(n.id)}
+                              onChange={(e) => toggleDefaultNode(n.id, e.target.checked)}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="text-xs text-[hsl(var(--fg))]/65">
+                        {defaultNodeIds.length
+                          ? `${defaultNodeIds.length} نود پیش‌فرض انتخاب شده است.`
+                          : "اگر پیش‌فرضی انتخاب نکنید، رسیلر می‌تواند از تنظیمات سراسری یا تنظیمات خودش استفاده کند."}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -418,13 +491,15 @@ export default function AllocationsPage() {
                 </div>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2">
-                <div className="flex items-center gap-2 text-sm text-[hsl(var(--fg))]/75">
-                  <span>{t("adminAllocations.default")}</span>
-                  <HelpTip text={t("adminAllocations.help.default")} />
+              {editingId != null ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm text-[hsl(var(--fg))]/75">
+                    <span>{t("adminAllocations.default")}</span>
+                    <HelpTip text={t("adminAllocations.help.default")} />
+                  </div>
+                  <Switch checked={def} onCheckedChange={setDef} />
                 </div>
-                <Switch checked={def} onCheckedChange={setDef} />
-              </div>
+              ) : null}
             </div>
           </div>
 

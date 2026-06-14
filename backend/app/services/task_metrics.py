@@ -9,5 +9,7 @@ class TaskRunStats:
     remote_skipped: int = 0
     remote_actions: int = 0
     remote_failures: int = 0
+    remote_missing: int = 0
+    remote_deleted_users: int = 0
     users_with_stale_usage: int = 0
     errors: int = 0

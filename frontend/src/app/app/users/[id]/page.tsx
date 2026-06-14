@@ -60,6 +60,19 @@ function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
 }
 
+function fmtTrafficBytes(bytes: number) {
+  const safe = Math.max(0, Number(bytes) || 0);
+  if (safe > 0 && safe < 1024 * 1024 * 1024) {
+    const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
+    return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(mb)} مگابایت`;
+  }
+  return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(bytesToGb(safe))} گیگ`;
+}
+
+function usagePercentLabel(percent: number, usedBytes: number) {
+  return usedBytes > 0 && percent === 0 ? "<۱٪" : `${percent}٪`;
+}
+
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
@@ -270,8 +283,9 @@ export default function UserDetailPage() {
 
   const status = statusMeta(user?.status || "", user?.create_status);
   const totalBytes = (user?.total_gb || 0) * 1024 * 1024 * 1024;
-  const usedGb = bytesToGb(user?.used_bytes || 0);
-  const usagePct = Math.round(clamp01(totalBytes > 0 ? (user?.used_bytes || 0) / totalBytes : 0) * 100);
+  const usedBytes = Number(user?.used_bytes || 0);
+  const usagePct = Math.round(clamp01(totalBytes > 0 ? usedBytes / totalBytes : 0) * 100);
+  const visibleUsagePct = usedBytes > 0 ? Math.max(1, usagePct) : 0;
   const expiryDate = user ? new Date(user.expire_at) : null;
   const now = new Date();
   const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
@@ -383,7 +397,7 @@ export default function UserDetailPage() {
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">مصرف‌شده</div>
-                      <div className="mt-1 text-lg font-semibold">{new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(usedGb)} گیگ</div>
+                      <div className="mt-1 text-lg font-semibold">{fmtTrafficBytes(usedBytes)}</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                       <div className="text-xs text-[hsl(var(--fg))]/70">روز باقی‌مانده</div>
@@ -393,9 +407,9 @@ export default function UserDetailPage() {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-xs text-[hsl(var(--fg))]/70">
                       <span>درصد مصرف</span>
-                      <span className="font-semibold">{usagePct}%</span>
+                      <span className="font-semibold">{usagePercentLabel(usagePct, usedBytes)}</span>
                     </div>
-                    <Progress value={usagePct} />
+                    <Progress value={visibleUsagePct} />
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/70">
                     تاریخ انقضا: {formatJalaliDateTime(new Date(user.expire_at))}

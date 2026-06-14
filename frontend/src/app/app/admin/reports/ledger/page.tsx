@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
 import { useAuth } from "@/components/auth-context";
+import { formatJalaliDateTime } from "@/lib/jalali";
 
 type ResellerMini = { id: number; username: string };
 type LedgerRow = {
@@ -44,10 +45,16 @@ function reasonMeta(reason: string, amount: number): { label: string; variant: "
   const key = (reason || "").toLowerCase();
   const map: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
     manual_credit: { label: "شارژ دستی", variant: "success" },
+    manual_debit: { label: "کاهش دستی موجودی", variant: "danger" },
     user_create: { label: "هزینه ساخت کاربر", variant: "danger" },
     add_traffic: { label: "هزینه افزایش حجم", variant: "danger" },
-    extend: { label: "هزینه تمدید", variant: "danger" },
+    extend: { label: "هزینه افزایش زمان", variant: "danger" },
+    renew_reset_time_and_volume: { label: "تمدید: ریست زمان و حجم", variant: "danger" },
+    renew_add_time_and_volume: { label: "تمدید: افزودن زمان و حجم", variant: "danger" },
+    renew_reset_time_carry_volume: { label: "تمدید: ریست زمان + حجم باقی‌مانده", variant: "danger" },
+    renew_reset_volume_carry_time: { label: "تمدید: ریست حجم + زمان باقی‌مانده", variant: "danger" },
     refund_decrease: { label: "بازگشت وجه کاهش حجم", variant: "success" },
+    refund_decrease_time: { label: "بازگشت وجه کاهش زمان", variant: "success" },
     refund_delete: { label: "بازگشت وجه حذف کاربر", variant: "success" },
     change_nodes_add: { label: "هزینه افزودن نود", variant: "warning" },
   };
@@ -55,6 +62,11 @@ function reasonMeta(reason: string, amount: number): { label: string; variant: "
   if (amount > 0) return { label: "افزایش موجودی", variant: "success" };
   if (amount < 0) return { label: "کسر موجودی", variant: "danger" };
   return { label: reason || "نامشخص", variant: "muted" };
+}
+
+function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean) {
+  if (!isAdmin) return "حساب شما";
+  return resellerMap[resellerId] || `ریسیلر #${resellerId}`;
 }
 
 export default function LedgerPage() {
@@ -240,12 +252,15 @@ export default function LedgerPage() {
                     <div className="font-semibold">#{t.id}</div>
                     <Badge variant={meta.variant}>{meta.label}</Badge>
                   </div>
-                  <div>ریسیلر: {isAdmin ? resellerMap[t.reseller_id] ? `${resellerMap[t.reseller_id]} (#${t.reseller_id})` : `#${t.reseller_id}` : `#${t.reseller_id}`}</div>
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--surface-card-1))] px-2 py-1">
+                    <span className="text-[hsl(var(--fg))]/65">ریسیلر</span>
+                    <span className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin)}</span>
+                  </div>
                   <div className={t.amount >= 0 ? "text-emerald-700" : "text-red-700"}>
                     مبلغ: {t.amount >= 0 ? "+" : ""}{fmtNumber(t.amount)}
                   </div>
                   <div>موجودی بعد از عملیات: {fmtNumber(t.balance_after)}</div>
-                  <div className="text-[hsl(var(--fg))]/65">{t.occurred_at ? new Date(t.occurred_at).toLocaleString() : "-"}</div>
+                  <div className="text-[hsl(var(--fg))]/65">{t.occurred_at ? formatJalaliDateTime(t.occurred_at) : "-"}</div>
                 </div>
               );
             })}
@@ -270,13 +285,16 @@ export default function LedgerPage() {
                   return (
                     <tr key={t.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                       <td className="py-2">{t.id}</td>
-                      <td className="py-2">{isAdmin ? resellerMap[t.reseller_id] ? `${resellerMap[t.reseller_id]} (#${t.reseller_id})` : t.reseller_id : t.reseller_id}</td>
+                      <td className="py-2">
+                        <div className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin)}</div>
+                        {isAdmin ? <div className="text-xs text-[hsl(var(--fg))]/55">#{t.reseller_id}</div> : null}
+                      </td>
                       <td className={`py-2 font-medium ${t.amount >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                         {t.amount >= 0 ? "+" : ""}{fmtNumber(t.amount)}
                       </td>
                       <td className="py-2"><Badge variant={meta.variant}>{meta.label}</Badge></td>
                       <td className="py-2">{fmtNumber(t.balance_after)}</td>
-                      <td className="py-2">{t.occurred_at ? new Date(t.occurred_at).toLocaleString() : "-"}</td>
+                      <td className="py-2">{t.occurred_at ? formatJalaliDateTime(t.occurred_at) : "-"}</td>
                     </tr>
                   );
                 })}

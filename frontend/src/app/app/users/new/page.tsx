@@ -41,7 +41,7 @@ type UserDefaultsEnvelope = {
   effective: UserDefaults;
 };
 
-type NodeLite = { id: number; name: string; panel_type: string; base_url?: string; tags?: string[] };
+type NodeLite = { id: number; name: string; panel_type: string; base_url?: string; tags?: string[]; default_for_reseller?: boolean };
 type LinksResp = {
   user_id: number;
   master_link?: string | null;
@@ -98,8 +98,8 @@ const trafficPresets = [20, 30, 50, 70, 100, 150, 200];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EMPTY_DEFAULTS: UserDefaults = {
-  default_pricing_mode: "bundle",
-  default_node_mode: "all",
+  default_pricing_mode: "per_node",
+  default_node_mode: "manual",
   default_node_ids: [],
   default_node_group: "",
   label_prefix: "",
@@ -180,13 +180,13 @@ export default function NewUserPage() {
   const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("active");
 
   const [totalGb, setTotalGb] = React.useState<number>(10);
-  const [pricingMode, setPricingMode] = React.useState<"per_node" | "bundle">("bundle");
+  const [pricingMode, setPricingMode] = React.useState<"per_node" | "bundle">("per_node");
 
   const [preset, setPreset] = React.useState<string>("1m");
   const [days, setDays] = React.useState<number>(31);
   const [targetExpireAt, setTargetExpireAt] = React.useState<Date | null>(null);
 
-  const [nodeMode, setNodeMode] = React.useState<"all" | "manual" | "group">("all");
+  const [nodeMode, setNodeMode] = React.useState<"all" | "manual" | "group">("manual");
   const [selectedNodeIds, setSelectedNodeIds] = React.useState<number[]>([]);
   const [nodePickQ, setNodePickQ] = React.useState("");
   const [nodeGroup, setNodeGroup] = React.useState<string>("");
@@ -286,7 +286,7 @@ export default function NewUserPage() {
   async function loadNodes() {
     const res = await apiFetch<any>("/api/v1/reseller/nodes");
     const arr = res.items || [];
-    setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, base_url: n.base_url || "", tags: n.tags || [] })));
+    setNodes(arr.map((n: any) => ({ id: n.id, name: n.name, panel_type: n.panel_type, base_url: n.base_url || "", tags: n.tags || [], default_for_reseller: !!n.default_for_reseller })));
     return arr as Array<any>;
   }
 
@@ -294,8 +294,8 @@ export default function NewUserPage() {
     const env = await apiFetch<UserDefaultsEnvelope>("/api/v1/reseller/settings/user-defaults");
     const eff = env?.effective || EMPTY_DEFAULTS;
     setDefaults(eff);
-    setPricingMode(eff.default_pricing_mode || "bundle");
-    setNodeMode(eff.default_node_mode || "all");
+    setPricingMode(eff.default_pricing_mode || "per_node");
+    setNodeMode(eff.default_node_mode || "manual");
     setSelectedNodeIds(Array.isArray(eff.default_node_ids) ? eff.default_node_ids : []);
     setNodeGroup(eff.default_node_group || "");
   }
@@ -364,6 +364,18 @@ export default function NewUserPage() {
       type: "success",
     });
   }, [nodes, defaultsLoaded, push]);
+
+  React.useEffect(() => {
+    if (!nodes?.length || !defaultsLoaded) return;
+    if (nodeMode !== "manual" || selectedNodeIds.length) return;
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    if (String(params.get("node_ids") || "").trim()) return;
+
+    const markedDefaults = nodes.filter((n) => n.default_for_reseller).map((n) => n.id);
+    const fallbackIds = markedDefaults.length ? markedDefaults : [nodes[0].id];
+    setSelectedNodeIds(fallbackIds);
+    if (fallbackIds.length <= 1) setPricingMode("per_node");
+  }, [nodes, defaultsLoaded, nodeMode, selectedNodeIds.length]);
 
   React.useEffect(() => {
     if (!effectiveDurationPresets.length) return;

@@ -4,6 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_setting import AppSetting
+from app.models.node import Node
+from app.models.node_allocation import NodeAllocation
 
 GLOBAL_USER_DEFAULTS_KEY = "global_user_defaults"
 
@@ -14,8 +16,8 @@ def reseller_user_defaults_key(reseller_id: int) -> str:
 
 def base_user_defaults() -> dict:
     return {
-        "default_pricing_mode": "bundle",
-        "default_node_mode": "all",
+        "default_pricing_mode": "per_node",
+        "default_node_mode": "manual",
         "default_node_ids": [],
         "default_node_group": "",
         "label_prefix": "",
@@ -36,8 +38,8 @@ def normalize_user_defaults(raw: dict | None) -> dict:
     if not isinstance(raw, dict):
         return out
 
-    out["default_pricing_mode"] = _clean_mode(raw.get("default_pricing_mode"), {"bundle", "per_node"}, "bundle")
-    out["default_node_mode"] = _clean_mode(raw.get("default_node_mode"), {"all", "manual", "group"}, "all")
+    out["default_pricing_mode"] = _clean_mode(raw.get("default_pricing_mode"), {"bundle", "per_node"}, "per_node")
+    out["default_node_mode"] = _clean_mode(raw.get("default_node_mode"), {"all", "manual", "group"}, "manual")
 
     ids = raw.get("default_node_ids")
     if isinstance(ids, list):
@@ -85,11 +87,32 @@ async def get_user_defaults_setting_optional(db: AsyncSession, key: str) -> dict
 
 async def get_effective_user_defaults(db: AsyncSession, reseller_id: int) -> dict:
     global_defaults = await get_user_defaults_setting(db, GLOBAL_USER_DEFAULTS_KEY)
+    q_defaults = await db.execute(
+        select(NodeAllocation.node_id)
+        .join(Node, Node.id == NodeAllocation.node_id)
+        .where(
+            NodeAllocation.reseller_id == reseller_id,
+            NodeAllocation.enabled == True,
+            NodeAllocation.default_for_reseller == True,
+            Node.is_enabled == True,
+        )
+        .order_by(NodeAllocation.id.asc())
+    )
+    default_node_ids = [int(x) for x in q_defaults.scalars().all()]
+    allocation_defaults: dict = {}
+    if default_node_ids:
+        allocation_defaults = {
+            "default_pricing_mode": "per_node",
+            "default_node_mode": "manual",
+            "default_node_ids": default_node_ids,
+            "default_node_group": "",
+        }
+
     q = await db.execute(select(AppSetting).where(AppSetting.key == reseller_user_defaults_key(reseller_id)))
     row = q.scalar_one_or_none()
     if not row or not isinstance(row.value, dict):
-        return global_defaults
-    return normalize_user_defaults({**global_defaults, **row.value})
+        return normalize_user_defaults({**global_defaults, **allocation_defaults})
+    return normalize_user_defaults({**global_defaults, **allocation_defaults, **row.value})
 
 
 async def set_user_defaults_setting(db: AsyncSession, key: str, value: dict) -> dict:

@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.services.adapters.base import AdapterError, ProvisionResult, TestConnectionResult
+from app.services.adapters.base import AdapterError, ProvisionResult, RemoteUserNotFound, RemoteUserSnapshot, TestConnectionResult
 
 
 class MarzbanAdapter:
@@ -50,6 +50,8 @@ class MarzbanAdapter:
         url = f"{self.base_url}{path}"
         async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
             r = await client.get(url, headers=await self._headers())
+        if r.status_code == 404:
+            raise RemoteUserNotFound(f"HTTP 404 GET {path}: {r.text[:300]}")
         if r.status_code >= 400:
             raise AdapterError(f"HTTP {r.status_code} GET {path}: {r.text[:300]}")
         return r.json()
@@ -102,6 +104,18 @@ class MarzbanAdapter:
             return int(float(s))
         except Exception:
             return None
+
+    @classmethod
+    def _snapshot_from_user_payload(cls, payload: Any) -> RemoteUserSnapshot:
+        if not isinstance(payload, dict):
+            return RemoteUserSnapshot(raw=None)
+        status = str(payload.get("status") or "").strip().lower() or None
+        if not status and payload.get("is_disabled") is not None:
+            status = "disabled" if bool(payload.get("is_disabled")) else "active"
+        used = cls._as_int(payload.get("used_traffic"))
+        if used is None and isinstance(payload.get("data"), dict):
+            used = cls._as_int(payload["data"].get("used_traffic"))
+        return RemoteUserSnapshot(status=status, used_bytes=max(0, used) if used is not None else None, raw=payload)
 
     async def _get_active_inbounds(self) -> dict[str, list[str]]:
         """Return protocol -> inbound tags.
@@ -203,16 +217,18 @@ class MarzbanAdapter:
     async def reset_usage(self, remote_identifier: str) -> None:
         await self._post_json(f"/api/user/{remote_identifier}/reset", {})
 
+    async def get_user_snapshot(self, remote_identifier: str) -> RemoteUserSnapshot:
+        js_user = await self._get_json(f"/api/user/{remote_identifier}")
+        return self._snapshot_from_user_payload(js_user)
+
     async def get_used_bytes(self, remote_identifier: str) -> int | None:
         # Newer APIs expose used_traffic directly on /api/user/{username}
         try:
-            js_user = await self._get_json(f"/api/user/{remote_identifier}")
-            if isinstance(js_user, dict):
-                direct = self._as_int(js_user.get("used_traffic"))
-                if direct is None and isinstance(js_user.get("data"), dict):
-                    direct = self._as_int(js_user["data"].get("used_traffic"))
-                if direct is not None:
-                    return max(0, direct)
+            snapshot = await self.get_user_snapshot(remote_identifier)
+            if snapshot.used_bytes is not None:
+                return max(0, snapshot.used_bytes)
+        except RemoteUserNotFound:
+            raise
         except Exception:
             pass
 

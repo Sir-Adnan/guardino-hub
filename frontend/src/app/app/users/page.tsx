@@ -165,6 +165,19 @@ function fmtGig(value: number) {
   return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(n);
 }
 
+function fmtTrafficBytes(bytes: number) {
+  const safe = Math.max(0, Number(bytes) || 0);
+  if (safe > 0 && safe < 1024 * 1024 * 1024) {
+    const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
+    return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(mb)} مگابایت`;
+  }
+  return `${fmtGig(safe / (1024 * 1024 * 1024))} گیگ`;
+}
+
+function usagePercentLabel(percent: number, usedBytes: number) {
+  return usedBytes > 0 && percent === 0 ? "<۱٪" : `${percent}٪`;
+}
+
 function progressTone(percent: number) {
   if (percent >= 90) return "from-rose-500 via-red-500 to-orange-500";
   if (percent >= 70) return "from-amber-500 via-orange-500 to-yellow-500";
@@ -658,7 +671,7 @@ export default function UsersPage() {
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">حجم مصرف کل کاربران</div>
                 <Gauge size={18} className="text-amber-600" />
               </div>
-              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.usedGb)} گیگ</div>
+              <div className="mt-2 text-2xl font-bold">{fmtTrafficBytes(stats.usedGb * 1024 * 1024 * 1024)}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(129,140,248,0.14),rgba(56,189,248,0.06))] p-4">
               <div className="flex items-center justify-between">
@@ -768,9 +781,11 @@ export default function UsersPage() {
         <div className={"grid gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
           {items.map((u) => {
             const totalBytes = (u.total_gb || 0) * 1024 * 1024 * 1024;
-            const usedGb = bytesToGb(u.used_bytes || 0);
+            const usedBytes = Number(u.used_bytes || 0);
+            const usedGb = bytesToGb(usedBytes);
             const pct = totalBytes > 0 ? clamp01((u.used_bytes || 0) / totalBytes) : 0;
             const percent = Math.round(pct * 100);
+            const visiblePercent = usedBytes > 0 ? Math.max(1, percent) : 0;
             const remainingGb = Math.max((u.total_gb || 0) - usedGb, 0);
 
             const pr = computePriority(u);
@@ -819,19 +834,19 @@ export default function UsersPage() {
 
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/80">
-                      <div className="font-semibold">{percent}٪ مصرف</div>
+                      <div className="font-semibold">{usagePercentLabel(percent, usedBytes)} مصرف</div>
                       <div className="font-semibold">
-                        {fmtGig(usedGb)} / {fmtGig(u.total_gb)} گیگ
+                        {fmtTrafficBytes(usedBytes)} / {fmtGig(u.total_gb)} گیگ
                       </div>
                     </div>
                     <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--surface-card-3))]">
                       <div
                         className={"h-full rounded-md bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
-                        style={{ width: `${percent}%` }}
+                        style={{ width: `${visiblePercent}%` }}
                       />
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
-                      <div>مجموع مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(usedGb)} گیگ</span></div>
+                      <div>مجموع مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes)}</span></div>
                       <div>باقی‌مانده: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb)} گیگ</span></div>
                     </div>
                   </div>

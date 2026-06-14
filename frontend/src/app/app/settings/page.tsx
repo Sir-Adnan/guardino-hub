@@ -57,8 +57,8 @@ type NodeLite = {
 };
 
 const EMPTY_DEFAULTS: UserDefaults = {
-  default_pricing_mode: "bundle",
-  default_node_mode: "all",
+  default_pricing_mode: "per_node",
+  default_node_mode: "manual",
   default_node_ids: [],
   default_node_group: "",
   label_prefix: "",
