@@ -179,17 +179,17 @@ server {
   }
 
   location = /api/docs {
-    proxy_pass http://api:8000/docs;
+    proxy_pass http://api:8000/api/docs;
     proxy_set_header Host \$host;
   }
 
   location = /api/openapi.json {
-    proxy_pass http://api:8000/openapi.json;
+    proxy_pass http://api:8000/api/openapi.json;
     proxy_set_header Host \$host;
   }
 
   location = /api/redoc {
-    proxy_pass http://api:8000/redoc;
+    proxy_pass http://api:8000/api/redoc;
     proxy_set_header Host \$host;
   }
 
@@ -264,17 +264,17 @@ server {
   }
 
   location = /api/docs {
-    proxy_pass http://api:8000/docs;
+    proxy_pass http://api:8000/api/docs;
     proxy_set_header Host \$host;
   }
 
   location = /api/openapi.json {
-    proxy_pass http://api:8000/openapi.json;
+    proxy_pass http://api:8000/api/openapi.json;
     proxy_set_header Host \$host;
   }
 
   location = /api/redoc {
-    proxy_pass http://api:8000/redoc;
+    proxy_pass http://api:8000/api/redoc;
     proxy_set_header Host \$host;
   }
 

@@ -1,13 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.core.db import AsyncSessionLocal
 from sqlalchemy import text
 import redis
 
-app = FastAPI(title=settings.APP_NAME)
+OPENAPI_URL = "/api/openapi.json"
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 if settings.cors_origins_list:
     app.add_middleware(
@@ -23,16 +31,31 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/api/docs", include_in_schema=False)
 async def docs_alias():
-    return RedirectResponse(url="/docs")
+    return get_swagger_ui_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} API docs")
+
+
+@app.get("/docs", include_in_schema=False)
+async def docs():
+    return get_swagger_ui_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} API docs")
 
 
 @app.get("/api/redoc", include_in_schema=False)
 async def redoc_alias():
-    return RedirectResponse(url="/redoc")
+    return get_redoc_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} ReDoc")
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc():
+    return get_redoc_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} ReDoc")
 
 
 @app.get("/api/openapi.json", include_in_schema=False)
 async def openapi_alias():
+    return JSONResponse(app.openapi())
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi():
     return JSONResponse(app.openapi())
 
 @app.get("/health")

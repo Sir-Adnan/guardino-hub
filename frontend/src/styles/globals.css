@@ -46,14 +46,28 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; overflow-x: hidden; }
+html, body { min-height: 100%; overflow-x: hidden; }
+html {
+  background: hsl(var(--bg));
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
+  min-height: 100dvh;
   background: radial-gradient(1200px circle at 20% -10%, hsl(var(--muted)) 0%, transparent 55%),
               radial-gradient(900px circle at 100% 0%, hsl(var(--muted)) 0%, transparent 50%),
               hsl(var(--bg));
   color: hsl(var(--fg));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+@media (display-mode: standalone) {
+  body {
+    background-color: hsl(var(--bg));
+  }
 }
 
 /* Landing page styles (app/page.tsx) */

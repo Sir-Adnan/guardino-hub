@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
+import { BrandMark } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { fmtNumber } from "@/lib/format";
 import { storage } from "@/lib/storage";
@@ -85,7 +86,12 @@ export function Sidebar({
           collapsed ? "flex-col gap-2" : "px-4"
         )}
       >
-        <div className={cn("text-lg font-semibold tracking-tight", collapsed ? "text-sm" : "")}>{collapsed ? "GH" : t("app.title")}</div>
+        <BrandMark
+          showText={!collapsed}
+          subtitle={collapsed ? undefined : "Reseller Panel"}
+          className={cn(collapsed ? "justify-center" : "min-w-0")}
+          markClassName={collapsed ? "h-10 w-10 rounded-xl" : "h-11 w-11"}
+        />
         <button
           type="button"
           onClick={() => onToggleCollapse?.()}

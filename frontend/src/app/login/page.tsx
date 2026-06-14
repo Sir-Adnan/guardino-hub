@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-logo";
 import { storage } from "@/lib/storage";
 import { apiFetch } from "@/lib/api";
 
@@ -46,6 +47,13 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <form onSubmit={onSubmit} className="max-w-md w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-soft p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <BrandMark markClassName="h-14 w-14 rounded-2xl" />
+          <div className="min-w-0">
+            <div className="truncate text-lg font-extrabold">Guardino Hub</div>
+            <div className="truncate text-xs text-[hsl(var(--fg))]/60">VPN Reseller Platform</div>
+          </div>
+        </div>
         <div>
           <h1 className="text-xl font-semibold">ورود</h1>
           <p className="text-sm text-[hsl(var(--fg))]/70">با حساب ادمین یا نماینده وارد شوید</p>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Vazirmatn } from "next/font/google";
+import { BrandMark } from "@/components/brand-logo";
 import {
   Bot,
   CheckCircle2,
@@ -174,13 +175,7 @@ export default function Home() {
       <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))]/60 bg-white/80 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[linear-gradient(135deg,#0ea5e9,#22c55e)] text-white shadow-lg shadow-cyan-500/20">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <div className="text-sm font-extrabold tracking-tight sm:text-base">Guardino Hub</div>
-              <div className="text-[11px] text-[hsl(var(--fg))]/60 sm:text-xs">Smart VPN Reseller Platform</div>
-            </div>
+            <BrandMark showText subtitle="Smart VPN Reseller Platform" markClassName="h-10 w-10 rounded-2xl" />
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
