@@ -1,7 +1,5 @@
-const CACHE_NAME = "guardino-pwa-v2";
+const CACHE_NAME = "guardino-pwa-v3-scroll-fix";
 const APP_SHELL = [
-  "/",
-  "/login",
   "/manifest.webmanifest",
   "/favicon.ico",
   "/favicon-16x16.png",
@@ -13,6 +11,21 @@ const APP_SHELL = [
   "/icons/maskable-512.png",
   "/icons/apple-touch-icon.png"
 ];
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw new Error("Network request failed and no cache entry is available.");
+  }
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -53,22 +66,23 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const cachedLogin = await caches.match("/login");
-        return (
-          cachedLogin ||
+      fetch(request, { cache: "no-cache" }).catch(
+        () =>
           new Response("Guardino Hub is offline. Please reconnect and try again.", {
             status: 503,
             headers: { "Content-Type": "text/plain; charset=utf-8" }
           })
-        );
-      })
+      )
     );
     return;
   }
 
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
   if (
-    url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
     url.pathname.startsWith("/brand/") ||
     url.pathname === "/favicon.ico" ||

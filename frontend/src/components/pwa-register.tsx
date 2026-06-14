@@ -36,19 +36,35 @@ export function PwaRegister() {
     if (!("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production") return;
 
-    const register = () => {
-      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
-        // PWA should never break normal panel usage.
-      });
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let refreshing = false;
+    const onControllerChange = () => {
+      if (!hadController || refreshing) return;
+      refreshing = true;
+      window.location.reload();
     };
+
+    const register = () => {
+      navigator.serviceWorker
+        .register("/sw.js", { scope: "/" })
+        .then((registration) => registration.update().catch(() => null))
+        .catch(() => {
+          // PWA should never break normal panel usage.
+        });
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
 
     if (document.readyState === "complete") {
       register();
-      return;
+      return () => navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     }
 
     window.addEventListener("load", register, { once: true });
-    return () => window.removeEventListener("load", register);
+    return () => {
+      window.removeEventListener("load", register);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    };
   }, []);
 
   React.useEffect(() => {

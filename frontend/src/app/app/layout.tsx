@@ -17,17 +17,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [r]);
 
   React.useEffect(() => {
+    document.body.style.removeProperty("overflow");
+    document.documentElement.style.removeProperty("overflow");
+  }, []);
+
+  React.useEffect(() => {
     if (!sidebarOpen) return;
-    const prev = document.body.style.overflow;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
     };
   }, [sidebarOpen]);
 
   return (
     <AuthProvider>
-      <div className="min-h-screen flex bg-[hsl(var(--bg))]">
+      <div data-guardino-app-shell className="flex overflow-hidden bg-[hsl(var(--bg))]">
         {/* Desktop sidebar */}
         <div className="hidden md:block">
           <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} />
@@ -43,9 +51,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex min-h-0 flex-1 min-w-0 flex-col">
           <AppHeader onMenuClick={() => setSidebarOpen(true)} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} sidebarCollapsed={sidebarCollapsed} />
-          <main className="relative flex-1 overflow-x-hidden p-3 sm:p-4 lg:p-6">
+          <main data-guardino-scroll-root className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-6">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_35%_at_0%_0%,hsl(var(--surface-page-glow-1)/0.11),transparent_60%),radial-gradient(60%_38%_at_100%_100%,hsl(var(--surface-page-glow-2)/0.09),transparent_62%)]" />
             <div className="relative z-[1] mx-auto w-full max-w-[1700px]">
               {children}
