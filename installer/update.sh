@@ -54,14 +54,72 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl enable --now docker >/dev/null 2>&1 || true
 fi
 
+sync_git_source() {
+  local dir="$1"
+  local branch="${BRANCH:-main}"
+  local repo_url="${REPO_URL:-https://github.com/Sir-Adnan/guardino-hub.git}"
+
+  cd "$dir"
+  local origin_url backup_dir dirty
+  origin_url="$(git remote get-url origin 2>/dev/null || true)"
+  if [ -z "$origin_url" ]; then
+    git remote add origin "$repo_url"
+  elif [ "$origin_url" != "$repo_url" ]; then
+    git remote set-url origin "$repo_url"
+  fi
+
+  git fetch --prune origin "$branch"
+
+  dirty="0"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    dirty="1"
+  fi
+
+  backup_dir=""
+  if [ "$dirty" = "1" ]; then
+    backup_dir="$dir/backups/local-git-changes-$(date -u +'%Y%m%dT%H%M%SZ')"
+    mkdir -p "$backup_dir/files"
+    git status --short > "$backup_dir/status.txt" || true
+    git diff > "$backup_dir/unstaged.patch" || true
+    git diff --cached > "$backup_dir/staged.patch" || true
+    {
+      git diff --name-only
+      git diff --cached --name-only
+    } | sort -u | while IFS= read -r changed_file; do
+      [ -n "$changed_file" ] || continue
+      if [ -f "$changed_file" ]; then
+        mkdir -p "$backup_dir/files/$(dirname "$changed_file")"
+        cp -a "$changed_file" "$backup_dir/files/$changed_file"
+      fi
+    done
+    warn "Local git changes backed up to: ${backup_dir}"
+  fi
+
+  git reset --hard "origin/$branch"
+
+  if [ -n "$backup_dir" ] && [ -f "$backup_dir/files/deploy/nginx.conf" ]; then
+    mkdir -p "$dir/deploy"
+    cp -a "$backup_dir/files/deploy/nginx.conf" "$dir/deploy/nginx.conf"
+    warn "Preserved server nginx config: deploy/nginx.conf"
+  fi
+}
+
+patch_runtime_nginx_docs_routes() {
+  local conf="${INSTALL_DIR}/deploy/nginx.conf"
+  [ -f "$conf" ] || return 0
+  sed -i '/location .*\/api\/docs/,/}/{s#proxy_pass http://api:8000/docs;#proxy_pass http://api:8000/api/docs;#}' "$conf"
+  sed -i '/location .*\/api\/openapi\.json/,/}/{s#proxy_pass http://api:8000/openapi.json;#proxy_pass http://api:8000/api/openapi.json;#}' "$conf"
+  sed -i '/location .*\/api\/redoc/,/}/{s#proxy_pass http://api:8000/redoc;#proxy_pass http://api:8000/api/redoc;#}' "$conf"
+}
+
 if [ -d ".git" ]; then
-  log "[1/5] Pulling latest source..."
-  git pull --ff-only || {
-    warn "git pull failed (maybe local changes). Continuing with current source."
-  }
+  log "[1/5] Syncing latest source..."
+  sync_git_source "${INSTALL_DIR}"
 else
-  warn "[1/5] No .git directory found; skipping git pull."
+  warn "[1/5] No .git directory found; skipping source sync."
 fi
+
+patch_runtime_nginx_docs_routes
 
 log "[2/5] Ensuring .env and critical sync settings..."
 if [ ! -f .env ]; then

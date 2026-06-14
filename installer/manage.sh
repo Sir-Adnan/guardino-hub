@@ -237,6 +237,56 @@ ensure_git_installed() {
   apt-get install -y git >/dev/null
 }
 
+sync_git_source() {
+  local dir="$1"
+  local branch="${BRANCH:-$BRANCH_DEFAULT}"
+  local repo_url="${REPO_URL:-$REPO_URL_DEFAULT}"
+
+  cd "$dir"
+  local origin_url backup_dir dirty
+  origin_url="$(git remote get-url origin 2>/dev/null || true)"
+  if [ -z "$origin_url" ]; then
+    git remote add origin "$repo_url"
+  elif [ "$origin_url" != "$repo_url" ]; then
+    git remote set-url origin "$repo_url"
+  fi
+
+  git fetch --prune origin "$branch" >/dev/null
+
+  dirty="0"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    dirty="1"
+  fi
+
+  backup_dir=""
+  if [ "$dirty" = "1" ]; then
+    backup_dir="$dir/backups/local-git-changes-$(date -u +'%Y%m%dT%H%M%SZ')"
+    mkdir -p "$backup_dir/files"
+    git status --short > "$backup_dir/status.txt" || true
+    git diff > "$backup_dir/unstaged.patch" || true
+    git diff --cached > "$backup_dir/staged.patch" || true
+    {
+      git diff --name-only
+      git diff --cached --name-only
+    } | sort -u | while IFS= read -r changed_file; do
+      [ -n "$changed_file" ] || continue
+      if [ -f "$changed_file" ]; then
+        mkdir -p "$backup_dir/files/$(dirname "$changed_file")"
+        cp -a "$changed_file" "$backup_dir/files/$changed_file"
+      fi
+    done
+    log_warn "Local git changes backed up to: ${backup_dir}"
+  fi
+
+  git reset --hard "origin/$branch" >/dev/null
+
+  if [ -n "$backup_dir" ] && [ -f "$backup_dir/files/deploy/nginx.conf" ]; then
+    mkdir -p "$dir/deploy"
+    cp -a "$backup_dir/files/deploy/nginx.conf" "$dir/deploy/nginx.conf"
+    log_warn "Preserved server nginx config: deploy/nginx.conf"
+  fi
+}
+
 ensure_source_tree() {
   if is_source_ready; then
     return 0
@@ -245,7 +295,7 @@ ensure_source_tree() {
   mkdir -p "$(dirname "${INSTALL_DIR}")"
   if [ -d "${INSTALL_DIR}/.git" ]; then
     log_info "Updating existing source: ${INSTALL_DIR}"
-    (cd "${INSTALL_DIR}" && git pull --ff-only >/dev/null 2>&1 || true)
+    sync_git_source "${INSTALL_DIR}"
   else
     if [ -d "${INSTALL_DIR}" ] && [ -n "$(ls -A "${INSTALL_DIR}" 2>/dev/null || true)" ]; then
       log_err "INSTALL_DIR=${INSTALL_DIR} exists and is not empty."

@@ -46,12 +46,64 @@ if ! command -v git >/dev/null 2>&1; then
   fi
 fi
 
+sync_git_source() {
+  local dir="$1"
+  local branch="$2"
+  local repo_url="$3"
+
+  cd "$dir"
+  local origin_url backup_dir dirty
+  origin_url="$(git remote get-url origin 2>/dev/null || true)"
+  if [ -z "$origin_url" ]; then
+    git remote add origin "$repo_url"
+  elif [ "$origin_url" != "$repo_url" ]; then
+    git remote set-url origin "$repo_url"
+  fi
+
+  git fetch --prune origin "$branch"
+
+  dirty="0"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    dirty="1"
+  fi
+
+  backup_dir=""
+  if [ "$dirty" = "1" ]; then
+    backup_dir="$dir/backups/local-git-changes-$(date -u +'%Y%m%dT%H%M%SZ')"
+    mkdir -p "$backup_dir/files"
+    git status --short > "$backup_dir/status.txt" || true
+    git diff > "$backup_dir/unstaged.patch" || true
+    git diff --cached > "$backup_dir/staged.patch" || true
+    {
+      git diff --name-only
+      git diff --cached --name-only
+    } | sort -u | while IFS= read -r changed_file; do
+      [ -n "$changed_file" ] || continue
+      if [ -f "$changed_file" ]; then
+        mkdir -p "$backup_dir/files/$(dirname "$changed_file")"
+        cp -a "$changed_file" "$backup_dir/files/$changed_file"
+      fi
+    done
+    echo "Local git changes backed up to: $backup_dir"
+  fi
+
+  git reset --hard "origin/$branch"
+
+  # deploy/nginx.conf is generated per server (domain/SSL mode). Preserve it
+  # across code sync, then updater/install scripts can patch known route fixes.
+  if [ -n "$backup_dir" ] && [ -f "$backup_dir/files/deploy/nginx.conf" ]; then
+    mkdir -p "$dir/deploy"
+    cp -a "$backup_dir/files/deploy/nginx.conf" "$dir/deploy/nginx.conf"
+    echo "Preserved server nginx config: deploy/nginx.conf"
+  fi
+}
+
 if [ "$INSTALL_DIR" = "$LOCAL_ROOT" ]; then
   echo "Local source detected, skipping clone/pull."
 else
   mkdir -p "$INSTALL_DIR"
   if [ -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR" && git pull
+    sync_git_source "$INSTALL_DIR" "$BRANCH" "$REPO_URL"
   elif [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -f "$INSTALL_DIR/installer/install.sh" ] && { [ "$INSTALL_DIR" = "$LOCAL_ROOT" ] || [ "$INSTALL_DIR_FROM_ENV" = "1" ]; }; then
     echo "Existing local source detected at $INSTALL_DIR (no .git); using it as-is."
   elif [ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
