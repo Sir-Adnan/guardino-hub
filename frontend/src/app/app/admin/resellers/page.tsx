@@ -213,8 +213,11 @@ export default function AdminResellersPage() {
   const [canCreateSub, setCanCreateSub] = React.useState(true);
   const [assignAllNodes, setAssignAllNodes] = React.useState(true);
   const [useCustomPolicy, setUseCustomPolicy] = React.useState(false);
+  const [globalPolicy, setGlobalPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
   const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
   const [trafficInput, setTrafficInput] = React.useState(TRAFFIC_PRESET_OPTIONS.join(", "));
+  const [policyDefaultApplied, setPolicyDefaultApplied] = React.useState(false);
+  const [policyTouched, setPolicyTouched] = React.useState(false);
 
   const [creditId, setCreditId] = React.useState<number | "">("");
   const [creditQuery, setCreditQuery] = React.useState("");
@@ -224,6 +227,33 @@ export default function AdminResellersPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
   const [confirmToggleStatus, setConfirmToggleStatus] = React.useState<{ r: ResellerOut; to: "active" | "disabled" } | null>(null);
   const [busy, setBusy] = React.useState(false);
+
+  function applyGlobalPolicyDefaults() {
+    const p = normalizePolicy(globalPolicy || defaultUserPolicy());
+    setUserPolicy(p);
+    setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+    setPolicyDefaultApplied(true);
+    setPolicyTouched(false);
+  }
+
+  function updateUserPolicy(next: ResellerUserPolicy | ((current: ResellerUserPolicy) => ResellerUserPolicy)) {
+    setUserPolicy((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      return normalizePolicy(value);
+    });
+    setPolicyTouched(true);
+    setPolicyDefaultApplied(false);
+  }
+
+  function handleCustomPolicyToggle(checked: boolean) {
+    setUseCustomPolicy(checked);
+    if (checked && !policyTouched) {
+      applyGlobalPolicyDefaults();
+    }
+    if (!checked) {
+      setPolicyDefaultApplied(false);
+    }
+  }
 
   function resetForm() {
     setEditingId(null);
@@ -239,6 +269,8 @@ export default function AdminResellersPage() {
     const p = defaultUserPolicy();
     setUserPolicy(p);
     setTrafficInput(p.allowed_traffic_gb.join(", "));
+    setPolicyDefaultApplied(false);
+    setPolicyTouched(false);
   }
 
   async function load(nextPage: number = page, nextPageSize: number = pageSize) {
@@ -261,6 +293,15 @@ export default function AdminResellersPage() {
     try {
       const all = await fetchAllResellersForAdmin();
       setCreditOptions(all.filter((x) => x.status !== "deleted"));
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function loadGlobalPolicy() {
+    try {
+      const p = await apiFetch<ResellerUserPolicy>("/api/v1/admin/settings/user-policy");
+      setGlobalPolicy(normalizePolicy(p));
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -355,6 +396,8 @@ async function assignAllNodesForReseller(resellerId: number) {
       const p = normalizePolicy(detail.user_policy || defaultUserPolicy());
       setUserPolicy(p);
       setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+      setPolicyDefaultApplied(false);
+      setPolicyTouched(!!detail.user_policy);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -416,8 +459,17 @@ async function assignAllNodesForReseller(resellerId: number) {
 
   React.useEffect(() => {
     loadCreditOptions();
+    loadGlobalPolicy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    if (!useCustomPolicy || !policyDefaultApplied || policyTouched) return;
+    const p = normalizePolicy(globalPolicy);
+    setUserPolicy(p);
+    setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalPolicy]);
 
   React.useEffect(() => {
     setTrafficInput((userPolicy.allowed_traffic_gb || []).join(", "));
@@ -428,6 +480,11 @@ async function assignAllNodesForReseller(resellerId: number) {
     "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
   const metricCardClass =
     "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
+  const policyCheckCardClass =
+    "rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)]";
+  const policyCheckLabelClass = "flex items-start gap-2 text-sm font-medium text-[hsl(var(--fg))]/90";
+  const policyDescClass = "mt-1 text-xs leading-6 text-[hsl(var(--fg))]/65";
+  const customRenewalPolicyEnabled = userPolicy.renewal_policy !== "add_time_and_volume";
   const stats = React.useMemo(() => {
     const active = items.filter((x) => x.status === "active").length;
     const disabled = items.filter((x) => x.status === "disabled").length;
@@ -563,7 +620,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2">
-                  <Switch checked={useCustomPolicy} onCheckedChange={setUseCustomPolicy} />
+                  <Switch checked={useCustomPolicy} onCheckedChange={handleCustomPolicyToggle} />
                   <span className="text-xs text-[hsl(var(--fg))]/75">{useCustomPolicy ? "اختصاصی" : "سراسری"}</span>
                 </div>
               </div>
@@ -573,6 +630,15 @@ async function assignAllNodesForReseller(resellerId: number) {
                 </div>
               ) : null}
               <div className={useCustomPolicy ? "space-y-3" : "hidden"}>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-medium">سیاست‌های اختصاصی رسیلر</div>
+                  {policyDefaultApplied ? <Badge variant="success">بر اساس تنظیمات پیش‌فرض پنل</Badge> : null}
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={applyGlobalPolicyDefaults}>
+                  اعمال تنظیمات پیش‌فرض پنل
+                </Button>
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium">سیاست ساخت کاربر برای رسیلر</div>
@@ -583,7 +649,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={userPolicy.enabled}
-                    onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, enabled: v }))}
+                    onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, enabled: v }))}
                   />
                   <span className="text-xs text-[hsl(var(--fg))]/75">{userPolicy.enabled ? "فعال" : "غیرفعال"}</span>
                 </div>
@@ -620,12 +686,10 @@ async function assignAllNodesForReseller(resellerId: number) {
                               checked={checked}
                               disabled={disabled}
                               onChange={(e) =>
-                                setUserPolicy((v) =>
-                                  normalizePolicy({
+                                updateUserPolicy((v) => ({
                                     ...v,
                                     allowed_duration_presets: toggleString(v.allowed_duration_presets || [], preset, e.target.checked),
                                   })
-                                )
                               }
                             />
                             <span>{label}</span>
@@ -644,12 +708,10 @@ async function assignAllNodesForReseller(resellerId: number) {
                             type="checkbox"
                             checked={(userPolicy.allowed_traffic_gb || []).includes(g)}
                             onChange={(e) =>
-                              setUserPolicy((v) =>
-                                normalizePolicy({
+                              updateUserPolicy((v) => ({
                                   ...v,
                                   allowed_traffic_gb: toggleNumber(v.allowed_traffic_gb || [], g, e.target.checked),
                                 })
-                              )
                             }
                           />
                           <span>{g}GB</span>
@@ -663,7 +725,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                       onBlur={() => {
                         const parsed = parseTrafficInput(trafficInput);
                         if (parsed.length) {
-                          setUserPolicy((v) => normalizePolicy({ ...v, allowed_traffic_gb: parsed }));
+                          updateUserPolicy((v) => ({ ...v, allowed_traffic_gb: parsed }));
                         }
                       }}
                     />
@@ -675,20 +737,20 @@ async function assignAllNodesForReseller(resellerId: number) {
                       <span className="text-xs">اجازه روز دستی</span>
                       <Switch
                         checked={userPolicy.allow_custom_days}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_custom_days: v }))}
+                        onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_custom_days: v }))}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Input
                         type="number"
                         value={userPolicy.min_days}
-                        onChange={(e) => setUserPolicy((v) => normalizePolicy({ ...v, min_days: Number(e.target.value) || 1 }))}
+                        onChange={(e) => updateUserPolicy((v) => ({ ...v, min_days: Number(e.target.value) || 1 }))}
                         placeholder="حداقل روز"
                       />
                       <Input
                         type="number"
                         value={userPolicy.max_days}
-                        onChange={(e) => setUserPolicy((v) => normalizePolicy({ ...v, max_days: Number(e.target.value) || v.min_days || 1 }))}
+                        onChange={(e) => updateUserPolicy((v) => ({ ...v, max_days: Number(e.target.value) || v.min_days || 1 }))}
                         placeholder="حداکثر روز"
                       />
                     </div>
@@ -700,14 +762,14 @@ async function assignAllNodesForReseller(resellerId: number) {
                       <span className="text-xs">اجازه حجم دستی</span>
                       <Switch
                         checked={userPolicy.allow_custom_traffic}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_custom_traffic: v }))}
+                        onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_custom_traffic: v }))}
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs">اجازه پلن نامحدود</span>
                       <Switch
                         checked={userPolicy.allow_no_expire}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_no_expire: v }))}
+                        onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_no_expire: v }))}
                       />
                     </div>
                   </div>
@@ -719,68 +781,100 @@ async function assignAllNodesForReseller(resellerId: number) {
                 <div>
                   <div className="text-xs font-medium text-[hsl(var(--fg))]/80">سیاست‌های حذف، ریست، ویرایش و تمدید</div>
                   <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
-                    این سه بخش یکجا برای همین رسیلر ذخیره می‌شوند. اگر تنظیم اختصاصی خاموش باشد، مقدارهای سراسری سوپرادمین استفاده می‌شود.
+                    هر گزینه مستقل ذخیره می‌شود. خاموش بودن سیاست اختصاصی یعنی همین مقادیر از تنظیمات سراسری پنل خوانده می‌شوند.
                   </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">حذف و ریفاند</div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">اجازه حذف کاربر</span>
-                      <Switch
+                  <div className={policyCheckCardClass}>
+                    <label className={policyCheckLabelClass}>
+                      <input
+                        type="checkbox"
+                        className="mt-1"
                         checked={userPolicy.allow_user_delete}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))}
+                        onChange={(e) => updateUserPolicy((x) => ({ ...x, allow_user_delete: e.target.checked }))}
                       />
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={userPolicy.delete_refund_window_days}
-                        onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
-                        placeholder="روز مجاز"
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.1"
-                        value={userPolicy.delete_expired_used_gb_limit}
-                        onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
-                        placeholder="حد مصرف GB"
-                      />
-                    </div>
-                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">عدد 0 برای حد مصرف یعنی نامحدود؛ 0.5 یعنی حدود ۵۰۰ مگابایت.</div>
-                  </div>
-
-                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">ریست مصرف</div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">اجازه ریست کاربر</span>
-                      <Switch
-                        checked={userPolicy.allow_reset_usage}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))}
-                      />
-                    </div>
-                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">خاموش باشد، رسیلر نمی‌تواند مصرف کاربر را ریست کند.</div>
-                  </div>
-
-                  <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3 md:col-span-2">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-[hsl(var(--fg))]/70">ویرایش و تمدید</div>
-                        <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
-                          اگر روشن باشد، رسیلر فقط تمدید بسته‌ای طبق پکیج‌های آماده انجام می‌دهد و افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود.
-                        </div>
+                      <span>اجازه حذف و ریفاند کاربر</span>
+                    </label>
+                    <div className={policyDescClass}>اگر روشن باشد رسیلر می‌تواند طبق مهلت و سقف مصرف، کاربر را حذف و مبلغ قابل برگشت را دریافت کند.</div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-[hsl(var(--fg))]/60">مهلت حذف/ریفاند (روز)</div>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={userPolicy.delete_refund_window_days}
+                          onChange={(e) => updateUserPolicy((x) => ({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                          placeholder="روز مجاز"
+                          disabled={!userPolicy.allow_user_delete}
+                        />
                       </div>
-                      <Switch
-                        checked={userPolicy.restrict_edit_to_renewal_only}
-                        onCheckedChange={(v) => setUserPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))}
-                      />
+                      <div className="space-y-1">
+                        <div className="text-[11px] text-[hsl(var(--fg))]/60">حد مصرف مجاز (GB)</div>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.1"
+                          value={userPolicy.delete_expired_used_gb_limit}
+                          onChange={(e) => updateUserPolicy((x) => ({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                          placeholder="حد مصرف GB"
+                          disabled={!userPolicy.allow_user_delete}
+                        />
+                      </div>
                     </div>
+                    <div className={policyDescClass}>عدد 0 برای مهلت یا حد مصرف یعنی بدون محدودیت آن بخش.</div>
+                  </div>
+
+                  <div className={policyCheckCardClass}>
+                    <label className={policyCheckLabelClass}>
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={userPolicy.allow_reset_usage}
+                        onChange={(e) => updateUserPolicy((x) => ({ ...x, allow_reset_usage: e.target.checked }))}
+                      />
+                      <span>اجازه ریست مصرف</span>
+                    </label>
+                    <div className={policyDescClass}>اگر خاموش باشد رسیلر نمی‌تواند مصرف کاربر را صفر کند، حتی اگر کاربر را ببیند یا لینک‌ها را مدیریت کند.</div>
+                  </div>
+
+                  <div className={policyCheckCardClass}>
+                    <label className={policyCheckLabelClass}>
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={userPolicy.restrict_edit_to_renewal_only}
+                        onChange={(e) => updateUserPolicy((x) => ({ ...x, restrict_edit_to_renewal_only: e.target.checked }))}
+                      />
+                      <span>ویرایش فقط از مسیر تمدید بسته‌ای</span>
+                    </label>
+                    <div className={policyDescClass}>اگر روشن باشد افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود و رسیلر فقط تمدید پکیجی انجام می‌دهد.</div>
+                  </div>
+
+                  <div className={policyCheckCardClass}>
+                    <label className={policyCheckLabelClass}>
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={customRenewalPolicyEnabled}
+                        onChange={(e) =>
+                          updateUserPolicy((x) => ({
+                            ...x,
+                            renewal_policy: e.target.checked
+                              ? globalPolicy.renewal_policy !== "add_time_and_volume"
+                                ? globalPolicy.renewal_policy
+                                : "reset_time_and_volume"
+                              : "add_time_and_volume",
+                          }))
+                        }
+                      />
+                      <span>سیاست تمدید اختصاصی</span>
+                    </label>
+                    <div className={policyDescClass}>اگر روشن باشد نحوه ترکیب زمان و حجم در تمدید برای همین رسیلر مشخص می‌شود.</div>
                     <select
-                      className={selectClass}
+                      className={`${selectClass} mt-3 disabled:opacity-60`}
                       value={userPolicy.renewal_policy}
-                      onChange={(e) => setUserPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
+                      disabled={!customRenewalPolicyEnabled}
+                      onChange={(e) => updateUserPolicy((x) => ({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
                     >
                       <option value="reset_time_and_volume">ریست زمان و حجم</option>
                       <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
