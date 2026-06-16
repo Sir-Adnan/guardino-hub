@@ -41,6 +41,7 @@ type AdminStats = {
   users_expired?: number;
   users_limited?: number;
   users_on_hold?: number;
+  users_deleted?: number;
   nodes_total: number;
   orders_total: number;
   ledger_entries_total: number;
@@ -50,6 +51,7 @@ type AdminStats = {
   sold_gb_total: number;
   daily_sales?: DashboardSeriesPoint[];
   daily_traffic_gb?: DashboardSeriesPoint[];
+  daily_used_gb?: DashboardSeriesPoint[];
 };
 
 type ResellerStats = {
@@ -65,6 +67,7 @@ type ResellerStats = {
   users_expired?: number;
   users_limited?: number;
   users_on_hold?: number;
+  users_deleted?: number;
   used_bytes_total: number;
   sold_gb_total: number;
   nodes_allowed: number;
@@ -73,7 +76,17 @@ type ResellerStats = {
   spent_30d: number;
   daily_sales?: DashboardSeriesPoint[];
   daily_traffic_gb?: DashboardSeriesPoint[];
+  daily_used_gb?: DashboardSeriesPoint[];
 };
+
+type AccountOption = {
+  id: number;
+  username: string;
+  role?: string;
+  status?: string;
+};
+
+type AccountList = { items: AccountOption[]; total: number };
 
 type NodeLite = {
   id: number;
@@ -361,10 +374,12 @@ function MiniBars({
   data,
   valueLabel,
   tone = "blue",
+  rangeLabel,
 }: {
   data: Array<{ label: string; value: number }>;
   valueLabel: (value: number) => string;
   tone?: TileTone;
+  rangeLabel?: string;
 }) {
   const max = Math.max(1, ...data.map((d) => Number(d.value) || 0));
   const hasData = data.some((d) => Number(d.value) > 0);
@@ -419,7 +434,7 @@ function MiniBars({
       </div>
       <div className="mt-2 flex items-center justify-between text-[10px] text-[hsl(var(--fg))]/48">
         <span>{data[data.length - 1]?.label || ""}</span>
-        <span>۱۴ روز اخیر</span>
+        <span>{rangeLabel || `${fmtNumber(data.length)} روز اخیر`}</span>
         <span>{data[0]?.label || ""}</span>
       </div>
     </div>
@@ -484,6 +499,7 @@ function UserStatusOverview({
   expired,
   limited,
   onHold,
+  deleted,
 }: {
   total: number;
   active: number;
@@ -491,6 +507,7 @@ function UserStatusOverview({
   expired: number;
   limited: number;
   onHold: number;
+  deleted: number;
 }) {
   const rows = [
     { label: "کاربران فعال", value: active, color: "bg-emerald-500", Icon: CheckCircle2 },
@@ -498,6 +515,7 @@ function UserStatusOverview({
     { label: "حجم تمام شده", value: limited, color: "bg-red-500", Icon: AlertTriangle },
     { label: "On Hold", value: onHold, color: "bg-violet-500", Icon: Clock3 },
     { label: "غیرفعال", value: disabled, color: "bg-slate-500", Icon: ShieldAlert },
+    { label: "حذف‌شده / آرشیو", value: deleted, color: "bg-zinc-400", Icon: Database },
   ];
 
   return (
@@ -661,6 +679,12 @@ export default function Dashboard() {
 
   const [adminStats, setAdminStats] = React.useState<AdminStats | null>(null);
   const [resellerStats, setResellerStats] = React.useState<ResellerStats | null>(null);
+  const [adminChartStats, setAdminChartStats] = React.useState<AdminStats | null>(null);
+  const [resellerChartStats, setResellerChartStats] = React.useState<ResellerStats | null>(null);
+  const [accountOptions, setAccountOptions] = React.useState<AccountOption[]>([]);
+  const [chartRangeDays, setChartRangeDays] = React.useState(7);
+  const [chartScope, setChartScope] = React.useState<string>("all");
+  const [chartLoading, setChartLoading] = React.useState(false);
   const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [recentUsers, setRecentUsers] = React.useState<UserLite[]>([]);
   const [orders, setOrders] = React.useState<OrderRow[]>([]);
@@ -678,22 +702,32 @@ export default function Dashboard() {
 
       try {
         if (me.role === "admin") {
-          const [statsRes, nodesRes, ordersRes, ledgerRes] = await Promise.all([
-            apiFetch<AdminStats>("/api/v1/admin/stats"),
+          const [statsRes, nodesRes, ordersRes, ledgerRes, accountsRes] = await Promise.all([
+            apiFetch<AdminStats>("/api/v1/admin/stats?days=7"),
             safeApi(apiFetch<any>("/api/v1/admin/nodes?offset=0&limit=100"), { items: [] }),
             safeApi(apiFetch<any>(`/api/v1/admin/reports/orders?offset=0&limit=${REPORT_LIMIT}`), { items: [] }),
             safeApi(apiFetch<any>(`/api/v1/admin/reports/ledger?offset=0&limit=${REPORT_LIMIT}`), { items: [] }),
+            safeApi(apiFetch<AccountList>("/api/v1/admin/resellers?offset=0&limit=1000"), { items: [], total: 0 }),
           ]);
           if (cancelled) return;
           setAdminStats(statsRes);
+          setAdminChartStats(statsRes);
           setResellerStats(null);
+          setResellerChartStats(null);
+          setAccountOptions(
+            (accountsRes.items || []).filter((a) => (a.status || "").toLowerCase() !== "deleted").sort((a, b) => {
+              const ar = (a.role || "reseller") === "admin" ? 0 : 1;
+              const br = (b.role || "reseller") === "admin" ? 0 : 1;
+              return ar - br || a.username.localeCompare(b.username);
+            })
+          );
           setNodes(normalizeNodes(nodesRes));
           setOrders((ordersRes.items || []) as OrderRow[]);
           setLedger((ledgerRes.items || []) as LedgerRow[]);
           setRecentUsers([]);
         } else {
           const [statsRes, nodesRes, usersRes, ordersRes, ledgerRes] = await Promise.all([
-            apiFetch<ResellerStats>("/api/v1/reseller/stats"),
+            apiFetch<ResellerStats>("/api/v1/reseller/stats?days=7"),
             safeApi(apiFetch<any>("/api/v1/reseller/nodes"), { items: [] }),
             safeApi(apiFetch<any>("/api/v1/reseller/users?offset=0&limit=6"), { items: [] }),
             safeApi(apiFetch<any>(`/api/v1/reseller/reports/orders?offset=0&limit=${REPORT_LIMIT}`), { items: [] }),
@@ -701,7 +735,10 @@ export default function Dashboard() {
           ]);
           if (cancelled) return;
           setResellerStats(statsRes);
+          setResellerChartStats(statsRes);
           setAdminStats(null);
+          setAdminChartStats(null);
+          setAccountOptions([]);
           setNodes(normalizeNodes(nodesRes));
           setRecentUsers((usersRes.items || []).slice(0, 6).map((u: any) => ({ id: u.id, label: u.label, status: u.status })));
           setOrders((ordersRes.items || []) as OrderRow[]);
@@ -720,6 +757,40 @@ export default function Dashboard() {
     };
   }, [me]);
 
+  React.useEffect(() => {
+    const currentUser = me;
+    if (!currentUser) return;
+    const currentRole = currentUser.role;
+    let cancelled = false;
+
+    async function loadChartStats() {
+      setChartLoading(true);
+      try {
+        if (currentRole === "admin") {
+          const params = new URLSearchParams({ days: String(chartRangeDays) });
+          if (chartScope !== "all") params.set("reseller_id", chartScope);
+          const stats = await apiFetch<AdminStats>(`/api/v1/admin/stats?${params.toString()}`);
+          if (!cancelled) setAdminChartStats(stats);
+        } else {
+          const stats = await apiFetch<ResellerStats>(`/api/v1/reseller/stats?days=${chartRangeDays}`);
+          if (!cancelled) setResellerChartStats(stats);
+        }
+      } catch (e: any) {
+        if (!cancelled) setErr(String(e?.message || e));
+      } finally {
+        if (!cancelled) setChartLoading(false);
+      }
+    }
+
+    loadChartStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [me, chartRangeDays, chartScope]);
+
+  const scopedAdminStats = adminChartStats || adminStats;
+  const scopedResellerStats = resellerChartStats || resellerStats;
+
   const traffic = React.useMemo(() => {
     const source =
       me?.role === "admin" && adminStats
@@ -735,6 +806,22 @@ export default function Dashboard() {
       ratio: source.sold > 0 ? pct((used / source.sold) * 100) : 0,
     };
   }, [me?.role, adminStats, resellerStats]);
+
+  const scopedTraffic = React.useMemo(() => {
+    const source =
+      me?.role === "admin" && scopedAdminStats
+        ? { sold: Number(scopedAdminStats.sold_gb_total || 0), usedBytes: Number(scopedAdminStats.used_bytes_total || 0) }
+        : scopedResellerStats
+          ? { sold: Number(scopedResellerStats.sold_gb_total || 0), usedBytes: Number(scopedResellerStats.used_bytes_total || 0) }
+          : { sold: 0, usedBytes: 0 };
+    const used = bytesToGb(source.usedBytes);
+    return {
+      soldGb: source.sold,
+      usedGb: used,
+      remainingGb: Math.max(source.sold - used, 0),
+      ratio: source.sold > 0 ? pct((used / source.sold) * 100) : 0,
+    };
+  }, [me?.role, scopedAdminStats, scopedResellerStats]);
 
   const orderStats = React.useMemo(() => {
     const completedOrders = orders.filter((x) => (x.status || "").toLowerCase() === "completed");
@@ -758,39 +845,46 @@ export default function Dashboard() {
 
   const salesSeries = React.useMemo(() => {
     const fallback = buildLedgerDebitSeries(ledger);
-    const points = me?.role === "admin" ? adminStats?.daily_sales : resellerStats?.daily_sales;
-    return normalizeApiSeries(points, fallback);
-  }, [me?.role, adminStats?.daily_sales, resellerStats?.daily_sales, ledger]);
+    const points = me?.role === "admin" ? scopedAdminStats?.daily_sales : scopedResellerStats?.daily_sales;
+    return normalizeApiSeries(points, fallback, chartRangeDays);
+  }, [me?.role, scopedAdminStats?.daily_sales, scopedResellerStats?.daily_sales, ledger, chartRangeDays]);
 
   const trafficSeries = React.useMemo(() => {
     const fallback = buildOrderGbSeries(orders);
-    const points = me?.role === "admin" ? adminStats?.daily_traffic_gb : resellerStats?.daily_traffic_gb;
-    return normalizeApiSeries(points, fallback);
-  }, [me?.role, adminStats?.daily_traffic_gb, resellerStats?.daily_traffic_gb, orders]);
+    const points = me?.role === "admin" ? scopedAdminStats?.daily_traffic_gb : scopedResellerStats?.daily_traffic_gb;
+    return normalizeApiSeries(points, fallback, chartRangeDays);
+  }, [me?.role, scopedAdminStats?.daily_traffic_gb, scopedResellerStats?.daily_traffic_gb, orders, chartRangeDays]);
+
+  const usedSeries = React.useMemo(() => {
+    const points = me?.role === "admin" ? scopedAdminStats?.daily_used_gb : scopedResellerStats?.daily_used_gb;
+    return normalizeApiSeries(points, chartDays(chartRangeDays).map((d) => ({ ...d, value: 0 })), chartRangeDays);
+  }, [me?.role, scopedAdminStats?.daily_used_gb, scopedResellerStats?.daily_used_gb, chartRangeDays]);
 
   const userSummary = React.useMemo(() => {
-    if (me?.role === "admin" && adminStats) {
+    if (me?.role === "admin" && scopedAdminStats) {
       return {
-        total: Number(adminStats.users_total || 0),
-        active: Number(adminStats.users_active || 0),
-        disabled: Number(adminStats.users_disabled || 0),
-        expired: Number(adminStats.users_expired || 0),
-        limited: Number(adminStats.users_limited || 0),
-        onHold: Number(adminStats.users_on_hold || 0),
+        total: Number(scopedAdminStats.users_total || 0),
+        active: Number(scopedAdminStats.users_active || 0),
+        disabled: Number(scopedAdminStats.users_disabled || 0),
+        expired: Number(scopedAdminStats.users_expired || 0),
+        limited: Number(scopedAdminStats.users_limited || 0),
+        onHold: Number(scopedAdminStats.users_on_hold || 0),
+        deleted: Number(scopedAdminStats.users_deleted || 0),
       };
     }
-    if (resellerStats) {
+    if (scopedResellerStats) {
       return {
-        total: Number(resellerStats.users_total || 0),
-        active: Number(resellerStats.users_active || 0),
-        disabled: Number(resellerStats.users_disabled || 0),
-        expired: Number(resellerStats.users_expired || 0),
-        limited: Number(resellerStats.users_limited || 0),
-        onHold: Number(resellerStats.users_on_hold || 0),
+        total: Number(scopedResellerStats.users_total || 0),
+        active: Number(scopedResellerStats.users_active || 0),
+        disabled: Number(scopedResellerStats.users_disabled || 0),
+        expired: Number(scopedResellerStats.users_expired || 0),
+        limited: Number(scopedResellerStats.users_limited || 0),
+        onHold: Number(scopedResellerStats.users_on_hold || 0),
+        deleted: Number(scopedResellerStats.users_deleted || 0),
       };
     }
-    return { total: 0, active: 0, disabled: 0, expired: 0, limited: 0, onHold: 0 };
-  }, [me?.role, adminStats, resellerStats]);
+    return { total: 0, active: 0, disabled: 0, expired: 0, limited: 0, onHold: 0, deleted: 0 };
+  }, [me?.role, scopedAdminStats, scopedResellerStats]);
 
   const nodeStats = React.useMemo(() => {
     const enabled = nodes.filter((n) => n.is_enabled !== false).length;
@@ -825,6 +919,7 @@ export default function Dashboard() {
       { section: "users", label: "limited", value: userSummary.limited, meta: "" },
       { section: "users", label: "on_hold", value: userSummary.onHold, meta: "" },
       { section: "users", label: "disabled", value: userSummary.disabled, meta: "" },
+      { section: "users", label: "deleted", value: userSummary.deleted, meta: "" },
       { section: "orders", label: "recent_completed", value: orderStats.completed, meta: "" },
       { section: "orders", label: "recent_pending", value: orderStats.pending, meta: "" },
       { section: "orders", label: "recent_failed", value: orderStats.failed, meta: "" },
@@ -833,6 +928,7 @@ export default function Dashboard() {
       { section: "ledger", label: "recent_net", value: ledgerStats.net, meta: "" },
       ...salesSeries.map((point) => ({ section: "daily_sales", label: point.label, value: point.value, meta: "" })),
       ...trafficSeries.map((point) => ({ section: "daily_traffic_gb", label: point.label, value: point.value, meta: "" })),
+      ...usedSeries.map((point) => ({ section: "daily_used_gb", label: point.label, value: point.value, meta: "" })),
       ...nodes.map((node) => ({
         section: "nodes",
         label: node.name,
@@ -915,16 +1011,77 @@ export default function Dashboard() {
               expired={userSummary.expired}
               limited={userSummary.limited}
               onHold={userSummary.onHold}
+              deleted={userSummary.deleted}
             />
           </SectionPanel>
 
           <SectionPanel
-            title={isAdmin ? "حجم سفارش‌های تکمیل‌شده" : "حجم فروش من"}
-            subtitle="نمودار ۱۴ روز اخیر از سفارش‌های تکمیل‌شده ساخته می‌شود؛ برای مصرف لحظه‌ای از کارت ظرفیت استفاده کن."
+            title="مصرف و حجم زده‌شده"
+            subtitle="مقایسه مصرف ثبت‌شده و حجم زده‌شده برای بازه و حساب انتخابی. اعداد کل بالای داشبورد همیشه کل سیستم را نشان می‌دهند."
             icon={<BarChart3 size={18} />}
-            action={<Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>}
+            action={<Badge variant={chartLoading ? "warning" : "default"}>{chartLoading ? "در حال بروزرسانی" : `${fmtNumber(scopedTraffic.ratio)}% مصرف`}</Badge>}
           >
-            <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" />
+            <div className="space-y-4">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="space-y-1">
+                  <span className="text-xs text-[hsl(var(--fg))]/65">بازه نمودار</span>
+                  <select
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
+                    value={chartRangeDays}
+                    onChange={(e) => setChartRangeDays(Number(e.target.value))}
+                  >
+                    <option value={7}>۷ روز اخیر</option>
+                    <option value={30}>۱ ماه اخیر</option>
+                  </select>
+                </label>
+                {isAdmin ? (
+                  <label className="space-y-1">
+                    <span className="text-xs text-[hsl(var(--fg))]/65">حساب</span>
+                    <select
+                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
+                      value={chartScope}
+                      onChange={(e) => setChartScope(e.target.value)}
+                    >
+                      <option value="all">همه حساب‌ها</option>
+                      {accountOptions.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {(account.role || "reseller") === "admin" ? "سوپرادمین" : "رسیلر"} - {account.username}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-semibold">حجم زده‌شده</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">GB ثبت‌شده در سفارش‌های تکمیل‌شده همین بازه</div>
+                    </div>
+                    <Badge variant="default">{fmtGig(trafficSeries.reduce((acc, p) => acc + Number(p.value || 0), 0))} GB</Badge>
+                  </div>
+                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-semibold">مصرف ثبت‌شده</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">مصرف کاربرانی که در همین بازه sync/بروزرسانی شده‌اند</div>
+                    </div>
+                    <Badge variant="success">{fmtGig(usedSeries.reduce((acc, p) => acc + Number(p.value || 0), 0))} GB</Badge>
+                  </div>
+                  <MiniBars data={usedSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="green" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <TrafficRow label="حجم کل ثبت‌شده" value={`${fmtGig(scopedTraffic.soldGb)} گیگ`} color="bg-emerald-500" />
+                <TrafficRow label="مصرف کل ثبت‌شده" value={`${fmtGig(scopedTraffic.usedGb)} گیگ`} color="bg-blue-500" />
+                <TrafficRow label="ظرفیت باقی‌مانده" value={`${fmtGig(scopedTraffic.remainingGb)} گیگ`} color="bg-amber-500" />
+              </div>
+            </div>
           </SectionPanel>
         </div>
       ) : null}
@@ -952,11 +1109,11 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold">فروش روزانه</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">خروجی ۱۴ روز اخیر از تراکنش‌های مصرف</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">خروجی بازه انتخاب‌شده از تراکنش‌های مصرف</div>
                     </div>
                     <Badge variant="success">{fmtNumber(ledgerStats.debit)}</Badge>
                   </div>
-                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="green" />
+                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="green" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -966,7 +1123,7 @@ export default function Dashboard() {
                     </div>
                     <Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>
                   </div>
-                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" />
+                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
                 </div>
               </div>
             </SectionPanel>
@@ -1024,11 +1181,11 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold">مصرف کیف پول</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">۱۴ روز اخیر</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">بازه انتخاب‌شده</div>
                     </div>
                     <Badge variant="danger">{fmtNumber(ledgerStats.debit)}</Badge>
                   </div>
-                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="rose" />
+                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="rose" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -1038,7 +1195,7 @@ export default function Dashboard() {
                     </div>
                     <Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>
                   </div>
-                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" />
+                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
                 </div>
               </div>
             </SectionPanel>

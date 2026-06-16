@@ -2,31 +2,33 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.api.deps import require_reseller
-from app.models.user import GuardinoUser, UserStatus
+from app.models.user import GuardinoUser
 from app.models.node_allocation import NodeAllocation
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.schemas.stats import ResellerStats
-from app.services.dashboard_metrics import build_daily_series, summarize_users
+from app.services.dashboard_metrics import BYTES_PER_GB, build_daily_series, summarize_users
 
 router = APIRouter()
-SERIES_DAYS = 14
 
 
 @router.get("", response_model=ResellerStats)
-async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depends(require_reseller)):
+async def get_reseller_stats(
+    db: AsyncSession = Depends(get_db),
+    reseller=Depends(require_reseller),
+    days: int = Query(14, ge=7, le=31),
+):
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=30)
-    series_since = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=SERIES_DAYS - 1)
+    series_since = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
 
-    # Users
     user_rows = (
         await db.execute(
             select(
@@ -39,17 +41,17 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
         )
     ).all()
     user_summary = summarize_users(user_rows, now)
+
     uq = await db.execute(
         select(
             func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
             func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
-        ).where(GuardinoUser.owner_reseller_id == reseller.id, GuardinoUser.status != UserStatus.deleted)
+        ).where(GuardinoUser.owner_reseller_id == reseller.id)
     )
     urow = uq.one()
     used_bytes_total = int(urow.used_bytes_total or 0)
     sold_gb_total = int(urow.sold_gb_total or 0)
 
-    # Allowed nodes
     nq = await db.execute(
         select(func.count())
         .select_from(NodeAllocation)
@@ -62,7 +64,6 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
     )
     nodes_allowed = int(nq.scalar_one() or 0)
 
-    # Orders
     oq = await db.execute(select(func.count()).select_from(Order).where(Order.reseller_id == reseller.id))
     orders_total = int(oq.scalar_one() or 0)
     oq30 = await db.execute(
@@ -70,10 +71,8 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
     )
     orders_30d = int(oq30.scalar_one() or 0)
 
-    # Spent (debits) last 30d
     lq = await db.execute(
-        select(func.coalesce(func.sum(-LedgerTransaction.amount), 0))
-        .where(
+        select(func.coalesce(func.sum(-LedgerTransaction.amount), 0)).where(
             LedgerTransaction.reseller_id == reseller.id,
             LedgerTransaction.amount < 0,
             LedgerTransaction.occurred_at >= since,
@@ -99,6 +98,14 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
             )
         )
     ).all()
+    usage_series_rows = (
+        await db.execute(
+            select(GuardinoUser.updated_at, GuardinoUser.used_bytes).where(
+                GuardinoUser.owner_reseller_id == reseller.id,
+                GuardinoUser.updated_at >= series_since,
+            )
+        )
+    ).all()
 
     return ResellerStats(
         reseller_id=reseller.id,
@@ -113,12 +120,19 @@ async def get_reseller_stats(db: AsyncSession = Depends(get_db), reseller=Depend
         users_expired=user_summary["expired"],
         users_limited=user_summary["limited"],
         users_on_hold=user_summary["on_hold"],
+        users_deleted=user_summary["deleted"],
         used_bytes_total=used_bytes_total,
         sold_gb_total=sold_gb_total,
         nodes_allowed=nodes_allowed,
         orders_total=orders_total,
         orders_30d=orders_30d,
         spent_30d=spent_30d,
-        daily_sales=build_daily_series(ledger_series_rows, lambda row: row.occurred_at, lambda row: abs(row.amount), SERIES_DAYS),
-        daily_traffic_gb=build_daily_series(order_series_rows, lambda row: row.created_at, lambda row: row.purchased_gb or 0, SERIES_DAYS),
+        daily_sales=build_daily_series(ledger_series_rows, lambda row: row.occurred_at, lambda row: abs(row.amount), days),
+        daily_traffic_gb=build_daily_series(order_series_rows, lambda row: row.created_at, lambda row: row.purchased_gb or 0, days),
+        daily_used_gb=build_daily_series(
+            usage_series_rows,
+            lambda row: row.updated_at,
+            lambda row: (row.used_bytes or 0) / BYTES_PER_GB,
+            days,
+        ),
     )

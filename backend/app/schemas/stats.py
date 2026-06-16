@@ -21,6 +21,7 @@ class ResellerStats(BaseModel):
     users_expired: int = 0
     users_limited: int = 0
     users_on_hold: int = 0
+    users_deleted: int = 0
     used_bytes_total: int
     sold_gb_total: int
 
@@ -31,6 +32,7 @@ class ResellerStats(BaseModel):
     spent_30d: int
     daily_sales: list[DashboardSeriesPoint] = Field(default_factory=list)
     daily_traffic_gb: list[DashboardSeriesPoint] = Field(default_factory=list)
+    daily_used_gb: list[DashboardSeriesPoint] = Field(default_factory=list)
 
 
 class AdminStats(BaseModel):
@@ -41,6 +43,7 @@ class AdminStats(BaseModel):
     users_expired: int = 0
     users_limited: int = 0
     users_on_hold: int = 0
+    users_deleted: int = 0
     nodes_total: int
     orders_total: int
     ledger_entries_total: int
@@ -51,3 +54,4 @@ class AdminStats(BaseModel):
     sold_gb_total: int = 0
     daily_sales: list[DashboardSeriesPoint] = Field(default_factory=list)
     daily_traffic_gb: list[DashboardSeriesPoint] = Field(default_factory=list)
+    daily_used_gb: list[DashboardSeriesPoint] = Field(default_factory=list)

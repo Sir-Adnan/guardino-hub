@@ -36,11 +36,11 @@ def summarize_users(rows: Iterable[Any], now: datetime | None = None) -> dict[st
     for row in rows:
         status, expire_at, used_bytes, total_gb, meta = row
         status_key = _status_value(status)
+        summary["total"] += 1
         if status_key == "deleted":
             summary["deleted"] += 1
             continue
 
-        summary["total"] += 1
         meta_dict = meta if isinstance(meta, dict) else {}
         create_status = str(meta_dict.get("create_status") or "").lower()
         is_on_hold = status_key == "active" and create_status == "on_hold"
