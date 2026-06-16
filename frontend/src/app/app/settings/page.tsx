@@ -84,10 +84,47 @@ const EMPTY_POLICY: ResellerUserPolicy = {
   allowed_duration_presets: ["7d", "1m", "3m", "6m", "1y"],
   allowed_traffic_gb: [20, 30, 50, 70, 100, 150, 200],
 };
+const DURATION_PRESET_OPTIONS = ["7d", "1m", "3m", "6m", "1y", "unlimited"];
+const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
+
+function durationPresetLabel(preset: string): string {
+  if (preset === "7d") return "۷ روز";
+  if (preset === "1m") return "۱ ماه";
+  if (preset === "3m") return "۳ ماه";
+  if (preset === "6m") return "۶ ماه";
+  if (preset === "1y") return "۱ سال";
+  return "نامحدود";
+}
+
+function toggleString(list: string[], value: string, checked: boolean): string[] {
+  const s = new Set(list);
+  if (checked) s.add(value);
+  else s.delete(value);
+  return Array.from(s);
+}
+
+function toggleNumber(list: number[], value: number, checked: boolean): number[] {
+  const s = new Set(list);
+  if (checked) s.add(value);
+  else s.delete(value);
+  return Array.from(s).sort((a, b) => a - b);
+}
+
+function parseTrafficInput(raw: string): number[] {
+  return Array.from(
+    new Set(
+      raw
+        .split(/[,\s]+/g)
+        .map((x) => Number(x.trim()))
+        .filter((x) => Number.isFinite(x) && x > 0)
+        .map((x) => Math.floor(x))
+    )
+  ).sort((a, b) => a - b);
+}
 
 function normalizePolicy(raw: Partial<ResellerUserPolicy> | null | undefined): ResellerUserPolicy {
   const p = { ...EMPTY_POLICY, ...(raw || {}) };
-  return {
+  const out: ResellerUserPolicy = {
     ...p,
     enabled: !!p.enabled,
     allow_custom_days: !!p.allow_custom_days,
@@ -103,9 +140,31 @@ function normalizePolicy(raw: Partial<ResellerUserPolicy> | null | undefined): R
     max_days: Math.max(1, Number(p.max_days) || 3650),
     delete_refund_window_days: Math.max(0, Math.min(36500, Number(p.delete_refund_window_days ?? 10) || 0)),
     delete_expired_used_gb_limit: Math.max(0, Number(p.delete_expired_used_gb_limit ?? 1) || 0),
-    allowed_duration_presets: Array.isArray(p.allowed_duration_presets) ? p.allowed_duration_presets : EMPTY_POLICY.allowed_duration_presets,
-    allowed_traffic_gb: Array.isArray(p.allowed_traffic_gb) ? p.allowed_traffic_gb : EMPTY_POLICY.allowed_traffic_gb,
+    allowed_duration_presets: Array.from(
+      new Set(
+        (Array.isArray(p.allowed_duration_presets) ? p.allowed_duration_presets : EMPTY_POLICY.allowed_duration_presets)
+          .map((x) => String(x || "").trim().toLowerCase())
+          .filter((x) => DURATION_PRESET_OPTIONS.includes(x))
+      )
+    ),
+    allowed_traffic_gb: Array.from(
+      new Set(
+        (Array.isArray(p.allowed_traffic_gb) ? p.allowed_traffic_gb : EMPTY_POLICY.allowed_traffic_gb)
+          .map((x) => Number(x))
+          .filter((x) => Number.isFinite(x) && x > 0)
+          .map((x) => Math.floor(x))
+      )
+    ).sort((a, b) => a - b),
   };
+  if (out.max_days < out.min_days) out.max_days = out.min_days;
+  if (!out.allow_no_expire) {
+    out.allowed_duration_presets = out.allowed_duration_presets.filter((x) => x !== "unlimited");
+  } else if (!out.allowed_duration_presets.includes("unlimited")) {
+    out.allowed_duration_presets.push("unlimited");
+  }
+  if (!out.allowed_duration_presets.length) out.allowed_duration_presets = [...EMPTY_POLICY.allowed_duration_presets];
+  if (!out.allowed_traffic_gb.length) out.allowed_traffic_gb = [...EMPTY_POLICY.allowed_traffic_gb];
+  return out;
 }
 
 function toggleId(list: number[], id: number, checked: boolean): number[] {
@@ -127,6 +186,7 @@ export default function SettingsPage() {
   const [resellerDefaults, setResellerDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
   const [globalDefaults, setGlobalDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
   const [globalPolicy, setGlobalPolicy] = React.useState<ResellerUserPolicy>(EMPTY_POLICY);
+  const [globalTrafficInput, setGlobalTrafficInput] = React.useState(EMPTY_POLICY.allowed_traffic_gb.join(", "));
 
   const [resellerNodes, setResellerNodes] = React.useState<NodeLite[]>([]);
   const [adminNodes, setAdminNodes] = React.useState<NodeLite[]>([]);
@@ -192,7 +252,9 @@ export default function SettingsPage() {
           apiFetch<ResellerUserPolicy>("/api/v1/admin/settings/user-policy"),
         ]);
         setGlobalDefaults(g || EMPTY_DEFAULTS);
-        setGlobalPolicy(normalizePolicy(gp));
+        const normalizedPolicy = normalizePolicy(gp);
+        setGlobalPolicy(normalizedPolicy);
+        setGlobalTrafficInput(normalizedPolicy.allowed_traffic_gb.join(", "));
         setAdminNodes((adminNodeRes?.items || []).map((n: any) => ({
           id: n.id,
           name: n.name,
@@ -214,6 +276,10 @@ export default function SettingsPage() {
     loadDefaults();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.role]);
+
+  React.useEffect(() => {
+    setGlobalTrafficInput((globalPolicy.allowed_traffic_gb || []).join(", "));
+  }, [globalPolicy.allowed_traffic_gb]);
 
   async function saveResellerDefaults() {
     try {
@@ -259,7 +325,9 @@ export default function SettingsPage() {
         method: "PUT",
         body: JSON.stringify(normalizePolicy(globalPolicy)),
       });
-      setGlobalPolicy(normalizePolicy(saved));
+      const normalized = normalizePolicy(saved);
+      setGlobalPolicy(normalized);
+      setGlobalTrafficInput(normalized.allowed_traffic_gb.join(", "));
       push({ title: "سیاست سراسری ذخیره شد", type: "success" });
     } catch (e: any) {
       push({ title: "خطا در ذخیره سیاست سراسری", desc: String(e?.message || e), type: "error" });
@@ -629,6 +697,134 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex gap-2">
                   <Button type="button" onClick={saveGlobalDefaults}>ذخیره سراسری</Button>
+                  <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div className="text-sm font-semibold">سیاست سراسری ساخت کاربر برای رسیلرها</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">
+                  این مقدارها هنگام فعال‌کردن سیاست اختصاصی رسیلر به عنوان پیش‌فرض روی فرم ساخت/ویرایش رسیلر اعمال می‌شوند.
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className={guideBoxClass}>
+                  اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند.
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                  <div>
+                    <div className="text-sm font-medium">فعال بودن سیاست ساخت کاربر</div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">روشن باشد، رسیلر فقط طبق محدودیت‌های روز/حجم همین بخش کاربر می‌سازد.</div>
+                  </div>
+                  <Switch checked={globalPolicy.enabled} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, enabled: v }))} />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">بسته‌های زمانی مجاز</div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {DURATION_PRESET_OPTIONS.map((preset) => {
+                        const disabled = preset === "unlimited" && !globalPolicy.allow_no_expire;
+                        return (
+                          <label key={preset} className={`flex items-center gap-2 ${choiceCardClass} ${disabled ? "opacity-55" : ""}`}>
+                            <input
+                              type="checkbox"
+                              checked={(globalPolicy.allowed_duration_presets || []).includes(preset)}
+                              disabled={disabled}
+                              onChange={(e) =>
+                                setGlobalPolicy((x) =>
+                                  normalizePolicy({
+                                    ...x,
+                                    allowed_duration_presets: toggleString(x.allowed_duration_presets || [], preset, e.target.checked),
+                                  })
+                                )
+                              }
+                            />
+                            <span>{durationPresetLabel(preset)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">حجم‌های مجاز (GB)</div>
+                    <div className="flex flex-wrap gap-2">
+                      {TRAFFIC_PRESET_OPTIONS.map((gb) => (
+                        <label key={gb} className={`flex items-center gap-2 ${choiceCardClass}`}>
+                          <input
+                            type="checkbox"
+                            checked={(globalPolicy.allowed_traffic_gb || []).includes(gb)}
+                            onChange={(e) =>
+                              setGlobalPolicy((x) =>
+                                normalizePolicy({
+                                  ...x,
+                                  allowed_traffic_gb: toggleNumber(x.allowed_traffic_gb || [], gb, e.target.checked),
+                                })
+                              )
+                            }
+                          />
+                          <span>{gb}GB</span>
+                        </label>
+                      ))}
+                    </div>
+                    <Input
+                      value={globalTrafficInput}
+                      onChange={(e) => setGlobalTrafficInput(e.target.value)}
+                      onBlur={() => {
+                        const parsed = parseTrafficInput(globalTrafficInput);
+                        if (parsed.length) {
+                          setGlobalPolicy((x) => normalizePolicy({ ...x, allowed_traffic_gb: parsed }));
+                        } else {
+                          setGlobalTrafficInput((globalPolicy.allowed_traffic_gb || []).join(", "));
+                        }
+                      }}
+                      placeholder="مثال: 50, 100"
+                    />
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">کنترل روز و مدت‌زمان</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm">اجازه روز دستی</span>
+                      <Switch checked={globalPolicy.allow_custom_days} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_custom_days: v }))} />
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={globalPolicy.min_days}
+                        onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, min_days: Number(e.target.value) || 1 }))}
+                        placeholder="حداقل روز"
+                      />
+                      <Input
+                        type="number"
+                        min={1}
+                        value={globalPolicy.max_days}
+                        onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, max_days: Number(e.target.value) || x.min_days || 1 }))}
+                        placeholder="حداکثر روز"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">تنظیمات تکمیلی ساخت</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm">اجازه حجم دستی</span>
+                      <Switch checked={globalPolicy.allow_custom_traffic} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_custom_traffic: v }))} />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm">اجازه پلن نامحدود</span>
+                      <Switch checked={globalPolicy.allow_no_expire} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_no_expire: v }))} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button type="button" onClick={saveGlobalPolicy}>ذخیره سیاست سراسری</Button>
                   <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
                 </div>
               </CardContent>

@@ -104,6 +104,14 @@ export default function AllocationsPage() {
     () => groups.find((g) => g.reseller_id === selectedResellerId) || null,
     [groups, selectedResellerId]
   );
+  const selectedActivePanelTypes = React.useMemo(() => {
+    if (!selectedGroup) return 0;
+    return new Set(
+      selectedGroup.allocations
+        .filter((a) => a.enabled && a.node_is_enabled)
+        .map((a) => a.panel_type)
+    ).size;
+  }, [selectedGroup]);
 
   const availableNodes = React.useMemo(() => {
     const used = new Set((selectedGroup?.allocations || []).map((a) => a.node_id));
@@ -312,47 +320,58 @@ export default function AllocationsPage() {
             />
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
             {groups.map((group) => {
               const activeNodes = group.allocations.filter((a) => a.enabled && a.node_is_enabled).length;
+              const activePanelTypes = new Set(
+                group.allocations
+                  .filter((a) => a.enabled && a.node_is_enabled)
+                  .map((a) => a.panel_type)
+              ).size;
               return (
-                <article key={group.reseller_id} className="rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_12px_26px_-22px_hsl(var(--fg)/0.5)]">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-base font-semibold">{group.reseller_name}</h2>
-                        <Badge variant={statusVariant(group.reseller_status)}>{group.reseller_status}</Badge>
-                      </div>
-                      <div className="mt-1 text-xs text-[hsl(var(--fg))]/65">#{group.reseller_id}</div>
+                <article
+                  key={group.reseller_id}
+                  className="grid gap-3 border-b border-[hsl(var(--border))] p-3 transition-colors last:border-b-0 hover:bg-[hsl(var(--accent)/0.06)] md:grid-cols-[minmax(160px,1.1fr)_110px_120px_minmax(220px,2fr)_auto] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-sm font-semibold">{group.reseller_name}</h2>
+                      <Badge variant={statusVariant(group.reseller_status)}>{group.reseller_status}</Badge>
                     </div>
+                    <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">#{group.reseller_id}</div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-xs md:contents">
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
+                      <div className="text-[hsl(var(--fg))]/55">نود</div>
+                      <div className="font-semibold">{fmtNumber(group.allocations.length)}</div>
+                    </div>
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
+                      <div className="text-[hsl(var(--fg))]/55">فعال</div>
+                      <div className="font-semibold text-emerald-600">{fmtNumber(activeNodes)}</div>
+                    </div>
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
+                      <div className="text-[hsl(var(--fg))]/55">پنل</div>
+                      <div className="font-semibold">{fmtNumber(activePanelTypes)}</div>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex max-h-16 flex-wrap gap-1.5 overflow-hidden">
+                      {group.allocations.slice(0, 6).map((a) => (
+                        <Badge key={a.id} variant={allocationVariant(a)}>
+                          {a.node_name} · {a.panel_type}
+                        </Badge>
+                      ))}
+                      {group.allocations.length > 6 ? <Badge variant="muted">+{fmtNumber(group.allocations.length - 6)}</Badge> : null}
+                      {!group.allocations.length ? <Badge variant="muted">بدون تخصیص</Badge> : null}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
                     <Button type="button" size="sm" variant="outline" onClick={() => setSelectedResellerId(group.reseller_id)}>
-                      مدیریت تخصیص‌ها
+                      مدیریت
                     </Button>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-2">
-                      <div className="text-[hsl(var(--fg))]/60">نودها</div>
-                      <div className="mt-1 font-semibold">{fmtNumber(group.allocations.length)}</div>
-                    </div>
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-2">
-                      <div className="text-[hsl(var(--fg))]/60">فعال</div>
-                      <div className="mt-1 font-semibold text-emerald-600">{fmtNumber(activeNodes)}</div>
-                    </div>
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-2">
-                      <div className="text-[hsl(var(--fg))]/60">پنل‌ها</div>
-                      <div className="mt-1 font-semibold">{fmtNumber(group.active_panels_count)}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {group.allocations.slice(0, 8).map((a) => (
-                      <Badge key={a.id} variant={allocationVariant(a)}>
-                        {a.node_name} · {a.panel_type}
-                      </Badge>
-                    ))}
-                    {group.allocations.length > 8 ? <Badge variant="muted">+{fmtNumber(group.allocations.length - 8)}</Badge> : null}
-                    {!group.allocations.length ? <Badge variant="muted">بدون تخصیص</Badge> : null}
                   </div>
                 </article>
               );
@@ -378,11 +397,11 @@ export default function AllocationsPage() {
         open={!!selectedGroup}
         onClose={() => setSelectedResellerId(null)}
         title={selectedGroup ? `مدیریت تخصیص‌ها - ${selectedGroup.reseller_name}` : "مدیریت تخصیص‌ها"}
-        className="max-w-5xl"
+        className="max-w-6xl"
       >
         {selectedGroup ? (
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                 <div className="text-xs text-[hsl(var(--fg))]/60">رسیلر</div>
                 <div className="mt-1 truncate text-sm font-semibold">{selectedGroup.reseller_name}</div>
@@ -392,8 +411,8 @@ export default function AllocationsPage() {
                 <div className="mt-1 text-sm font-semibold">{fmtNumber(selectedGroup.allocations.length)}</div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">پنل فعال</div>
-                <div className="mt-1 text-sm font-semibold">{fmtNumber(selectedGroup.active_panels_count)}</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">نوع پنل فعال</div>
+                <div className="mt-1 text-sm font-semibold">{fmtNumber(selectedActivePanelTypes)}</div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                 <div className="text-xs text-[hsl(var(--fg))]/60">وضعیت</div>
@@ -406,7 +425,7 @@ export default function AllocationsPage() {
                 <Plus size={16} />
                 افزودن نود جدید
               </div>
-              <div className="grid gap-3 md:grid-cols-[1.5fr,1fr,auto,auto,auto] md:items-end">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,2fr)_minmax(140px,1fr)_auto_auto_auto] lg:items-end">
                 <div className="space-y-1">
                   <div className="text-xs text-[hsl(var(--fg))]/65">نود</div>
                   <select className={selectClass} value={addNodeId} onChange={(e) => setAddNodeId(e.target.value === "" ? "" : Number(e.target.value))}>
@@ -422,11 +441,11 @@ export default function AllocationsPage() {
                   <div className="text-xs text-[hsl(var(--fg))]/65">قیمت اختصاصی/GB</div>
                   <Input type="number" value={addPriceOverride} onChange={(e) => setAddPriceOverride(e.target.value === "" ? "" : Number(e.target.value))} />
                 </div>
-                <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                <label className="flex h-10 items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 text-xs">
                   <Switch checked={addEnabled} onCheckedChange={setAddEnabled} />
                   فعال
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                <label className="flex h-10 items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 text-xs">
                   <Switch checked={addDefault} onCheckedChange={setAddDefault} />
                   پیش‌فرض
                 </label>
@@ -436,15 +455,15 @@ export default function AllocationsPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
               {selectedGroup.allocations.map((a) => (
-                <div key={a.id} className="rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-                  <div className="grid gap-3 lg:grid-cols-[1.4fr,0.8fr,auto,auto,1fr,auto] lg:items-center">
+                <div key={a.id} className="border-b border-[hsl(var(--border))] p-3 last:border-b-0">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(180px,1.2fr)_minmax(170px,1fr)_auto_minmax(180px,1fr)_auto] xl:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="truncate text-sm font-semibold">{a.node_name}</div>
-                        <Badge variant={a.node_is_enabled ? "default" : "danger"}>{a.node_is_enabled ? "node enabled" : "node disabled"}</Badge>
-                        <Badge variant={a.enabled ? "success" : "muted"}>{a.enabled ? "allocation enabled" : "allocation disabled"}</Badge>
+                        <Badge variant={a.node_is_enabled ? "default" : "danger"}>{a.node_is_enabled ? "نود فعال" : "نود غیرفعال"}</Badge>
+                        <Badge variant={a.enabled ? "success" : "muted"}>{a.enabled ? "تخصیص فعال" : "تخصیص غیرفعال"}</Badge>
                       </div>
                       <div className="mt-1 text-xs text-[hsl(var(--fg))]/65">{a.panel_type} · node #{a.node_id} · allocation #{a.id}</div>
                     </div>
@@ -454,17 +473,19 @@ export default function AllocationsPage() {
                       {a.price_per_gb_override != null ? <Badge variant="default">{fmtNumber(a.price_per_gb_override)}/GB</Badge> : null}
                     </div>
 
-                    <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
-                      <Switch checked={a.enabled} onCheckedChange={(v) => patchAllocation(a.id, { enabled: v })} />
-                      فعال
-                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                        <Switch checked={a.enabled} onCheckedChange={(v) => patchAllocation(a.id, { enabled: v })} />
+                        فعال
+                      </label>
 
-                    <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
-                      <Switch checked={a.default_for_reseller} onCheckedChange={(v) => patchAllocation(a.id, { default_for_reseller: v })} />
-                      پیش‌فرض
-                    </label>
+                      <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
+                        <Switch checked={a.default_for_reseller} onCheckedChange={(v) => patchAllocation(a.id, { default_for_reseller: v })} />
+                        پیش‌فرض
+                      </label>
+                    </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex min-w-0 gap-2">
                       <Input
                         type="number"
                         value={priceDrafts[a.id] ?? ""}
@@ -475,6 +496,7 @@ export default function AllocationsPage() {
                         type="button"
                         size="sm"
                         variant="outline"
+                        title="ذخیره قیمت"
                         onClick={() =>
                           patchAllocation(a.id, {
                             price_per_gb_override: priceDrafts[a.id] === "" || priceDrafts[a.id] == null ? null : Number(priceDrafts[a.id]),
@@ -485,9 +507,11 @@ export default function AllocationsPage() {
                       </Button>
                     </div>
 
-                    <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => setConfirmDelete(a)}>
-                      <Trash2 size={14} />
-                    </Button>
+                    <div className="flex justify-end">
+                      <Button type="button" size="sm" variant="outline" className="text-red-600" title="حذف تخصیص" onClick={() => setConfirmDelete(a)}>
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
