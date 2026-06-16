@@ -938,6 +938,9 @@ run_install() {
     chmod +x "${INSTALL_DIR}/installer/install.sh"
   fi
   INSTALL_DIR="${INSTALL_DIR}" REPO_URL="${REPO_URL}" BRANCH="${BRANCH}" bash "${INSTALL_DIR}/installer/install.sh"
+  if [ -x "${INSTALL_DIR}/installer/guardinoctl.sh" ]; then
+    INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes >/dev/null 2>&1 || true
+  fi
 }
 
 run_update() {
@@ -954,6 +957,9 @@ run_update() {
     chmod +x "${INSTALL_DIR}/installer/update.sh"
   fi
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/update.sh"
+  if [ -x "${INSTALL_DIR}/installer/guardinoctl.sh" ]; then
+    INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes >/dev/null 2>&1 || true
+  fi
 }
 
 uninstall_guardino() {

@@ -119,6 +119,14 @@ fi
 cd "$INSTALL_DIR"
 chmod +x installer/install.sh installer/update.sh installer/manage.sh installer/guardinoctl.sh
 
+# Make the local server command available as soon as the remote bootstrap runs.
+# This also repairs older installs where /usr/local/bin/guardino was missing.
+if [ "$(id -u)" -eq 0 ]; then
+  REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/guardinoctl.sh install-script --yes >/dev/null 2>&1 || true
+else
+  sudo REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/guardinoctl.sh install-script --yes >/dev/null 2>&1 || true
+fi
+
 # Remote one-liner defaults to the classic management menu:
 #   bash <(curl -Ls --ipv4 .../installer/guardino.sh)
 #

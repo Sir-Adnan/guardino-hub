@@ -1225,7 +1225,7 @@ guardino help
 Guardino help
 ```
 
-The remote one-liner opens the classic management menu by default. After installation, the local `guardino` command shows the modern command help when no command is passed.
+The remote one-liner installs/repairs the local `guardino` and `Guardino` commands, then opens the classic management menu by default. After installation, the local `guardino` command shows the modern command help when no command is passed.
 
 Important commands:
 
