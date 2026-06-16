@@ -73,8 +73,8 @@ const EMPTY_POLICY: ResellerUserPolicy = {
   allow_custom_days: true,
   allow_custom_traffic: true,
   allow_no_expire: false,
-  allow_user_delete: true,
-  allow_reset_usage: true,
+  allow_user_delete: false,
+  allow_reset_usage: false,
   restrict_edit_to_renewal_only: false,
   renewal_policy: "add_time_and_volume",
   min_days: 1,
@@ -636,7 +636,7 @@ export default function SettingsPage() {
 
             <Card className="overflow-hidden">
               <CardHeader>
-                <div className="text-sm font-semibold">سیاست سراسری حذف و ریست کاربران</div>
+                <div className="text-sm font-semibold">سیاست سراسری حذف، ریست، ویرایش و تمدید کاربران</div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.</div>
               </CardHeader>
               <CardContent className="space-y-4">

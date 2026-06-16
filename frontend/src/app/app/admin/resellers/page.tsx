@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,28 @@ type NodeOut = {
 };
 type NodeList = { items: NodeOut[]; total: number };
 
+type ResellerAllocationSummaryItem = {
+  id: number;
+  reseller_id: number;
+  node_id: number;
+  node_name: string;
+  panel_type: string;
+  node_is_enabled: boolean;
+  enabled: boolean;
+  default_for_reseller: boolean;
+  price_per_gb_override?: number | null;
+};
+
+type ResellerAllocationSummary = {
+  reseller_id: number;
+  reseller_name: string;
+  reseller_status: string;
+  allocations: ResellerAllocationSummaryItem[];
+  nodes: Array<{ id: number; name: string; panel_type: string; is_enabled: boolean }>;
+  active_panels_count: number;
+};
+type ResellerAllocationSummaryList = { items: ResellerAllocationSummary[]; total: number };
+
 const ADMIN_FETCH_LIMIT = 200;
 const DURATION_PRESET_OPTIONS = ["7d", "1m", "3m", "6m", "1y", "unlimited"];
 const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
@@ -67,8 +90,8 @@ function defaultUserPolicy(): ResellerUserPolicy {
     allow_custom_days: true,
     allow_custom_traffic: true,
     allow_no_expire: false,
-    allow_user_delete: true,
-    allow_reset_usage: true,
+    allow_user_delete: false,
+    allow_reset_usage: false,
     restrict_edit_to_renewal_only: false,
     renewal_policy: "add_time_and_volume",
     min_days: 1,
@@ -183,6 +206,33 @@ function statusBadgeVariant(s: string): "success" | "danger" | "muted" | "warnin
   return "warning";
 }
 
+function hasLifecyclePolicies(policy: ResellerUserPolicy): boolean {
+  return (
+    !!policy.allow_user_delete ||
+    !!policy.allow_reset_usage ||
+    !!policy.restrict_edit_to_renewal_only ||
+    policy.renewal_policy !== "add_time_and_volume"
+  );
+}
+
+function pickLifecyclePolicies(policy: ResellerUserPolicy) {
+  return {
+    allow_user_delete: !!policy.allow_user_delete,
+    allow_reset_usage: !!policy.allow_reset_usage,
+    restrict_edit_to_renewal_only: !!policy.restrict_edit_to_renewal_only,
+    renewal_policy: policy.renewal_policy,
+    delete_refund_window_days: policy.delete_refund_window_days,
+    delete_expired_used_gb_limit: policy.delete_expired_used_gb_limit,
+  };
+}
+
+function allocationSummaryVariant(a: ResellerAllocationSummaryItem): "default" | "success" | "warning" | "danger" | "muted" {
+  if (!a.node_is_enabled) return "danger";
+  if (!a.enabled) return "muted";
+  if (a.default_for_reseller) return "success";
+  return "default";
+}
+
 function policySummary(policy: ResellerUserPolicy | null | undefined): string {
   if (!policy) return "سیاست سراسری";
   if (!policy.enabled) return "اختصاصی: بدون محدودیت ساخت";
@@ -195,6 +245,7 @@ function policySummary(policy: ResellerUserPolicy | null | undefined): string {
 export default function AdminResellersPage() {
   const { push } = useToast();
   const { t } = useI18n();
+  const router = useRouter();
 
   const [items, setItems] = React.useState<ResellerOut[]>([]);
   const [creditOptions, setCreditOptions] = React.useState<ResellerOut[]>([]);
@@ -218,6 +269,8 @@ export default function AdminResellersPage() {
   const [trafficInput, setTrafficInput] = React.useState(TRAFFIC_PRESET_OPTIONS.join(", "));
   const [policyDefaultApplied, setPolicyDefaultApplied] = React.useState(false);
   const [policyTouched, setPolicyTouched] = React.useState(false);
+  const [lifecyclePolicyEnabled, setLifecyclePolicyEnabled] = React.useState(false);
+  const [lifecyclePolicyTouched, setLifecyclePolicyTouched] = React.useState(false);
 
   const [creditId, setCreditId] = React.useState<number | "">("");
   const [creditQuery, setCreditQuery] = React.useState("");
@@ -227,11 +280,14 @@ export default function AdminResellersPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
   const [confirmToggleStatus, setConfirmToggleStatus] = React.useState<{ r: ResellerOut; to: "active" | "disabled" } | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [editingAllocationSummary, setEditingAllocationSummary] = React.useState<ResellerAllocationSummary | null>(null);
 
   function applyGlobalPolicyDefaults() {
     const p = normalizePolicy(globalPolicy || defaultUserPolicy());
     setUserPolicy(p);
     setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+    setLifecyclePolicyEnabled(hasLifecyclePolicies(p));
+    setLifecyclePolicyTouched(false);
     setPolicyDefaultApplied(true);
     setPolicyTouched(false);
   }
@@ -245,6 +301,41 @@ export default function AdminResellersPage() {
     setPolicyDefaultApplied(false);
   }
 
+  function updateLifecyclePolicy(next: ResellerUserPolicy | ((current: ResellerUserPolicy) => ResellerUserPolicy)) {
+    setUserPolicy((current) => {
+      const value = normalizePolicy(typeof next === "function" ? next(current) : next);
+      return value;
+    });
+    setLifecyclePolicyEnabled(true);
+    setLifecyclePolicyTouched(true);
+    setPolicyTouched(true);
+    setPolicyDefaultApplied(false);
+  }
+
+  function handleLifecyclePolicyToggle(checked: boolean) {
+    setLifecyclePolicyEnabled(checked);
+    if (checked) {
+      if (!lifecyclePolicyTouched) {
+        const p = normalizePolicy({ ...userPolicy, ...pickLifecyclePolicies(globalPolicy) });
+        setUserPolicy(p);
+        setPolicyDefaultApplied(true);
+      }
+      return;
+    }
+    setUserPolicy((current) =>
+      normalizePolicy({
+        ...current,
+        allow_user_delete: false,
+        allow_reset_usage: false,
+        restrict_edit_to_renewal_only: false,
+        renewal_policy: "add_time_and_volume",
+      })
+    );
+    setLifecyclePolicyTouched(true);
+    setPolicyTouched(true);
+    setPolicyDefaultApplied(false);
+  }
+
   function handleCustomPolicyToggle(checked: boolean) {
     setUseCustomPolicy(checked);
     if (checked && !policyTouched) {
@@ -252,6 +343,8 @@ export default function AdminResellersPage() {
     }
     if (!checked) {
       setPolicyDefaultApplied(false);
+      setLifecyclePolicyEnabled(false);
+      setLifecyclePolicyTouched(false);
     }
   }
 
@@ -271,6 +364,9 @@ export default function AdminResellersPage() {
     setTrafficInput(p.allowed_traffic_gb.join(", "));
     setPolicyDefaultApplied(false);
     setPolicyTouched(false);
+    setLifecyclePolicyEnabled(false);
+    setLifecyclePolicyTouched(false);
+    setEditingAllocationSummary(null);
   }
 
   async function load(nextPage: number = page, nextPageSize: number = pageSize) {
@@ -304,6 +400,16 @@ export default function AdminResellersPage() {
       setGlobalPolicy(normalizePolicy(p));
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function loadAllocationSummary(resellerId: number) {
+    try {
+      const params = new URLSearchParams({ offset: "0", limit: "1000", q: String(resellerId) });
+      const res = await apiFetch<ResellerAllocationSummaryList>(`/api/v1/admin/resellers/allocations/grouped?${params.toString()}`);
+      setEditingAllocationSummary((res.items || []).find((x) => x.reseller_id === resellerId) || null);
+    } catch {
+      setEditingAllocationSummary(null);
     }
   }
 
@@ -396,8 +502,11 @@ async function assignAllNodesForReseller(resellerId: number) {
       const p = normalizePolicy(detail.user_policy || defaultUserPolicy());
       setUserPolicy(p);
       setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+      setLifecyclePolicyEnabled(hasLifecyclePolicies(p));
+      setLifecyclePolicyTouched(false);
       setPolicyDefaultApplied(false);
       setPolicyTouched(!!detail.user_policy);
+      await loadAllocationSummary(detail.id);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     }
@@ -468,6 +577,8 @@ async function assignAllNodesForReseller(resellerId: number) {
     const p = normalizePolicy(globalPolicy);
     setUserPolicy(p);
     setTrafficInput((p.allowed_traffic_gb || []).join(", "));
+    setLifecyclePolicyEnabled(hasLifecyclePolicies(p));
+    setLifecyclePolicyTouched(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalPolicy]);
 
@@ -496,6 +607,8 @@ async function assignAllNodesForReseller(resellerId: number) {
       totalBalance,
     };
   }, [items]);
+  const editingAllocations = editingAllocationSummary?.allocations || [];
+  const editingActiveAllocationCount = editingAllocations.filter((a) => a.enabled && a.node_is_enabled).length;
 
   return (
     <div className="space-y-6">
@@ -781,9 +894,28 @@ async function assignAllNodesForReseller(resellerId: number) {
                 <div>
                   <div className="text-xs font-medium text-[hsl(var(--fg))]/80">سیاست‌های حذف، ریست، ویرایش و تمدید</div>
                   <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
-                    هر گزینه مستقل ذخیره می‌شود. خاموش بودن سیاست اختصاصی یعنی همین مقادیر از تنظیمات سراسری پنل خوانده می‌شوند.
+                    این بخش به صورت پیش‌فرض خاموش است. اگر در تنظیمات سراسری پنل فعال شده باشد، با روشن کردن سیاست اختصاصی یا این checkbox همان مقدارها روی فرم می‌نشیند.
                   </div>
                 </div>
+                <label className="flex items-start gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={lifecyclePolicyEnabled}
+                    onChange={(e) => handleLifecyclePolicyToggle(e.target.checked)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">فعال‌سازی سیاست‌های حذف، ریست، ویرایش و تمدید</span>
+                    <span className="mt-1 block text-xs leading-6 text-[hsl(var(--fg))]/65">
+                      خاموش باشد، این مجوزها برای این رسیلر فعال ذخیره نمی‌شوند. روشن باشد، می‌توانی هر گزینه را جدا تنظیم کنی.
+                    </span>
+                  </span>
+                </label>
+                {!lifecyclePolicyEnabled ? (
+                  <div className={guideBoxClass}>
+                    حذف/ریفاند، ریست مصرف، محدودیت ویرایش و سیاست تمدید اختصاصی برای این رسیلر خاموش ذخیره می‌شوند؛ مگر اینکه پیش‌فرض سراسری را اعمال یا این بخش را دستی روشن کنی.
+                  </div>
+                ) : (
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className={policyCheckCardClass}>
                     <label className={policyCheckLabelClass}>
@@ -791,7 +923,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                         type="checkbox"
                         className="mt-1"
                         checked={userPolicy.allow_user_delete}
-                        onChange={(e) => updateUserPolicy((x) => ({ ...x, allow_user_delete: e.target.checked }))}
+                        onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, allow_user_delete: e.target.checked }))}
                       />
                       <span>اجازه حذف و ریفاند کاربر</span>
                     </label>
@@ -803,7 +935,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                           type="number"
                           min={0}
                           value={userPolicy.delete_refund_window_days}
-                          onChange={(e) => updateUserPolicy((x) => ({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                          onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
                           placeholder="روز مجاز"
                           disabled={!userPolicy.allow_user_delete}
                         />
@@ -815,7 +947,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                           min={0}
                           step="0.1"
                           value={userPolicy.delete_expired_used_gb_limit}
-                          onChange={(e) => updateUserPolicy((x) => ({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                          onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
                           placeholder="حد مصرف GB"
                           disabled={!userPolicy.allow_user_delete}
                         />
@@ -830,7 +962,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                         type="checkbox"
                         className="mt-1"
                         checked={userPolicy.allow_reset_usage}
-                        onChange={(e) => updateUserPolicy((x) => ({ ...x, allow_reset_usage: e.target.checked }))}
+                        onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, allow_reset_usage: e.target.checked }))}
                       />
                       <span>اجازه ریست مصرف</span>
                     </label>
@@ -843,7 +975,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                         type="checkbox"
                         className="mt-1"
                         checked={userPolicy.restrict_edit_to_renewal_only}
-                        onChange={(e) => updateUserPolicy((x) => ({ ...x, restrict_edit_to_renewal_only: e.target.checked }))}
+                        onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, restrict_edit_to_renewal_only: e.target.checked }))}
                       />
                       <span>ویرایش فقط از مسیر تمدید بسته‌ای</span>
                     </label>
@@ -857,7 +989,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                         className="mt-1"
                         checked={customRenewalPolicyEnabled}
                         onChange={(e) =>
-                          updateUserPolicy((x) => ({
+                          updateLifecyclePolicy((x) => ({
                             ...x,
                             renewal_policy: e.target.checked
                               ? globalPolicy.renewal_policy !== "add_time_and_volume"
@@ -874,7 +1006,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                       className={`${selectClass} mt-3 disabled:opacity-60`}
                       value={userPolicy.renewal_policy}
                       disabled={!customRenewalPolicyEnabled}
-                      onChange={(e) => updateUserPolicy((x) => ({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
+                      onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
                     >
                       <option value="reset_time_and_volume">ریست زمان و حجم</option>
                       <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
@@ -883,9 +1015,56 @@ async function assignAllNodesForReseller(resellerId: number) {
                     </select>
                   </div>
                 </div>
+                )}
               </div>
               </div>
             </div>
+
+            {editingId != null ? (
+              <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 md:col-span-2">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">تخصیص‌های این رسیلر</div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
+                      خلاصه نودها و وضعیت پنل‌های متصل به این رسیلر. مدیریت کامل از صفحه تخصیص‌ها انجام می‌شود.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => router.push(`/app/admin/allocations?resellerId=${editingId}`)}
+                  >
+                    مدیریت تخصیص‌ها
+                  </Button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/60">نودهای اختصاص‌داده‌شده</div>
+                    <div className="mt-1 text-sm font-semibold">{fmtNumber(editingAllocations.length)}</div>
+                  </div>
+                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/60">تخصیص فعال</div>
+                    <div className="mt-1 text-sm font-semibold text-emerald-600">{fmtNumber(editingActiveAllocationCount)}</div>
+                  </div>
+                  <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                    <div className="text-xs text-[hsl(var(--fg))]/60">پنل‌های فعال</div>
+                    <div className="mt-1 text-sm font-semibold">{fmtNumber(editingAllocationSummary?.active_panels_count ?? 0)}</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {editingAllocations.slice(0, 8).map((a) => (
+                    <Badge key={a.id} variant={allocationSummaryVariant(a)}>
+                      {a.node_name} · {a.panel_type}
+                    </Badge>
+                  ))}
+                  {editingAllocations.length > 8 ? <Badge variant="muted">+{fmtNumber(editingAllocations.length - 8)}</Badge> : null}
+                  {!editingAllocations.length ? <Badge variant="muted">بدون تخصیص</Badge> : null}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">

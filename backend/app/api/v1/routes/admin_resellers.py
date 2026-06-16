@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from app.core.db import get_db
 from app.api.deps import require_admin
@@ -12,9 +12,15 @@ from app.schemas.admin import (
     ResellerOut,
     ResellerList,
     CreditRequest,
+    AllocationNodeSummary,
+    GroupedAllocationItem,
+    ResellerAllocationsGroupedList,
+    ResellerAllocationsGroup,
     UpdateResellerRequest,
     SetResellerStatusRequest,
 )
+from app.models.node import Node
+from app.models.node_allocation import NodeAllocation
 from app.schemas.settings import ResellerUserPolicy
 from app.services.reseller_user_policy import (
     delete_user_policy_setting,
@@ -59,6 +65,91 @@ async def list_resellers(
         policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
         items.append(_to_out(r, policy))
     return ResellerList(items=items, total=total)
+
+
+@router.get("/allocations/grouped", response_model=ResellerAllocationsGroupedList)
+async def list_reseller_allocations_grouped(
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    q: str | None = Query(default=None, max_length=128),
+):
+    base = select(Reseller).where(
+        Reseller.role == "reseller",
+        Reseller.status != ResellerStatus.deleted,
+    )
+    term = (q or "").strip()
+    exact_id = int(term) if term.isdigit() else None
+    if term:
+        conditions = [Reseller.username.ilike(f"%{term}%")]
+        if exact_id is not None:
+            conditions.append(Reseller.id == exact_id)
+        base = base.where(or_(*conditions))
+    if exact_id is not None:
+        base = base.order_by((Reseller.id == exact_id).desc(), Reseller.id.desc())
+    else:
+        base = base.order_by(Reseller.id.desc())
+
+    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = int(total_q.scalar_one())
+    reseller_rows = (await db.execute(base.limit(limit).offset(offset))).scalars().all()
+    reseller_ids = [r.id for r in reseller_rows]
+    if not reseller_ids:
+        return ResellerAllocationsGroupedList(items=[], total=total)
+
+    allocation_rows = (
+        await db.execute(
+            select(NodeAllocation, Node)
+            .join(Node, Node.id == NodeAllocation.node_id)
+            .where(NodeAllocation.reseller_id.in_(reseller_ids))
+            .order_by(NodeAllocation.reseller_id.asc(), Node.id.asc())
+        )
+    ).all()
+
+    grouped: dict[int, list[tuple[NodeAllocation, Node]]] = {rid: [] for rid in reseller_ids}
+    for allocation, node in allocation_rows:
+        grouped.setdefault(allocation.reseller_id, []).append((allocation, node))
+
+    items: list[ResellerAllocationsGroup] = []
+    for reseller in reseller_rows:
+        rows = grouped.get(reseller.id, [])
+        allocations = [
+            GroupedAllocationItem(
+                id=allocation.id,
+                reseller_id=allocation.reseller_id,
+                node_id=node.id,
+                node_name=node.name,
+                panel_type=node.panel_type.value,
+                node_is_enabled=node.is_enabled,
+                enabled=allocation.enabled,
+                default_for_reseller=allocation.default_for_reseller,
+                price_per_gb_override=allocation.price_per_gb_override,
+            )
+            for allocation, node in rows
+        ]
+        nodes = [
+            AllocationNodeSummary(
+                id=node.id,
+                name=node.name,
+                panel_type=node.panel_type.value,
+                is_enabled=node.is_enabled,
+            )
+            for _allocation, node in rows
+        ]
+        active_panels_count = sum(1 for allocation, node in rows if allocation.enabled and node.is_enabled)
+        items.append(
+            ResellerAllocationsGroup(
+                reseller_id=reseller.id,
+                reseller_name=reseller.username,
+                reseller_status=reseller.status.value,
+                allocations=allocations,
+                nodes=nodes,
+                active_panels_count=active_panels_count,
+            )
+        )
+
+    return ResellerAllocationsGroupedList(items=items, total=total)
 
 
 @router.get("/{reseller_id}", response_model=ResellerOut)

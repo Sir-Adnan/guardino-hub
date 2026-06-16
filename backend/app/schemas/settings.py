@@ -31,8 +31,8 @@ class ResellerUserPolicy(BaseModel):
     allow_custom_days: bool = True
     allow_custom_traffic: bool = True
     allow_no_expire: bool = False
-    allow_user_delete: bool = True
-    allow_reset_usage: bool = True
+    allow_user_delete: bool = False
+    allow_reset_usage: bool = False
     restrict_edit_to_renewal_only: bool = False
     renewal_policy: str = Field(default="add_time_and_volume", pattern="^(reset_time_and_volume|add_time_and_volume|reset_time_carry_volume|reset_volume_carry_time)$")
     min_days: int = Field(default=1, ge=1, le=36500)

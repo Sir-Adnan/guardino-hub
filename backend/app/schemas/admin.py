@@ -100,6 +100,39 @@ class AllocationList(BaseModel):
     items: List[AllocationOut]
     total: int
 
+
+class AllocationNodeSummary(BaseModel):
+    id: int
+    name: str
+    panel_type: str
+    is_enabled: bool
+
+
+class GroupedAllocationItem(BaseModel):
+    id: int
+    reseller_id: int
+    node_id: int
+    node_name: str
+    panel_type: str
+    node_is_enabled: bool
+    enabled: bool
+    default_for_reseller: bool
+    price_per_gb_override: Optional[int]
+
+
+class ResellerAllocationsGroup(BaseModel):
+    reseller_id: int
+    reseller_name: str
+    reseller_status: str
+    allocations: List[GroupedAllocationItem]
+    nodes: List[AllocationNodeSummary]
+    active_panels_count: int
+
+
+class ResellerAllocationsGroupedList(BaseModel):
+    items: List[ResellerAllocationsGroup]
+    total: int
+
 class ResellerList(BaseModel):
     items: List[ResellerOut]
     total: int
