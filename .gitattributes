@@ -1,0 +1,6 @@
+/.gitattributes text eol=lf
+README.md text eol=lf
+*.sh text eol=lf
+installer/*.sh text eol=lf
+deploy/*.conf text eol=lf
+deploy/*.yml text eol=lf

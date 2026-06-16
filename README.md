@@ -1209,3 +1209,40 @@ npm run build
 ## مجوز و وضعیت
 
 این README وضعیت فعلی پروژه را برای نصب، استفاده، عملیات و توسعه توضیح می‌دهد. اگر قابلیت جدیدی اضافه شد که روی رفتار عمومی، مالی، API یا نصب اثر دارد، همین فایل باید همزمان به‌روزرسانی شود.
+
+## Guardino Server Command
+
+Linux deployments install a global command during setup:
+
+```bash
+guardino help
+Guardino help
+```
+
+Important commands:
+
+```bash
+guardino up
+guardino down
+guardino restart
+guardino rebuild
+guardino status
+guardino logs api
+guardino edit-env
+guardino backup full
+guardino backup-service full
+guardino restore /path/to/guardino_backup_YYYYmmddTHHMMSSZ.tar.gz
+guardino domain set panel.example.com
+guardino ssl issue panel.example.com admin@example.com
+guardino ssl renew
+guardino doctor
+```
+
+`edit-env` opens `.env` with nano, validates critical numeric settings, creates a timestamped backup, and offers to restart the stack so changes such as `USAGE_SYNC_SECONDS` and `EXPIRY_SYNC_SECONDS` take effect.
+
+The installer writes both `/usr/local/bin/guardino` and `/usr/local/bin/Guardino`. To refresh them manually:
+
+```bash
+cd /opt/guardino-hub
+bash installer/guardinoctl.sh install-script
+```

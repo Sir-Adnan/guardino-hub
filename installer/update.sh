@@ -140,13 +140,20 @@ ensure_kv() {
   fi
 }
 
-# Keep periodic tasks predictable after every update.
-ensure_kv "REDIS_URL" "redis://redis:6379/0"
-ensure_kv "USAGE_SYNC_SECONDS" "60"
-ensure_kv "EXPIRY_SYNC_SECONDS" "60"
-ensure_kv "USAGE_SYNC_BATCH_SIZE" "2000"
-ensure_kv "EXPIRY_SYNC_BATCH_SIZE" "500"
-ensure_kv "NEXT_PUBLIC_API_BASE" "/api"
+ensure_kv_if_missing() {
+  local key="$1"; local val="$2"
+  if ! grep -q "^${key}=" .env; then
+    echo "${key}=${val}" >> .env
+  fi
+}
+
+# Keep required runtime keys present, but preserve server-specific tuning.
+ensure_kv_if_missing "REDIS_URL" "redis://redis:6379/0"
+ensure_kv_if_missing "USAGE_SYNC_SECONDS" "60"
+ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "60"
+ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
+ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
+ensure_kv_if_missing "NEXT_PUBLIC_API_BASE" "/api"
 
 log "[3/5] Validating compose config..."
 docker compose -f docker-compose.yml config >/dev/null
@@ -161,6 +168,11 @@ log "[4/5] Recreating services..."
 
 log "[5/5] Applying migrations..."
 "${COMPOSE[@]}" run --rm api alembic upgrade head
+
+if [ -x "${INSTALL_DIR}/installer/guardinoctl.sh" ]; then
+  log "Refreshing guardino command..."
+  INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes || true
+fi
 
 log "Update completed."
 echo "USAGE_SYNC_SECONDS=$(grep -E '^USAGE_SYNC_SECONDS=' .env | cut -d= -f2-)"

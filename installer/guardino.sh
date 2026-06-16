@@ -117,14 +117,14 @@ else
 fi
 
 cd "$INSTALL_DIR"
-chmod +x installer/install.sh installer/update.sh installer/manage.sh
+chmod +x installer/install.sh installer/update.sh installer/manage.sh installer/guardinoctl.sh
 
 # By default run interactive management console.
 # Backward-compatible shortcuts:
 #   bash guardino.sh --install
 #   bash guardino.sh --update
 if [ "$(id -u)" -eq 0 ]; then
-  REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/manage.sh "$@"
+  REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/guardinoctl.sh "$@"
 else
-  sudo REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/manage.sh "$@"
+  sudo REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/guardinoctl.sh "$@"
 fi

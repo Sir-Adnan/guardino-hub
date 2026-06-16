@@ -97,6 +97,7 @@ else
   exit 1
 fi
 cd "${INSTALL_DIR}"
+chmod +x installer/install.sh installer/update.sh installer/manage.sh installer/guardinoctl.sh 2>/dev/null || true
 
 log "[5/12] Generating .env..."
 if [ ! -f .env ]; then
@@ -384,6 +385,9 @@ log "[12/12] Creating superadmin (if not exists)..."
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-ChangeMe_123!}"
 "${COMPOSE[@]}" run --rm api python -m app.cli create-superadmin --username "${ADMIN_USER}" --password "${ADMIN_PASS}" || true
+
+log "Installing guardino command..."
+INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes || true
 
 BASE_URL="http://$(curl -fsS ifconfig.me 2>/dev/null || echo "<server-ip>")"
 if [ "${USE_SSL}" = "yes" ]; then
