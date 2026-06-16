@@ -119,10 +119,19 @@ fi
 cd "$INSTALL_DIR"
 chmod +x installer/install.sh installer/update.sh installer/manage.sh installer/guardinoctl.sh
 
-# By default run interactive management console.
+# Remote one-liner defaults to install for backward compatibility:
+#   bash <(curl -Ls --ipv4 .../installer/guardino.sh)
+#
+# Installed command defaults to help:
+#   guardino
+#
 # Backward-compatible shortcuts:
 #   bash guardino.sh --install
 #   bash guardino.sh --update
+if [ "$#" -eq 0 ]; then
+  set -- install
+fi
+
 if [ "$(id -u)" -eq 0 ]; then
   REPO_URL="$REPO_URL" BRANCH="$BRANCH" INSTALL_DIR="$INSTALL_DIR" bash installer/guardinoctl.sh "$@"
 else

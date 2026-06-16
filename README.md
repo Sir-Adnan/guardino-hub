@@ -1215,9 +1215,12 @@ npm run build
 Linux deployments install a global command during setup:
 
 ```bash
+bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
 guardino help
 Guardino help
 ```
+
+The remote one-liner runs the installer by default. After installation, the local `guardino` command shows help when no command is passed.
 
 Important commands:
 
