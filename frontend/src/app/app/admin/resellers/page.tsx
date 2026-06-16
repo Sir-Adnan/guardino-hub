@@ -802,7 +802,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                                 updateUserPolicy((v) => ({
                                     ...v,
                                     allowed_duration_presets: toggleString(v.allowed_duration_presets || [], preset, e.target.checked),
-                                  })
+                                  }))
                               }
                             />
                             <span>{label}</span>
@@ -824,7 +824,7 @@ async function assignAllNodesForReseller(resellerId: number) {
                               updateUserPolicy((v) => ({
                                   ...v,
                                   allowed_traffic_gb: toggleNumber(v.allowed_traffic_gb || [], g, e.target.checked),
-                                })
+                                }))
                             }
                           />
                           <span>{g}GB</span>
