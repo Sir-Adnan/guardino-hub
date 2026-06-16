@@ -5,9 +5,24 @@ from sqlalchemy import select, func
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.node import Node, PanelType
+from app.models.subaccount import SubAccount
 from app.schemas.admin import CreateNodeRequest, UpdateNodeRequest, NodeOut, NodeList
 
 router = APIRouter()
+
+
+def node_out(n: Node, last_sync_at=None) -> NodeOut:
+    return NodeOut(
+        id=n.id,
+        name=n.name,
+        panel_type=n.panel_type.value,
+        base_url=n.base_url,
+        credentials=n.credentials or {},
+        tags=n.tags,
+        is_enabled=n.is_enabled,
+        is_visible_in_sub=n.is_visible_in_sub,
+        last_sync_at=last_sync_at.isoformat() if last_sync_at else None,
+    )
 
 @router.post("", response_model=NodeOut)
 async def create_node(payload: CreateNodeRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
@@ -29,16 +44,7 @@ async def create_node(payload: CreateNodeRequest, db: AsyncSession = Depends(get
     await db.commit()
     await db.refresh(n)
 
-    return NodeOut(
-        id=n.id,
-        name=n.name,
-        panel_type=n.panel_type.value,
-        base_url=n.base_url,
-        credentials=n.credentials or {},
-        tags=n.tags,
-        is_enabled=n.is_enabled,
-        is_visible_in_sub=n.is_visible_in_sub,
-    )
+    return node_out(n)
 
 @router.get("", response_model=NodeList)
 async def list_nodes(
@@ -47,24 +53,21 @@ async def list_nodes(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
 ):
-    base = select(Node).order_by(Node.id.desc())
-    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
+    latest_sync = (
+        select(SubAccount.node_id, func.max(SubAccount.last_sync_at).label("last_sync_at"))
+        .group_by(SubAccount.node_id)
+        .subquery()
+    )
+    total_q = await db.execute(select(func.count()).select_from(Node))
     total = int(total_q.scalar_one())
-    q = await db.execute(base.limit(limit).offset(offset))
-    nodes = q.scalars().all()
-    items = [
-        NodeOut(
-            id=n.id,
-            name=n.name,
-            panel_type=n.panel_type.value,
-            base_url=n.base_url,
-            credentials=n.credentials or {},
-            tags=n.tags,
-            is_enabled=n.is_enabled,
-            is_visible_in_sub=n.is_visible_in_sub,
-        )
-        for n in nodes
-    ]
+    q = await db.execute(
+        select(Node, latest_sync.c.last_sync_at)
+        .outerjoin(latest_sync, latest_sync.c.node_id == Node.id)
+        .order_by(Node.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    items = [node_out(n, last_sync_at) for n, last_sync_at in q.all()]
     return NodeList(items=items, total=total)
 
 @router.patch("/{node_id}", response_model=NodeOut)
@@ -95,16 +98,7 @@ async def update_node(node_id: int, payload: UpdateNodeRequest, db: AsyncSession
     await db.commit()
     await db.refresh(n)
 
-    return NodeOut(
-        id=n.id,
-        name=n.name,
-        panel_type=n.panel_type.value,
-        base_url=n.base_url,
-        credentials=n.credentials or {},
-        tags=n.tags,
-        is_enabled=n.is_enabled,
-        is_visible_in_sub=n.is_visible_in_sub,
-    )
+    return node_out(n)
 
 @router.delete("/{node_id}")
 async def soft_delete_node(node_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):

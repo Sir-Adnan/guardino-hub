@@ -71,6 +71,7 @@ class NodeOut(BaseModel):
     tags: List[str]
     is_enabled: bool
     is_visible_in_sub: bool
+    last_sync_at: Optional[str] = None
 
 class NodeList(BaseModel):
     items: List[NodeOut]
