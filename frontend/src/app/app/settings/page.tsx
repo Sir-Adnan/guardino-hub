@@ -721,6 +721,9 @@ export default function SettingsPage() {
                   </div>
                   <Switch checked={globalPolicy.enabled} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, enabled: v }))} />
                 </div>
+                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/70 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75">
+                  این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند. اگر روشن باشد، رسیلرهای قدیمی بدون سیاست اختصاصی و رسیلرهای جدیدی که هنگام ساخت برایشان «سیاست‌های اختصاصی رسیلر» را ذخیره نمی‌کنی، از همین بسته‌های زمان/حجم و اجازه روز/حجم دستی پیروی می‌کنند. اگر برای یک رسیلر سیاست اختصاصی ذخیره شده باشد، تنظیمات همان رسیلر اولویت دارد و با تغییر این بخش خودکار overwrite نمی‌شود. برای رسیلرهایی که باید بدون محدودیت دستی کار کنند، یا این سیاست سراسری را خاموش نگه دار، یا برای همان رسیلر سیاست اختصاصی آزادتر ذخیره کن. سیاست‌های حذف، ریست، ویرایش و تمدید از کارت بعدی کنترل می‌شوند و مستقل از این تیک هستند.
+                </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">

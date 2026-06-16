@@ -331,7 +331,7 @@ export default function AllocationsPage() {
               return (
                 <article
                   key={group.reseller_id}
-                  className="grid gap-3 border-b border-[hsl(var(--border))] p-3 transition-colors last:border-b-0 hover:bg-[hsl(var(--accent)/0.06)] md:grid-cols-[minmax(160px,1.1fr)_110px_120px_minmax(220px,2fr)_auto] md:items-center"
+                  className="grid gap-3 border-b border-[hsl(var(--border))] p-2.5 transition-colors last:border-b-0 hover:bg-[hsl(var(--accent)/0.06)] md:grid-cols-[minmax(150px,1.1fr)_72px_72px_72px_minmax(220px,2fr)_auto] md:items-center"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -397,7 +397,7 @@ export default function AllocationsPage() {
         open={!!selectedGroup}
         onClose={() => setSelectedResellerId(null)}
         title={selectedGroup ? `مدیریت تخصیص‌ها - ${selectedGroup.reseller_name}` : "مدیریت تخصیص‌ها"}
-        className="max-w-6xl"
+        className="!max-w-6xl"
       >
         {selectedGroup ? (
           <div className="space-y-4">
@@ -425,7 +425,7 @@ export default function AllocationsPage() {
                 <Plus size={16} />
                 افزودن نود جدید
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,2fr)_minmax(140px,1fr)_auto_auto_auto] lg:items-end">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_120px_120px_auto] xl:items-end">
                 <div className="space-y-1">
                   <div className="text-xs text-[hsl(var(--fg))]/65">نود</div>
                   <select className={selectClass} value={addNodeId} onChange={(e) => setAddNodeId(e.target.value === "" ? "" : Number(e.target.value))}>
