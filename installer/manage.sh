@@ -354,7 +354,7 @@ is_backup_scheduled() {
 }
 
 draw_logo() {
-  clear
+  clear 2>/dev/null || true
   echo -e "${CYAN}"
   echo "   ____                  ___            "
   echo "  / ___| __ _ _   _ _ __|_ _|_ __   ___ "
