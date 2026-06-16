@@ -31,9 +31,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatJalaliDateTime } from "@/lib/jalali";
 
+type DashboardSeriesPoint = { date: string; value: number };
+
 type AdminStats = {
   resellers_total: number;
   users_total: number;
+  users_active?: number;
+  users_disabled?: number;
+  users_expired?: number;
+  users_limited?: number;
+  users_on_hold?: number;
   nodes_total: number;
   orders_total: number;
   ledger_entries_total: number;
@@ -41,6 +48,8 @@ type AdminStats = {
   price_per_gb_avg?: number | null;
   used_bytes_total: number;
   sold_gb_total: number;
+  daily_sales?: DashboardSeriesPoint[];
+  daily_traffic_gb?: DashboardSeriesPoint[];
 };
 
 type ResellerStats = {
@@ -53,12 +62,17 @@ type ResellerStats = {
   users_total: number;
   users_active: number;
   users_disabled: number;
+  users_expired?: number;
+  users_limited?: number;
+  users_on_hold?: number;
   used_bytes_total: number;
   sold_gb_total: number;
   nodes_allowed: number;
   orders_total: number;
   orders_30d: number;
   spent_30d: number;
+  daily_sales?: DashboardSeriesPoint[];
+  daily_traffic_gb?: DashboardSeriesPoint[];
 };
 
 type NodeLite = {
@@ -189,6 +203,24 @@ function chartDays(days = CHART_DAYS) {
       label: d.toLocaleDateString("fa-IR-u-ca-persian", { month: "short", day: "numeric" }),
     };
   });
+}
+
+function labelForDateKey(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  if (!year || !month || !day) return key;
+  const d = new Date(year, month - 1, day);
+  return d.toLocaleDateString("fa-IR-u-ca-persian", { month: "short", day: "numeric" });
+}
+
+function normalizeApiSeries(points: DashboardSeriesPoint[] | undefined, fallback: Array<{ label: string; value: number }>, days = CHART_DAYS) {
+  if (!points?.length) return fallback;
+  const base = chartDays(days);
+  const values = new Map(base.map((d) => [d.key, 0]));
+  for (const point of points) {
+    const key = String(point.date || "").slice(0, 10);
+    if (values.has(key)) values.set(key, Number(point.value || 0));
+  }
+  return base.map((d) => ({ ...d, label: labelForDateKey(d.key), value: values.get(d.key) || 0 }));
 }
 
 function buildLedgerDebitSeries(items: LedgerRow[], days = CHART_DAYS) {
@@ -335,35 +367,60 @@ function MiniBars({
   tone?: TileTone;
 }) {
   const max = Math.max(1, ...data.map((d) => Number(d.value) || 0));
-  const color: Record<TileTone, string> = {
-    blue: "from-blue-500 to-cyan-400",
-    green: "from-emerald-500 to-teal-400",
-    orange: "from-orange-500 to-amber-400",
-    rose: "from-rose-500 to-pink-400",
-    cyan: "from-cyan-500 to-blue-400",
-    violet: "from-violet-500 to-indigo-400",
-    slate: "from-slate-500 to-slate-400",
+  const hasData = data.some((d) => Number(d.value) > 0);
+  const barClass: Record<TileTone, string> = {
+    blue: "bg-[linear-gradient(180deg,#2563eb,#38bdf8)]",
+    green: "bg-[linear-gradient(180deg,#059669,#2dd4bf)]",
+    orange: "bg-[linear-gradient(180deg,#ea580c,#fbbf24)]",
+    rose: "bg-[linear-gradient(180deg,#e11d48,#fb7185)]",
+    cyan: "bg-[linear-gradient(180deg,#0891b2,#60a5fa)]",
+    violet: "bg-[linear-gradient(180deg,#7c3aed,#818cf8)]",
+    slate: "bg-[linear-gradient(180deg,#475569,#94a3b8)]",
   };
+  const tickValues = [max, max / 2, 0];
+  const labelStep = Math.max(1, Math.ceil(data.length / 5));
 
   return (
-    <div className="[direction:ltr]">
-      <div className="flex h-36 items-end gap-1.5 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-2 py-2">
-        {data.map((d) => {
-          const height = d.value > 0 ? Math.max(8, (d.value / max) * 100) : 3;
-          return (
-            <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${d.label}: ${valueLabel(d.value)}`}>
-              <div
-                className={`w-full rounded-t-md bg-gradient-to-t ${color[tone]} shadow-[0_8px_16px_-12px_currentColor]`}
-                style={{ height: `${height}%` }}
-              />
+    <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
+      <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-3 [direction:ltr]">
+        <div className="flex h-48 flex-col justify-between pb-7 pt-1 text-right text-[10px] text-[hsl(var(--fg))]/50">
+          {tickValues.map((tick) => (
+            <span key={tick}>{valueLabel(tick)}</span>
+          ))}
+        </div>
+        <div className="relative min-w-0">
+          <div className="pointer-events-none absolute inset-x-0 top-1 h-px border-t border-dashed border-[hsl(var(--border))]" />
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px border-t border-dashed border-[hsl(var(--border))]" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-7 h-px border-t border-dashed border-[hsl(var(--border))]" />
+          <div className="flex h-48 min-w-0 items-end gap-1.5 pb-7 pt-1">
+            {data.map((d, index) => {
+              const raw = Math.max(0, Number(d.value) || 0);
+              const height = raw > 0 ? Math.max(10, (raw / max) * 100) : 2;
+              const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
+              return (
+                <div key={`${d.label}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end" title={`${d.label}: ${valueLabel(raw)}`}>
+                  <div
+                    className={`w-full max-w-10 rounded-t-md ${barClass[tone]} shadow-[0_10px_20px_-14px_currentColor] transition-all duration-200 group-hover:brightness-110`}
+                    style={{ height: `${height}%`, opacity: raw > 0 ? 1 : 0.28 }}
+                  />
+                  {showLabel ? (
+                    <span className="absolute -bottom-0 translate-y-full whitespace-nowrap text-[10px] text-[hsl(var(--fg))]/48">{d.label}</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {!hasData ? (
+            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.72)] px-3 py-2 text-center text-xs text-[hsl(var(--fg))]/58 [direction:rtl]">
+              هنوز داده‌ای برای این بازه ثبت نشده است.
             </div>
-          );
-        })}
+          ) : null}
+        </div>
       </div>
-      <div className="mt-2 grid grid-cols-3 text-[10px] text-[hsl(var(--fg))]/50 [direction:rtl]">
-        <span className="text-right">{data[0]?.label || ""}</span>
-        <span className="text-center">۱۴ روز</span>
-        <span className="text-left">{data[data.length - 1]?.label || ""}</span>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-[hsl(var(--fg))]/48">
+        <span>{data[data.length - 1]?.label || ""}</span>
+        <span>۱۴ روز اخیر</span>
+        <span>{data[0]?.label || ""}</span>
       </div>
     </div>
   );
@@ -416,6 +473,66 @@ function TrafficRow({ label, value, color }: { label: string; value: string; col
         <span className="truncate">{label}</span>
       </span>
       <span className="shrink-0 font-semibold">{value}</span>
+    </div>
+  );
+}
+
+function UserStatusOverview({
+  total,
+  active,
+  disabled,
+  expired,
+  limited,
+  onHold,
+}: {
+  total: number;
+  active: number;
+  disabled: number;
+  expired: number;
+  limited: number;
+  onHold: number;
+}) {
+  const rows = [
+    { label: "کاربران فعال", value: active, color: "bg-emerald-500", Icon: CheckCircle2 },
+    { label: "منقضی شده", value: expired, color: "bg-orange-500", Icon: Clock3 },
+    { label: "حجم تمام شده", value: limited, color: "bg-red-500", Icon: AlertTriangle },
+    { label: "On Hold", value: onHold, color: "bg-violet-500", Icon: Clock3 },
+    { label: "غیرفعال", value: disabled, color: "bg-slate-500", Icon: ShieldAlert },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.78)] px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <UsersRound size={18} className="text-[hsl(var(--fg))]/62" />
+            <span className="truncate text-sm font-semibold">کل کاربران</span>
+          </div>
+          <span className="shrink-0 text-xl font-bold">{fmtNumber(total)}</span>
+        </div>
+      </div>
+
+      {rows.map(({ label, value, color, Icon }) => {
+        const percent = total > 0 ? pct((value / total) * 100) : 0;
+        return (
+          <div key={label} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.72)] px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} />
+                <Icon size={16} className="shrink-0 text-[hsl(var(--fg))]/55" />
+                <span className="truncate text-sm">{label}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-xs text-[hsl(var(--fg))]/62">{fmtNumber(percent)}%</span>
+                <span className="min-w-8 text-left text-sm font-bold">{fmtNumber(value)}</span>
+              </div>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[hsl(var(--muted))]">
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${percent}%` }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -509,9 +626,9 @@ function OperationsPanel({ orders, isAdmin }: { orders: OrderRow[]; isAdmin: boo
         ) : null}
       </div>
 
-      <Link href="/app/admin/reports/orders">
+      <Link href={isAdmin ? "/app/admin/reports/orders" : "/app/users"}>
         <Button type="button" variant="outline" className="w-full gap-2">
-          مشاهده گزارش سفارش‌ها
+          {isAdmin ? "مشاهده گزارش سفارش‌ها" : "مدیریت کاربران"}
           <ArrowUpRight size={15} />
         </Button>
       </Link>
@@ -620,14 +737,15 @@ export default function Dashboard() {
   }, [me?.role, adminStats, resellerStats]);
 
   const orderStats = React.useMemo(() => {
-    const completed = orders.filter((x) => (x.status || "").toLowerCase() === "completed").length;
+    const completedOrders = orders.filter((x) => (x.status || "").toLowerCase() === "completed");
+    const completed = completedOrders.length;
     const pending = orders.filter((x) => (x.status || "").toLowerCase() === "pending").length;
     const failed = orders.filter((x) => {
       const s = (x.status || "").toLowerCase();
       return s === "failed" || s === "rolled_back";
     }).length;
-    const gb = sum(orders, (x) => Number(x.purchased_gb || 0));
-    const estimatedRevenue = sum(orders, (x) => Number(x.purchased_gb || 0) * Number(x.price_per_gb_snapshot || 0));
+    const gb = sum(completedOrders, (x) => Number(x.purchased_gb || 0));
+    const estimatedRevenue = sum(completedOrders, (x) => Number(x.purchased_gb || 0) * Number(x.price_per_gb_snapshot || 0));
     return { completed, pending, failed, gb, estimatedRevenue };
   }, [orders]);
 
@@ -638,8 +756,41 @@ export default function Dashboard() {
     return { debit, credit, net };
   }, [ledger]);
 
-  const salesSeries = React.useMemo(() => buildLedgerDebitSeries(ledger), [ledger]);
-  const trafficSeries = React.useMemo(() => buildOrderGbSeries(orders), [orders]);
+  const salesSeries = React.useMemo(() => {
+    const fallback = buildLedgerDebitSeries(ledger);
+    const points = me?.role === "admin" ? adminStats?.daily_sales : resellerStats?.daily_sales;
+    return normalizeApiSeries(points, fallback);
+  }, [me?.role, adminStats?.daily_sales, resellerStats?.daily_sales, ledger]);
+
+  const trafficSeries = React.useMemo(() => {
+    const fallback = buildOrderGbSeries(orders);
+    const points = me?.role === "admin" ? adminStats?.daily_traffic_gb : resellerStats?.daily_traffic_gb;
+    return normalizeApiSeries(points, fallback);
+  }, [me?.role, adminStats?.daily_traffic_gb, resellerStats?.daily_traffic_gb, orders]);
+
+  const userSummary = React.useMemo(() => {
+    if (me?.role === "admin" && adminStats) {
+      return {
+        total: Number(adminStats.users_total || 0),
+        active: Number(adminStats.users_active || 0),
+        disabled: Number(adminStats.users_disabled || 0),
+        expired: Number(adminStats.users_expired || 0),
+        limited: Number(adminStats.users_limited || 0),
+        onHold: Number(adminStats.users_on_hold || 0),
+      };
+    }
+    if (resellerStats) {
+      return {
+        total: Number(resellerStats.users_total || 0),
+        active: Number(resellerStats.users_active || 0),
+        disabled: Number(resellerStats.users_disabled || 0),
+        expired: Number(resellerStats.users_expired || 0),
+        limited: Number(resellerStats.users_limited || 0),
+        onHold: Number(resellerStats.users_on_hold || 0),
+      };
+    }
+    return { total: 0, active: 0, disabled: 0, expired: 0, limited: 0, onHold: 0 };
+  }, [me?.role, adminStats, resellerStats]);
 
   const nodeStats = React.useMemo(() => {
     const enabled = nodes.filter((n) => n.is_enabled !== false).length;
@@ -669,12 +820,19 @@ export default function Dashboard() {
       { section: "traffic", label: "used_gb", value: traffic.usedGb.toFixed(2), meta: "" },
       { section: "traffic", label: "remaining_gb", value: traffic.remainingGb.toFixed(2), meta: "" },
       { section: "traffic", label: "usage_percent", value: traffic.ratio, meta: "" },
+      { section: "users", label: "active", value: userSummary.active, meta: "" },
+      { section: "users", label: "expired", value: userSummary.expired, meta: "" },
+      { section: "users", label: "limited", value: userSummary.limited, meta: "" },
+      { section: "users", label: "on_hold", value: userSummary.onHold, meta: "" },
+      { section: "users", label: "disabled", value: userSummary.disabled, meta: "" },
       { section: "orders", label: "recent_completed", value: orderStats.completed, meta: "" },
       { section: "orders", label: "recent_pending", value: orderStats.pending, meta: "" },
       { section: "orders", label: "recent_failed", value: orderStats.failed, meta: "" },
       { section: "ledger", label: "recent_debit", value: ledgerStats.debit, meta: "" },
       { section: "ledger", label: "recent_credit", value: ledgerStats.credit, meta: "" },
       { section: "ledger", label: "recent_net", value: ledgerStats.net, meta: "" },
+      ...salesSeries.map((point) => ({ section: "daily_sales", label: point.label, value: point.value, meta: "" })),
+      ...trafficSeries.map((point) => ({ section: "daily_traffic_gb", label: point.label, value: point.value, meta: "" })),
       ...nodes.map((node) => ({
         section: "nodes",
         label: node.name,
@@ -740,6 +898,34 @@ export default function Dashboard() {
       {loading ? (
         <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.74)] px-4 py-3 text-sm text-[hsl(var(--fg))]/65">
           {t("common.loading")}
+        </div>
+      ) : null}
+
+      {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
+          <SectionPanel
+            title={isAdmin ? "نمای کاربران کل پنل" : "نمای کاربران من"}
+            subtitle={isAdmin ? "تفکیک سریع کاربران فعال، منقضی، حجمی، On Hold و غیرفعال." : "وضعیت کاربران همین حساب، جدا از آمار مدیریتی سوپرادمین."}
+            icon={<UsersRound size={18} />}
+          >
+            <UserStatusOverview
+              total={userSummary.total}
+              active={userSummary.active}
+              disabled={userSummary.disabled}
+              expired={userSummary.expired}
+              limited={userSummary.limited}
+              onHold={userSummary.onHold}
+            />
+          </SectionPanel>
+
+          <SectionPanel
+            title={isAdmin ? "حجم سفارش‌های تکمیل‌شده" : "حجم فروش من"}
+            subtitle="نمودار ۱۴ روز اخیر از سفارش‌های تکمیل‌شده ساخته می‌شود؛ برای مصرف لحظه‌ای از کارت ظرفیت استفاده کن."
+            icon={<BarChart3 size={18} />}
+            action={<Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>}
+          >
+            <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" />
+          </SectionPanel>
         </div>
       ) : null}
 
