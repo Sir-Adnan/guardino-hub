@@ -124,6 +124,7 @@ class GroupedAllocationItem(BaseModel):
 class ResellerAllocationsGroup(BaseModel):
     reseller_id: int
     reseller_name: str
+    reseller_role: str
     reseller_status: str
     allocations: List[GroupedAllocationItem]
     nodes: List[AllocationNodeSummary]

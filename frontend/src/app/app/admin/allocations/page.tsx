@@ -41,6 +41,7 @@ type GroupedAllocationItem = AllocationOut & {
 type ResellerAllocationGroup = {
   reseller_id: number;
   reseller_name: string;
+  reseller_role?: string;
   reseller_status: string;
   allocations: GroupedAllocationItem[];
   nodes: NodeOut[];
@@ -77,6 +78,14 @@ function allocationVariant(a: GroupedAllocationItem): "default" | "success" | "w
   if (!a.enabled) return "muted";
   if (a.default_for_reseller) return "success";
   return "default";
+}
+
+function isAdminGroup(group: ResellerAllocationGroup | null): boolean {
+  return (group?.reseller_role || "").toLowerCase() === "admin";
+}
+
+function accountRoleLabel(group: ResellerAllocationGroup | null): string {
+  return isAdminGroup(group) ? "سوپرادمین" : "رسیلر";
 }
 
 export default function AllocationsPage() {
@@ -263,11 +272,11 @@ export default function AllocationsPage() {
               Reseller Node Access
             </div>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("adminAllocations.title")}</h1>
-            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">نمای رسیلر محور برای مدیریت نودها، پنل‌ها و قیمت‌های اختصاصی.</p>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">نمای حساب‌محور برای مدیریت نودها، پنل‌ها و قیمت‌های اختصاصی سوپرادمین و رسیلرها.</p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            {fmtNumber(total)} رسیلر
+            {fmtNumber(total)} حساب
           </div>
         </div>
       </section>
@@ -275,7 +284,7 @@ export default function AllocationsPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">رسیلرهای دارای تخصیص</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">حساب‌های دارای تخصیص</div>
             <UsersRound size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.allocatedResellers)}</div>
@@ -305,8 +314,8 @@ export default function AllocationsPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">تخصیص‌ها بر اساس رسیلر</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">هر رسیلر فقط یک بار نمایش داده می‌شود و نودهای مرتبط داخل همان کارت دیده می‌شوند.</div>
+          <div className="text-xl font-semibold">تخصیص‌ها بر اساس حساب</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">سوپرادمین و هر رسیلر فقط یک بار نمایش داده می‌شوند و نودهای مرتبط داخل همان کارت دیده می‌شوند.</div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
@@ -316,7 +325,7 @@ export default function AllocationsPage() {
                 setQ(e.target.value);
                 setPage(1);
               }}
-              placeholder="جستجوی رسیلر، ID یا نام کاربری"
+              placeholder="جستجوی سوپرادمین، رسیلر، ID یا نام کاربری"
             />
           </div>
 
@@ -328,6 +337,8 @@ export default function AllocationsPage() {
                   .filter((a) => a.enabled && a.node_is_enabled)
                   .map((a) => a.panel_type)
               ).size;
+              const roleLabel = accountRoleLabel(group);
+              const adminAccount = isAdminGroup(group);
               return (
                 <article
                   key={group.reseller_id}
@@ -336,6 +347,7 @@ export default function AllocationsPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="truncate text-sm font-semibold">{group.reseller_name}</h2>
+                      <Badge variant={adminAccount ? "warning" : "default"}>{roleLabel}</Badge>
                       <Badge variant={statusVariant(group.reseller_status)}>{group.reseller_status}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">#{group.reseller_id}</div>
@@ -396,15 +408,18 @@ export default function AllocationsPage() {
       <Modal
         open={!!selectedGroup}
         onClose={() => setSelectedResellerId(null)}
-        title={selectedGroup ? `مدیریت تخصیص‌ها - ${selectedGroup.reseller_name}` : "مدیریت تخصیص‌ها"}
+        title={selectedGroup ? `مدیریت تخصیص‌ها - ${accountRoleLabel(selectedGroup)} ${selectedGroup.reseller_name}` : "مدیریت تخصیص‌ها"}
         className="!max-w-6xl"
       >
         {selectedGroup ? (
           <div className="space-y-4">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">رسیلر</div>
-                <div className="mt-1 truncate text-sm font-semibold">{selectedGroup.reseller_name}</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">حساب</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-semibold">{selectedGroup.reseller_name}</span>
+                  <Badge variant={isAdminGroup(selectedGroup) ? "warning" : "default"}>{accountRoleLabel(selectedGroup)}</Badge>
+                </div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                 <div className="text-xs text-[hsl(var(--fg))]/60">تعداد نود</div>
@@ -517,7 +532,7 @@ export default function AllocationsPage() {
               ))}
 
               {!selectedGroup.allocations.length ? (
-                <div className="rounded-xl border border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/70">هنوز نودی به این رسیلر تخصیص داده نشده است.</div>
+                <div className="rounded-xl border border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/70">هنوز نودی به این حساب تخصیص داده نشده است.</div>
               ) : null}
             </div>
           </div>
@@ -528,7 +543,7 @@ export default function AllocationsPage() {
         open={!!confirmDelete}
         onClose={() => (busy ? null : setConfirmDelete(null))}
         title={t("common.areYouSure")}
-        body={confirmDelete ? `تخصیص ${confirmDelete.node_name} از این رسیلر حذف می‌شود.` : t("common.thisActionCannotBeUndone")}
+        body={confirmDelete ? `تخصیص ${confirmDelete.node_name} از این حساب حذف می‌شود.` : t("common.thisActionCannotBeUndone")}
         confirmText={t("common.delete")}
         cancelText={t("common.cancel")}
         danger

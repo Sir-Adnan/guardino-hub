@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, case
 
 from app.core.db import get_db
 from app.api.deps import require_admin
@@ -75,8 +75,9 @@ async def list_reseller_allocations_grouped(
     limit: int = Query(50, ge=1, le=1000),
     q: str | None = Query(default=None, max_length=128),
 ):
+    role_rank = case((Reseller.role == "admin", 0), else_=1)
     base = select(Reseller).where(
-        Reseller.role == "reseller",
+        Reseller.role.in_(("admin", "reseller")),
         Reseller.status != ResellerStatus.deleted,
     )
     term = (q or "").strip()
@@ -87,9 +88,9 @@ async def list_reseller_allocations_grouped(
             conditions.append(Reseller.id == exact_id)
         base = base.where(or_(*conditions))
     if exact_id is not None:
-        base = base.order_by((Reseller.id == exact_id).desc(), Reseller.id.desc())
+        base = base.order_by((Reseller.id == exact_id).desc(), role_rank, Reseller.id.desc())
     else:
-        base = base.order_by(Reseller.id.desc())
+        base = base.order_by(role_rank, Reseller.id.desc())
 
     total_q = await db.execute(select(func.count()).select_from(base.subquery()))
     total = int(total_q.scalar_one())
@@ -142,6 +143,7 @@ async def list_reseller_allocations_grouped(
             ResellerAllocationsGroup(
                 reseller_id=reseller.id,
                 reseller_name=reseller.username,
+                reseller_role=(reseller.role or "reseller"),
                 reseller_status=reseller.status.value,
                 allocations=allocations,
                 nodes=nodes,
