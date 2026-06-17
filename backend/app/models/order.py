@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, ForeignKey, Enum, DateTime
+from sqlalchemy import Integer, ForeignKey, Enum, DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from app.core.db import Base
@@ -21,6 +21,9 @@ class OrderStatus(str, enum.Enum):
 
 class Order(Base, TimestampMixin):
     __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("reseller_id", "client_request_id", name="uq_orders_reseller_client_request_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     reseller_id: Mapped[int] = mapped_column(Integer, ForeignKey("resellers.id"), index=True, nullable=False)
@@ -31,5 +34,6 @@ class Order(Base, TimestampMixin):
 
     purchased_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_per_gb_snapshot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     created_at_override: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # optional

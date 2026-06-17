@@ -90,12 +90,15 @@ async def require_reseller(principal=Depends(get_current_principal)) -> Reseller
 
 
 def enforce_balance_or_readonly_users(reseller: Reseller, request_path: str, request_method: str) -> None:
-    # Balance-zero resellers can still view subscriptions and revoke links.
+    # Balance-zero resellers can still read their catalog/users/reports and
+    # quote prices. Mutating user operations remain blocked except revoke/delete
+    # flows handled explicitly by their endpoints.
     # Deletion is handled by the refund endpoint after inspecting the request body.
     if reseller.balance > 0:
         return
     allowed = (
-        (request_method == "GET" and request_path.startswith("/api/v1/reseller/users"))
+        (request_method == "GET" and request_path.startswith("/api/v1/reseller/"))
+        or (request_method == "POST" and request_path.endswith("/user-ops/quote"))
         or (request_method == "POST" and request_path.endswith("/revoke"))
     )
     if not allowed:

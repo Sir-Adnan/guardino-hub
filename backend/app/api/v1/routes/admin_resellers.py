@@ -27,6 +27,7 @@ from app.models.node import Node
 from app.models.node_allocation import NodeAllocation
 from app.schemas.settings import ResellerUserPolicy
 from app.services.api_tokens import api_token_to_out, create_api_token
+from app.services.billing import lock_reseller_for_billing
 from app.services.reseller_user_policy import (
     delete_user_policy_setting,
     get_user_policy_setting_optional,
@@ -341,6 +342,7 @@ async def credit_reseller(reseller_id: int, payload: CreditRequest, db: AsyncSes
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
+    r = await lock_reseller_for_billing(db, r)
 
     amount = int(payload.amount)
     if amount == 0:

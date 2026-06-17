@@ -1,7 +1,8 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
 import math
 import secrets
@@ -14,8 +15,10 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node
 from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
+from app.services.billing import lock_reseller_for_billing
 from app.services.pricing import calculate_price, resolve_allowed_nodes
 from app.services.adapters.factory import get_adapter
+from app.services.idempotency import find_order_by_request_id, request_id_from
 from app.services.refund import BYTES_PER_GB, refundable_gb_for_user
 from app.services.reseller_user_policy import get_effective_user_policy
 from app.services.status_policy import enable_if_needed
@@ -42,6 +45,73 @@ def _raise_remote_sync_failed(action: str, errors: list[str]) -> None:
         status_code=502,
         detail=f"{action} sync failed on {len(errors)} node(s): {sample}",
     )
+
+
+async def _op_result_for_order(
+    db: AsyncSession,
+    reseller: Reseller,
+    order: Order,
+    *,
+    expected_types: set[OrderType],
+    request_id: str,
+) -> OpResult:
+    try:
+        order_type = order.type if isinstance(order.type, OrderType) else OrderType(order.type)
+    except Exception:
+        order_type = order.type
+    if order_type not in expected_types:
+        raise HTTPException(status_code=409, detail="request_id was already used for another operation.")
+    if order.status != OrderStatus.completed or not order.user_id:
+        raise HTTPException(status_code=409, detail="request_id is already in progress; retry shortly.")
+
+    q_ledger = await db.execute(select(LedgerTransaction).where(LedgerTransaction.order_id == order.id))
+    ledger_rows = q_ledger.scalars().all()
+    charged = sum(max(0, -int(tx.amount or 0)) for tx in ledger_rows)
+    refunded = sum(max(0, int(tx.amount or 0)) for tx in ledger_rows)
+    balance_after = int(ledger_rows[-1].balance_after) if ledger_rows else int(reseller.balance or 0)
+    return OpResult(
+        ok=True,
+        order_id=order.id,
+        request_id=request_id,
+        charged_amount=charged,
+        refunded_amount=refunded,
+        new_balance=balance_after,
+        user_id=int(order.user_id),
+        detail="idempotent_replay=1",
+    )
+
+
+async def _existing_idempotent_result(
+    db: AsyncSession,
+    reseller: Reseller,
+    request: Request,
+    payload,
+    *,
+    expected_types: set[OrderType],
+) -> tuple[str | None, OpResult | None]:
+    request_id = request_id_from(request, payload)
+    if not request_id:
+        return None, None
+    existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
+    if not existing_order:
+        return request_id, None
+    return request_id, await _op_result_for_order(
+        db,
+        reseller,
+        existing_order,
+        expected_types=expected_types,
+        request_id=request_id,
+    )
+
+
+async def _flush_order_or_conflict(db: AsyncSession, request_id: str | None) -> None:
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        if request_id:
+            raise HTTPException(status_code=409, detail="request_id is already in use; retry shortly.")
+        raise
 
 
 async def _rollback_limit_changes(
@@ -239,7 +309,18 @@ async def _delete_subaccounts_remote_first(
     return deleted_local, errors
 
 @router.post("/{user_id}/extend", response_model=OpResult)
-async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={OrderType.extend},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
@@ -256,9 +337,9 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
     if reseller.balance < time_amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
-    order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.extend, status=OrderStatus.pending, purchased_gb=None, price_per_gb_snapshot=None)
+    order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.extend, status=OrderStatus.pending, purchased_gb=None, price_per_gb_snapshot=None, client_request_id=request_id)
     db.add(order)
-    await db.flush()
+    await _flush_order_or_conflict(db, request_id)
 
     old_total_gb = int(user.total_gb)
     old_expire_at = user.expire_at
@@ -322,11 +403,22 @@ async def extend_user(user_id: int, payload: ExtendRequest, db: AsyncSession = D
 
     order.status = OrderStatus.completed
     await db.commit()
-    return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+    return OpResult(ok=True, order_id=order.id, request_id=request_id, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
 
 
 @router.post("/{user_id}/renew", response_model=OpResult)
-async def renew_user(user_id: int, payload: RenewRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={OrderType.extend},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status == UserStatus.deleted:
@@ -392,9 +484,10 @@ async def renew_user(user_id: int, payload: RenewRequest, db: AsyncSession = Dep
         status=OrderStatus.pending,
         purchased_gb=int(payload.total_gb),
         price_per_gb_snapshot=reseller.price_per_gb,
+        client_request_id=request_id,
     )
     db.add(order)
-    await db.flush()
+    await _flush_order_or_conflict(db, request_id)
 
     remote_sync_errors: list[str] = []
     remote_synced_ok: list[tuple[SubAccount, Node]] = []
@@ -438,11 +531,22 @@ async def renew_user(user_id: int, payload: RenewRequest, db: AsyncSession = Dep
     )
     order.status = OrderStatus.completed
     await db.commit()
-    return OpResult(ok=True, charged_amount=total_amount, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+    return OpResult(ok=True, order_id=order.id, request_id=request_id, charged_amount=total_amount, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
 
 
 @router.post("/{user_id}/decrease-time", response_model=OpResult)
-async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={OrderType.refund},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
@@ -458,9 +562,10 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSes
         status=OrderStatus.pending,
         purchased_gb=None,
         price_per_gb_snapshot=None,
+        client_request_id=request_id,
     )
     db.add(order)
-    await db.flush()
+    await _flush_order_or_conflict(db, request_id)
 
     old_total_gb = int(user.total_gb)
     old_expire_at = user.expire_at
@@ -534,11 +639,22 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, db: AsyncSes
 
     order.status = OrderStatus.completed
     await db.commit()
-    return OpResult(ok=True, charged_amount=0, refunded_amount=refund_amount, new_balance=reseller.balance, user_id=user.id)
+    return OpResult(ok=True, order_id=order.id, request_id=request_id, charged_amount=0, refunded_amount=refund_amount, new_balance=reseller.balance, user_id=user.id)
 
 
 @router.post("/{user_id}/add-traffic", response_model=OpResult)
-async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={OrderType.add_traffic},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
@@ -560,9 +676,9 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
     if reseller.balance < total_amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
-    order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.add_traffic, status=OrderStatus.pending, purchased_gb=payload.add_gb, price_per_gb_snapshot=reseller.price_per_gb)
+    order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.add_traffic, status=OrderStatus.pending, purchased_gb=payload.add_gb, price_per_gb_snapshot=reseller.price_per_gb, client_request_id=request_id)
     db.add(order)
-    await db.flush()
+    await _flush_order_or_conflict(db, request_id)
 
     old_total_gb = int(user.total_gb)
     old_expire_at = user.expire_at
@@ -615,10 +731,21 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, db: AsyncSession
 
     order.status = OrderStatus.completed
     await db.commit()
-    return OpResult(ok=True, charged_amount=total_amount, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
+    return OpResult(ok=True, order_id=order.id, request_id=request_id, charged_amount=total_amount, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
 
 @router.post("/{user_id}/change-nodes", response_model=OpResult)
-async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={OrderType.change_nodes},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
     if not user or user.status != UserStatus.active:
@@ -662,6 +789,7 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
     _raise_remote_sync_failed("Change nodes (remove)", remove_errors)
 
     charged = 0
+    order_id = None
     now = _now()
 
     # Add: must be allowed nodes for reseller
@@ -673,9 +801,10 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
             total_amount, per_node, _ = await calculate_price(db, reseller, nodes, total_gb=int(user.total_gb), days=0)
             if reseller.balance < total_amount:
                 raise HTTPException(status_code=400, detail="Insufficient balance")
-            order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.change_nodes, status=OrderStatus.pending, purchased_gb=None, price_per_gb_snapshot=reseller.price_per_gb)
+            order = Order(reseller_id=reseller.id, user_id=user.id, type=OrderType.change_nodes, status=OrderStatus.pending, purchased_gb=None, price_per_gb_snapshot=reseller.price_per_gb, client_request_id=request_id)
             db.add(order)
-            await db.flush()
+            await _flush_order_or_conflict(db, request_id)
+            order_id = order.id
 
             # Provision on each added node; if partial failure happens, try best-effort cleanup.
             provisioned_remote: list[tuple[Node, str]] = []
@@ -717,10 +846,22 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, db: AsyncSessi
     detail = None
     if removed_count:
         detail = f"removed_nodes={removed_count}"
-    return OpResult(ok=True, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail=detail)
+    return OpResult(ok=True, order_id=order_id, request_id=request_id, charged_amount=charged, refunded_amount=0, new_balance=reseller.balance, user_id=user.id, detail=detail)
 
 @router.post("/{user_id}/refund", response_model=OpResult)
-async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(require_reseller)):
+async def refund_or_delete(user_id: int, payload: RefundRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(require_reseller)):
+    expected_type = OrderType.delete if payload.action == "delete" else OrderType.refund
+    request_id, replay = await _existing_idempotent_result(
+        db,
+        reseller,
+        request,
+        payload,
+        expected_types={expected_type},
+    )
+    if replay:
+        return replay
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     if reseller.balance <= 0 and payload.action != "delete":
         raise HTTPException(status_code=403, detail="Balance is zero; only delete is allowed from this endpoint.")
 
@@ -768,9 +909,10 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
         status=OrderStatus.pending,
         purchased_gb=refund_gb if refund_gb > 0 else None,
         price_per_gb_snapshot=price_per_gb,
+        client_request_id=request_id,
     )
     db.add(order)
-    await db.flush()
+    await _flush_order_or_conflict(db, request_id)
 
     # Apply to user
     old_total_gb = int(user.total_gb)
@@ -831,6 +973,8 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, db: AsyncSessio
     detail_parts = [f"refunded_gb={refund_gb}"]
     return OpResult(
         ok=True,
+        order_id=order.id,
+        request_id=request_id,
         charged_amount=0,
         refunded_amount=refund_amount,
         new_balance=reseller.balance,

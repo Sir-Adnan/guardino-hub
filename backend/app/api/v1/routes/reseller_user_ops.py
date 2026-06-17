@@ -1,6 +1,8 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
 import secrets
 
@@ -11,8 +13,10 @@ from app.models.user import GuardinoUser, NodeSelectionMode
 from app.models.subaccount import SubAccount
 from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
+from app.services.billing import lock_reseller_for_billing
 from app.services.pricing import resolve_allowed_nodes, calculate_price
 from app.services.adapters.factory import get_adapter
+from app.services.idempotency import find_order_by_request_id, request_id_from
 from app.services.user_inputs import resolve_days, sanitize_username, random_username
 from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse, PriceQuoteResponse
 from urllib.parse import urlparse
@@ -21,6 +25,49 @@ from app.services.reseller_user_policy import (
 )
 
 router = APIRouter()
+
+
+async def _create_response_for_order(
+    db: AsyncSession,
+    request: Request,
+    reseller: Reseller,
+    order: Order,
+    request_id: str | None,
+) -> CreateUserResponse:
+    try:
+        order_type = order.type if isinstance(order.type, OrderType) else OrderType(order.type)
+    except Exception:
+        order_type = order.type
+    if order_type != OrderType.create:
+        raise HTTPException(status_code=409, detail="request_id was already used for another operation.")
+    if order.status != OrderStatus.completed or not order.user_id:
+        raise HTTPException(status_code=409, detail="request_id is already in progress; retry shortly.")
+
+    q_user = await db.execute(select(GuardinoUser).where(GuardinoUser.id == order.user_id))
+    user = q_user.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=409, detail="request_id points to a missing user.")
+
+    q_subs = await db.execute(select(SubAccount.node_id).where(SubAccount.user_id == user.id))
+    nodes_provisioned = [int(node_id) for node_id in q_subs.scalars().all()]
+    q_ledger = await db.execute(select(LedgerTransaction).where(LedgerTransaction.order_id == order.id))
+    ledger_rows = q_ledger.scalars().all()
+    charged_amount = sum(max(0, -int(tx.amount or 0)) for tx in ledger_rows)
+    balance_after = int(ledger_rows[-1].balance_after) if ledger_rows else int(reseller.balance or 0)
+
+    subscription_url = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
+    return CreateUserResponse(
+        user_id=user.id,
+        label=user.label,
+        order_id=order.id,
+        request_id=request_id,
+        master_sub_token=user.master_sub_token,
+        subscription_url=subscription_url,
+        expire_at=user.expire_at,
+        charged_amount=charged_amount,
+        balance_after=balance_after,
+        nodes_provisioned=nodes_provisioned,
+    )
 
 def _panel_username(base_label: str) -> str:
     # Keep panel username as close as possible to user input/random value.
@@ -115,6 +162,13 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     reseller: Reseller = Depends(block_if_balance_zero),
 ):
+    request_id = request_id_from(request, payload)
+    if request_id:
+        existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
+        if existing_order:
+            return await _create_response_for_order(db, request, reseller, existing_order, request_id)
+    reseller = await lock_reseller_for_billing(db, reseller)
+
     policy = await get_effective_user_policy(db, reseller.id)
     days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
@@ -134,9 +188,18 @@ async def create_user(
         status=OrderStatus.pending,
         purchased_gb=payload.total_gb,
         price_per_gb_snapshot=reseller.price_per_gb,
+        client_request_id=request_id,
     )
     db.add(order)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        if request_id:
+            existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
+            if existing_order:
+                return await _create_response_for_order(db, request, reseller, existing_order, request_id)
+        raise HTTPException(status_code=409, detail="request_id is already in use.")
 
     now = datetime.now(timezone.utc)
     # For "unlimited" we keep a long local expiry timestamp for internal sorting/filters.
@@ -160,6 +223,7 @@ async def create_user(
             "remote_label": remote_label,
             "create_status": create_status,
             "no_expire": bool(int(days_final) == 0),
+            "request_id": request_id,
         },
     )
     db.add(user)
@@ -232,6 +296,8 @@ async def create_user(
         return CreateUserResponse(
             user_id=user.id,
             label=user.label,
+            order_id=order.id,
+            request_id=request_id,
             master_sub_token=user.master_sub_token,
             subscription_url=subscription_url,
             expire_at=user.expire_at,
