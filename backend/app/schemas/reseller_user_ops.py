@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import List, Optional
 
 class CreateUserRequest(BaseModel):
@@ -23,8 +24,12 @@ class CreateUserRequest(BaseModel):
 
 class CreateUserResponse(BaseModel):
     user_id: int
+    label: str
     master_sub_token: str
+    subscription_url: Optional[str] = None
+    expire_at: datetime
     charged_amount: int
+    balance_after: int
     nodes_provisioned: List[int]
 
 class PriceQuoteResponse(BaseModel):

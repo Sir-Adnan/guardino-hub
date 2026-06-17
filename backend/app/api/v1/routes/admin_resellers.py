@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, case
 
@@ -7,6 +9,7 @@ from app.api.deps import require_admin
 from app.core.security import hash_password
 from app.models.reseller import Reseller, ResellerStatus
 from app.models.ledger import LedgerTransaction
+from app.models.api_token import ApiToken
 from app.schemas.admin import (
     CreateResellerRequest,
     ResellerOut,
@@ -19,9 +22,11 @@ from app.schemas.admin import (
     UpdateResellerRequest,
     SetResellerStatusRequest,
 )
+from app.schemas.api_tokens import ApiTokenCreateRequest, ApiTokenCreated, ApiTokenList
 from app.models.node import Node
 from app.models.node_allocation import NodeAllocation
 from app.schemas.settings import ResellerUserPolicy
+from app.services.api_tokens import api_token_to_out, create_api_token
 from app.services.reseller_user_policy import (
     delete_user_policy_setting,
     get_user_policy_setting_optional,
@@ -30,6 +35,13 @@ from app.services.reseller_user_policy import (
 )
 
 router = APIRouter()
+
+
+def _datetime_in_past(value: datetime | None) -> bool:
+    if value is None:
+        return False
+    now = datetime.now(value.tzinfo) if value.tzinfo else datetime.utcnow()
+    return value <= now
 
 
 def _to_out(r: Reseller, user_policy: dict | None = None) -> ResellerOut:
@@ -162,6 +174,72 @@ async def get_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), adm
         raise HTTPException(status_code=404, detail="Reseller not found")
     policy = await get_user_policy_setting_optional(db, reseller_user_policy_key(r.id))
     return _to_out(r, policy)
+
+
+@router.get("/{reseller_id}/api-tokens", response_model=ApiTokenList)
+async def list_reseller_api_tokens(
+    reseller_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    r = (await db.execute(select(Reseller).where(Reseller.id == reseller_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reseller not found")
+    q = await db.execute(
+        select(ApiToken)
+        .where(ApiToken.reseller_id == reseller_id)
+        .order_by(ApiToken.id.desc())
+    )
+    items = [api_token_to_out(t) for t in q.scalars().all()]
+    return ApiTokenList(items=items, total=len(items))
+
+
+@router.post("/{reseller_id}/api-tokens", response_model=ApiTokenCreated)
+async def create_reseller_api_token(
+    reseller_id: int,
+    payload: ApiTokenCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    if getattr(request.state, "auth_type", "") == "api_token":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API tokens cannot create new API tokens.")
+    r = (await db.execute(select(Reseller).where(Reseller.id == reseller_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reseller not found")
+    if r.status == ResellerStatus.deleted:
+        raise HTTPException(status_code=400, detail="Cannot create API token for a deleted reseller")
+    if _datetime_in_past(payload.expires_at):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="expires_at must be in the future.")
+    record, raw_token = await create_api_token(
+        db,
+        reseller=r,
+        name=payload.name,
+        created_by=admin,
+        expires_at=payload.expires_at,
+    )
+    return ApiTokenCreated(**api_token_to_out(record).model_dump(), token=raw_token)
+
+
+@router.delete("/{reseller_id}/api-tokens/{token_id}")
+async def revoke_reseller_api_token(
+    reseller_id: int,
+    token_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    q = await db.execute(
+        select(ApiToken).where(
+            ApiToken.id == token_id,
+            ApiToken.reseller_id == reseller_id,
+        )
+    )
+    token = q.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="API token not found")
+    token.revoked_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"ok": True}
 
 @router.post("", response_model=ResellerOut)
 async def create_reseller(payload: CreateResellerRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):

@@ -6,3 +6,4 @@ from app.models.subaccount import SubAccount
 from app.models.order import Order
 from app.models.ledger import LedgerTransaction
 from app.models.app_setting import AppSetting
+from app.models.api_token import ApiToken

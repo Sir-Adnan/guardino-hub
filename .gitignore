@@ -5,5 +5,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 backend/.venv/
-backend/alembic/versions/*.py
 !.gitkeep

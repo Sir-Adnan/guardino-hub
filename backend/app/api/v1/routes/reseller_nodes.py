@@ -9,10 +9,11 @@ from app.models.node import Node
 from app.models.node_allocation import NodeAllocation
 from app.models.subaccount import SubAccount
 from app.models.user import GuardinoUser
+from app.schemas.nodes import AllowedNodeList
 
 router = APIRouter()
 
-@router.get("")
+@router.get("", response_model=AllowedNodeList)
 async def list_allowed_nodes(request: Request, db: AsyncSession = Depends(get_db), reseller=Depends(block_if_balance_zero)):
     latest_sync = (
         select(SubAccount.node_id, func.max(SubAccount.last_sync_at).label("last_sync_at"))

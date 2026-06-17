@@ -9,11 +9,25 @@ from app.core.db import get_db
 from app.core.security import ALGORITHM
 from app.core.rbac import Role
 from app.models.reseller import Reseller, ResellerStatus
+from app.services.api_tokens import find_active_api_token, touch_api_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
+def _role_for(reseller: Reseller) -> Role:
+    try:
+        return Role((reseller.role or "reseller").strip().lower())
+    except Exception:
+        return Role.reseller
+
+
+def _ensure_active_reseller(reseller: Reseller) -> None:
+    if reseller.status in (ResellerStatus.disabled, ResellerStatus.deleted):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="حساب کاربری شما غیرفعال است.")
+
+
 async def get_current_principal(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
 ) -> tuple[Reseller, Role]:
@@ -24,27 +38,40 @@ async def get_current_principal(
         if not sub or not token_role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
     except JWTError:
+        pass
+    else:
+        q = await db.execute(select(Reseller).where(Reseller.username == sub))
+        reseller = q.scalar_one_or_none()
+        if not reseller:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="کاربر یافت نشد.")
+
+        _ensure_active_reseller(reseller)
+
+        # IMPORTANT: role is authoritative in the database.
+        # The JWT role claim is treated as a cache only.
+        db_role = _role_for(reseller)
+
+        # If role was changed in the DB, old tokens should stop working.
+        if token_role != db_role.value:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
+
+        request.state.auth_type = "jwt"
+        return reseller, db_role
+
+    api_token = await find_active_api_token(db, token)
+    if not api_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
 
-    q = await db.execute(select(Reseller).where(Reseller.username == sub))
+    q = await db.execute(select(Reseller).where(Reseller.id == api_token.reseller_id))
     reseller = q.scalar_one_or_none()
     if not reseller:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="کاربر یافت نشد.")
 
-    if reseller.status in (ResellerStatus.disabled, ResellerStatus.deleted):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="حساب کاربری شما غیرفعال است.")
+    _ensure_active_reseller(reseller)
+    db_role = _role_for(reseller)
+    await touch_api_token(db, api_token)
 
-    # IMPORTANT: role is authoritative in the database.
-    # The JWT role claim is treated as a cache only.
-    try:
-        db_role = Role((reseller.role or "reseller").strip().lower())
-    except Exception:
-        db_role = Role.reseller
-
-    # If role was changed in the DB, old tokens should stop working.
-    if token_role != db_role.value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
-
+    request.state.auth_type = "api_token"
     return reseller, db_role
 
 

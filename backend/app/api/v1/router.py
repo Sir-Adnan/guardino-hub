@@ -10,6 +10,7 @@ from app.api.v1.routes import (
     reseller_reports,
     reseller_settings,
     reseller_stats,
+    reseller_catalog,
     admin_settings,
     admin_reports,
     admin_resellers,
@@ -28,6 +29,7 @@ api_router.include_router(reseller_nodes.router, prefix="/reseller/nodes", tags=
 api_router.include_router(reseller_reports.router, prefix="/reseller/reports", tags=["reseller-reports"])
 api_router.include_router(reseller_settings.router, prefix="/reseller/settings", tags=["reseller-settings"])
 api_router.include_router(reseller_stats.router, prefix="/reseller/stats", tags=["reseller-stats"])
+api_router.include_router(reseller_catalog.router, prefix="/reseller/catalog", tags=["reseller-catalog"])
 api_router.include_router(public_sub.router, tags=["subscription"])
 
 api_router.include_router(admin_resellers.router, prefix="/admin/resellers", tags=["admin-resellers"])

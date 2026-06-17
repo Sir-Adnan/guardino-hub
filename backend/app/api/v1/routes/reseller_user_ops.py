@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -109,7 +109,12 @@ async def quote(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), 
     return PriceQuoteResponse(total_amount=total, per_node_amount=per_node, time_amount=time_amount)
 
 @router.post("", response_model=CreateUserResponse)
-async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
+async def create_user(
+    payload: CreateUserRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    reseller: Reseller = Depends(block_if_balance_zero),
+):
     policy = await get_effective_user_policy(db, reseller.id)
     days_final = _enforce_user_policy(payload, policy)
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
@@ -223,7 +228,17 @@ async def create_user(payload: CreateUserRequest, db: AsyncSession = Depends(get
         order.status = OrderStatus.completed
 
         await db.commit()
-        return CreateUserResponse(user_id=user.id, master_sub_token=user.master_sub_token, charged_amount=total_amount, nodes_provisioned=provisioned)
+        subscription_url = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
+        return CreateUserResponse(
+            user_id=user.id,
+            label=user.label,
+            master_sub_token=user.master_sub_token,
+            subscription_url=subscription_url,
+            expire_at=user.expire_at,
+            charged_amount=total_amount,
+            balance_after=reseller.balance,
+            nodes_provisioned=provisioned,
+        )
     except Exception:
         await db.rollback()
         raise
