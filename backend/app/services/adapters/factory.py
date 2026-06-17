@@ -6,8 +6,8 @@ from app.services.adapters.pasarguard import PasarguardAdapter
 from app.services.adapters.wg_dashboard import WGDashboardAdapter
 
 
-def get_adapter(node: Node):
-    creds = node.credentials or {}
+def get_adapter(node: Node, credentials: dict | None = None):
+    creds = credentials if credentials is not None else (node.credentials or {})
     verify_ssl = bool(creds.get("verify_ssl", True))
     timeout = float(creds.get("timeout", 20.0))
 

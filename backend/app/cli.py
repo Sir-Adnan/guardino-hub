@@ -7,7 +7,7 @@ from app.models.node import Node, PanelType
 from app.models.reseller import Reseller
 from app.models.subaccount import SubAccount
 from app.models.user import GuardinoUser, UserStatus
-from app.services.adapters.factory import get_adapter
+from app.services.panel_access import get_adapter_for_subaccount
 
 async def create_superadmin(username: str, password: str):
     async with AsyncSessionLocal() as db:
@@ -54,7 +54,7 @@ async def reconcile_wg_jobs(batch_size: int = 500, include_inactive: bool = Fals
             if not rows:
                 break
 
-            adapters: dict[int, object] = {}
+            adapters: dict[tuple[int, int | None], object] = {}
             for sub, user, node in rows:
                 scanned += 1
 
@@ -65,17 +65,18 @@ async def reconcile_wg_jobs(batch_size: int = 500, include_inactive: bool = Fals
                     skipped += 1
                     continue
 
-                adapter = adapters.get(node.id)
+                adapter_key = (node.id, int(sub.allocation_id) if sub.allocation_id else None)
+                adapter = adapters.get(adapter_key)
                 if adapter is None:
                     try:
-                        adapter = get_adapter(node)
+                        adapter = await get_adapter_for_subaccount(db, sub, node, user)
                     except Exception as e:
                         failed += 1
                         if error_budget > 0:
                             print(f"[ERR] adapter init failed node_id={node.id}: {e}")
                             error_budget -= 1
                         continue
-                    adapters[node.id] = adapter
+                    adapters[adapter_key] = adapter
 
                 if dry_run:
                     synced += 1

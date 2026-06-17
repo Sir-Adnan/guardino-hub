@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
@@ -6,10 +9,52 @@ from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.node_allocation import NodeAllocation
 from app.models.reseller import Reseller
-from app.models.node import Node
-from app.schemas.admin import CreateAllocationRequest, UpdateAllocationRequest, AllocationOut, AllocationList
+from app.models.node import Node, PanelType
+from app.models.subaccount import SubAccount
+from app.models.user import GuardinoUser, NodeSelectionMode, UserStatus
+from app.schemas.admin import (
+    CreateAllocationRequest,
+    ImportRemoteUserItem,
+    ImportRemoteUsersRequest,
+    ImportRemoteUsersResponse,
+    UpdateAllocationRequest,
+    AllocationOut,
+    AllocationList,
+)
+from app.services.panel_access import get_adapter_for_allocation
+from app.services.urls import normalize_url
 
 router = APIRouter()
+
+
+def allocation_out(a: NodeAllocation) -> AllocationOut:
+    return AllocationOut(
+        id=a.id,
+        reseller_id=a.reseller_id,
+        node_id=a.node_id,
+        enabled=a.enabled,
+        default_for_reseller=a.default_for_reseller,
+        price_per_gb_override=a.price_per_gb_override,
+        credential_mode=str(a.credential_mode or "shared"),
+        credentials=a.credentials or {},
+    )
+
+
+async def _new_unique_master_sub_token(db: AsyncSession) -> str:
+    for _ in range(8):
+        candidate = secrets.token_hex(16)
+        q = await db.execute(select(GuardinoUser.id).where(GuardinoUser.master_sub_token == candidate))
+        if q.scalar_one_or_none() is None:
+            return candidate
+    return secrets.token_hex(24)
+
+
+def _import_status(remote_status: str | None) -> UserStatus:
+    value = str(remote_status or "").strip().lower()
+    if value in {"disabled", "limited", "expired"}:
+        return UserStatus.disabled
+    return UserStatus.active
+
 
 @router.get("", response_model=AllocationList)
 async def list_allocations(
@@ -23,17 +68,7 @@ async def list_allocations(
     total = int(total_q.scalar_one())
     q = await db.execute(base.limit(limit).offset(offset))
     items = q.scalars().all()
-    out = [
-        AllocationOut(
-            id=a.id,
-            reseller_id=a.reseller_id,
-            node_id=a.node_id,
-            enabled=a.enabled,
-            default_for_reseller=a.default_for_reseller,
-            price_per_gb_override=a.price_per_gb_override,
-        )
-        for a in items
-    ]
+    out = [allocation_out(a) for a in items]
     return AllocationList(items=out, total=total)
 
 @router.post("", response_model=AllocationOut)
@@ -52,6 +87,8 @@ async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession =
         enabled=payload.enabled,
         default_for_reseller=payload.default_for_reseller,
         price_per_gb_override=payload.price_per_gb_override,
+        credential_mode=payload.credential_mode,
+        credentials=payload.credentials or {},
     )
     db.add(a)
     try:
@@ -62,14 +99,7 @@ async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession =
         raise HTTPException(status_code=409, detail="Allocation already exists")
     await db.refresh(a)
 
-    return AllocationOut(
-        id=a.id,
-        reseller_id=a.reseller_id,
-        node_id=a.node_id,
-        enabled=a.enabled,
-        default_for_reseller=a.default_for_reseller,
-        price_per_gb_override=a.price_per_gb_override,
-    )
+    return allocation_out(a)
 
 @router.patch("/{allocation_id}", response_model=AllocationOut)
 async def update_allocation(allocation_id: int, payload: UpdateAllocationRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
@@ -87,17 +117,158 @@ async def update_allocation(allocation_id: int, payload: UpdateAllocationRequest
 
     if "price_per_gb_override" in fields:
         a.price_per_gb_override = payload.price_per_gb_override
+    if "credential_mode" in fields:
+        a.credential_mode = payload.credential_mode or "shared"
+    if "credentials" in fields:
+        a.credentials = payload.credentials or {}
 
     await db.commit()
     await db.refresh(a)
 
-    return AllocationOut(
-        id=a.id,
-        reseller_id=a.reseller_id,
-        node_id=a.node_id,
-        enabled=a.enabled,
-        default_for_reseller=a.default_for_reseller,
-        price_per_gb_override=a.price_per_gb_override,
+    return allocation_out(a)
+
+
+@router.post("/{allocation_id}/test-connection")
+async def test_allocation_connection(allocation_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    row = (
+        await db.execute(
+            select(NodeAllocation, Node)
+            .join(Node, Node.id == NodeAllocation.node_id)
+            .where(NodeAllocation.id == allocation_id)
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Allocation not found")
+    allocation, node = row
+    adapter = get_adapter_for_allocation(node, allocation)
+    result = await adapter.test_connection()
+    return {
+        "ok": result.ok,
+        "detail": result.detail,
+        "meta": {
+            **(result.meta or {}),
+            "credential_mode": str(allocation.credential_mode or "shared"),
+            "recommended_pasarguard_role": "operator" if allocation.credential_mode == "dedicated" else "sudo",
+        },
+    }
+
+
+@router.post("/{allocation_id}/import-users", response_model=ImportRemoteUsersResponse)
+async def import_remote_users(
+    allocation_id: int,
+    payload: ImportRemoteUsersRequest,
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    row = (
+        await db.execute(
+            select(NodeAllocation, Node, Reseller)
+            .join(Node, Node.id == NodeAllocation.node_id)
+            .join(Reseller, Reseller.id == NodeAllocation.reseller_id)
+            .where(NodeAllocation.id == allocation_id)
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Allocation not found")
+    allocation, node, reseller = row
+    if node.panel_type != PanelType.pasarguard:
+        raise HTTPException(status_code=400, detail="Remote user import is currently supported for PasarGuard allocations.")
+
+    adapter = get_adapter_for_allocation(node, allocation)
+    if not hasattr(adapter, "list_users"):
+        raise HTTPException(status_code=501, detail="Adapter does not support user import.")
+
+    result = await adapter.list_users(offset=payload.offset, limit=payload.limit, admin=payload.remote_admin)  # type: ignore[attr-defined]
+    now = datetime.now(timezone.utc)
+    imported = 0
+    skipped_existing = 0
+    errors = 0
+    out_items: list[ImportRemoteUserItem] = []
+
+    for remote_user in result.items:
+        existing = (
+            await db.execute(
+                select(SubAccount.id).where(
+                    SubAccount.node_id == node.id,
+                    SubAccount.remote_identifier == remote_user.remote_identifier,
+                )
+            )
+        ).scalar_one_or_none()
+        expire_at = remote_user.expire_at or (now + timedelta(days=36500))
+        base_item = {
+            "username": remote_user.username,
+            "remote_identifier": remote_user.remote_identifier,
+            "total_gb": int(remote_user.total_gb or 0),
+            "used_bytes": int(remote_user.used_bytes or 0),
+            "expire_at": expire_at.isoformat(),
+            "status": str(remote_user.status or "active"),
+        }
+        if existing:
+            skipped_existing += 1
+            out_items.append(ImportRemoteUserItem(**base_item, action="skip_existing", detail="Already imported."))
+            continue
+
+        if payload.dry_run:
+            out_items.append(ImportRemoteUserItem(**base_item, action="would_import"))
+            continue
+
+        try:
+            user = GuardinoUser(
+                owner_reseller_id=reseller.id,
+                label=remote_user.username,
+                total_gb=int(remote_user.total_gb or 0),
+                used_bytes=int(remote_user.used_bytes or 0),
+                expire_at=expire_at,
+                status=_import_status(remote_user.status),
+                master_sub_token=await _new_unique_master_sub_token(db),
+                node_selection_mode=NodeSelectionMode.manual,
+                node_group=None,
+                meta={
+                    "billing_origin": "external_import",
+                    "imported_from": "pasarguard",
+                    "imported_at": now.isoformat(),
+                    "remote_admin": payload.remote_admin or (allocation.credentials or {}).get("username"),
+                    "remote_raw": remote_user.raw,
+                    "no_expire": remote_user.expire_at is None,
+                },
+            )
+            db.add(user)
+            await db.flush()
+            direct_url = normalize_url(remote_user.direct_sub_url, node.base_url)
+            db.add(
+                SubAccount(
+                    user_id=user.id,
+                    node_id=node.id,
+                    allocation_id=allocation.id,
+                    remote_identifier=remote_user.remote_identifier,
+                    panel_sub_url_cached=direct_url,
+                    panel_sub_url_cached_at=now if direct_url else None,
+                    used_bytes=int(remote_user.used_bytes or 0),
+                    last_sync_at=now,
+                )
+            )
+            imported += 1
+            out_items.append(ImportRemoteUserItem(**base_item, action="imported"))
+        except Exception as exc:
+            errors += 1
+            out_items.append(ImportRemoteUserItem(**base_item, action="error", detail=str(exc)[:180]))
+
+    if payload.dry_run:
+        await db.rollback()
+    else:
+        await db.commit()
+
+    return ImportRemoteUsersResponse(
+        dry_run=payload.dry_run,
+        allocation_id=allocation.id,
+        reseller_id=reseller.id,
+        node_id=node.id,
+        scanned=len(result.items),
+        imported=imported,
+        skipped_existing=skipped_existing,
+        errors=errors,
+        total_remote=result.total,
+        items=out_items,
     )
 
 @router.delete("/{allocation_id}")

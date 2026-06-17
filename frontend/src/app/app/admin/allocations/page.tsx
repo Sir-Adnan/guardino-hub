@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Link2, Pencil, Plus, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { Activity, Database, KeyRound, Link2, Pencil, PlugZap, Plus, ShieldCheck, Trash2, UploadCloud, UsersRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -22,6 +22,8 @@ type AllocationOut = {
   enabled: boolean;
   default_for_reseller: boolean;
   price_per_gb_override?: number | null;
+  credential_mode?: "shared" | "dedicated";
+  credentials?: Record<string, unknown>;
 };
 
 type NodeOut = {
@@ -104,9 +106,14 @@ export default function AllocationsPage() {
   const [addPriceOverride, setAddPriceOverride] = React.useState<number | "">("");
   const [addEnabled, setAddEnabled] = React.useState(true);
   const [addDefault, setAddDefault] = React.useState(false);
+  const [addCredentialMode, setAddCredentialMode] = React.useState<"shared" | "dedicated">("shared");
+  const [addCredentials, setAddCredentials] = React.useState("{}");
   const [priceDrafts, setPriceDrafts] = React.useState<Record<number, number | "">>({});
+  const [modeDrafts, setModeDrafts] = React.useState<Record<number, "shared" | "dedicated">>({});
+  const [credentialDrafts, setCredentialDrafts] = React.useState<Record<number, string>>({});
   const [confirmDelete, setConfirmDelete] = React.useState<GroupedAllocationItem | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [credentialBusy, setCredentialBusy] = React.useState<number | null>(null);
   const initialDeepLinkHandled = React.useRef(false);
 
   const selectedGroup = React.useMemo(
@@ -171,6 +178,23 @@ export default function AllocationsPage() {
     setAddPriceOverride("");
     setAddEnabled(true);
     setAddDefault(false);
+    setAddCredentialMode("shared");
+    setAddCredentials("{}");
+  }
+
+  function parseCredentialJson(raw: string) {
+    try {
+      const parsed = JSON.parse(raw || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON");
+      return parsed as Record<string, unknown>;
+    } catch {
+      push({ title: t("common.error"), desc: "Credentials JSON is invalid.", type: "error" });
+      return null;
+    }
+  }
+
+  function pasarguardOperatorTemplate() {
+    return JSON.stringify({ username: "", password: "" }, null, 2);
   }
 
   async function patchAllocation(id: number, payload: Partial<AllocationOut>) {
@@ -187,6 +211,8 @@ export default function AllocationsPage() {
 
   async function addAllocation() {
     if (!selectedGroup || addNodeId === "") return;
+    const parsedCredentials = addCredentialMode === "dedicated" ? parseCredentialJson(addCredentials) : {};
+    if (!parsedCredentials) return;
     setBusy(true);
     try {
       await apiFetch<AllocationOut>("/api/v1/admin/allocations", {
@@ -197,6 +223,8 @@ export default function AllocationsPage() {
           enabled: addEnabled,
           default_for_reseller: addDefault,
           price_per_gb_override: addPriceOverride === "" ? null : Number(addPriceOverride),
+          credential_mode: addCredentialMode,
+          credentials: addCredentialMode === "dedicated" ? parsedCredentials : {},
         }),
       });
       push({ title: t("adminAllocations.created"), type: "success" });
@@ -216,6 +244,63 @@ export default function AllocationsPage() {
       await load(page, pageSize, q);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
+  async function saveAllocationCredentials(a: GroupedAllocationItem) {
+    const mode = modeDrafts[a.id] || a.credential_mode || "shared";
+    const parsedCredentials = mode === "dedicated" ? parseCredentialJson(credentialDrafts[a.id] || "{}") : {};
+    if (!parsedCredentials) return;
+    setCredentialBusy(a.id);
+    try {
+      await apiFetch<AllocationOut>(`/api/v1/admin/allocations/${a.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          credential_mode: mode,
+          credentials: mode === "dedicated" ? parsedCredentials : {},
+        }),
+      });
+      push({ title: "Credential saved", type: "success" });
+      await load(page, pageSize, q);
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setCredentialBusy(null);
+    }
+  }
+
+  async function testAllocation(a: GroupedAllocationItem) {
+    setCredentialBusy(a.id);
+    try {
+      const res = await apiFetch<{ ok: boolean; detail: string }>(`/api/v1/admin/allocations/${a.id}/test-connection`, { method: "POST" });
+      push({ title: res.ok ? "Connection ok" : "Connection failed", desc: res.detail || "-", type: res.ok ? "success" : "error" });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setCredentialBusy(null);
+    }
+  }
+
+  async function importAllocationUsers(a: GroupedAllocationItem, dryRun: boolean) {
+    setCredentialBusy(a.id);
+    try {
+      const res = await apiFetch<{ scanned: number; imported: number; skipped_existing: number; errors: number; total_remote?: number }>(
+        `/api/v1/admin/allocations/${a.id}/import-users`,
+        {
+          method: "POST",
+          body: JSON.stringify({ dry_run: dryRun, limit: 500, offset: 0, skip_existing: true }),
+        }
+      );
+      push({
+        title: dryRun ? "Import preview" : "Import completed",
+        desc: `scanned=${fmtNumber(res.scanned)} imported=${fmtNumber(res.imported)} skipped=${fmtNumber(res.skipped_existing)} errors=${fmtNumber(res.errors)}`,
+        type: res.errors ? "warning" : "success",
+      });
+      if (!dryRun) await load(page, pageSize, q);
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setCredentialBusy(null);
     }
   }
 
@@ -250,12 +335,18 @@ export default function AllocationsPage() {
       return;
     }
     const drafts: Record<number, number | ""> = {};
+    const modeNext: Record<number, "shared" | "dedicated"> = {};
+    const credentialNext: Record<number, string> = {};
     selectedGroup.allocations.forEach((a) => {
       drafts[a.id] = a.price_per_gb_override == null ? "" : a.price_per_gb_override;
+      modeNext[a.id] = a.credential_mode || "shared";
+      credentialNext[a.id] = JSON.stringify(a.credentials || {}, null, 2);
     });
     setPriceDrafts(drafts);
+    setModeDrafts(modeNext);
+    setCredentialDrafts(credentialNext);
     resetAddForm();
-  }, [selectedGroup?.reseller_id, selectedGroup?.allocations.length]);
+  }, [selectedGroup]);
 
   const selectClass =
     "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
@@ -468,6 +559,29 @@ export default function AllocationsPage() {
                   افزودن
                 </Button>
               </div>
+              <div className="mt-3 grid gap-2 lg:grid-cols-[180px_minmax(0,1fr)_auto] lg:items-start">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/65">
+                    <KeyRound size={13} />
+                    Panel credentials
+                  </div>
+                  <select className={selectClass} value={addCredentialMode} onChange={(e) => setAddCredentialMode(e.target.value as "shared" | "dedicated")}>
+                    <option value="shared">Shared node credential</option>
+                    <option value="dedicated">Dedicated reseller credential</option>
+                  </select>
+                </div>
+                <textarea
+                  className="min-h-[92px] w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-xs outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.32)] disabled:opacity-60"
+                  value={addCredentials}
+                  disabled={addCredentialMode === "shared"}
+                  onChange={(e) => setAddCredentials(e.target.value)}
+                  spellCheck={false}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => setAddCredentials(pasarguardOperatorTemplate())} disabled={addCredentialMode === "shared"}>
+                  <KeyRound size={14} />
+                  Template
+                </Button>
+              </div>
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
@@ -526,6 +640,58 @@ export default function AllocationsPage() {
                       <Button type="button" size="sm" variant="outline" className="text-red-600" title="حذف تخصیص" onClick={() => setConfirmDelete(a)}>
                         <Trash2 size={14} />
                       </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 border-t border-[hsl(var(--border))] pt-3 lg:grid-cols-[180px_minmax(0,1fr)_auto] lg:items-start">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/65">
+                        <KeyRound size={13} />
+                        Panel credentials
+                      </div>
+                      <select
+                        className={selectClass}
+                        value={modeDrafts[a.id] || a.credential_mode || "shared"}
+                        onChange={(e) => setModeDrafts((prev) => ({ ...prev, [a.id]: e.target.value as "shared" | "dedicated" }))}
+                      >
+                        <option value="shared">Shared node credential</option>
+                        <option value="dedicated">Dedicated reseller credential</option>
+                      </select>
+                      <Badge variant={(modeDrafts[a.id] || a.credential_mode) === "dedicated" ? "warning" : "muted"}>
+                        {(modeDrafts[a.id] || a.credential_mode || "shared") === "dedicated" ? "operator" : "node sudo/shared"}
+                      </Badge>
+                    </div>
+                    <textarea
+                      className="min-h-[92px] w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-xs outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.32)] disabled:opacity-60"
+                      value={credentialDrafts[a.id] || "{}"}
+                      disabled={(modeDrafts[a.id] || a.credential_mode || "shared") === "shared"}
+                      onChange={(e) => setCredentialDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                      spellCheck={false}
+                    />
+                    <div className="flex flex-wrap gap-2 lg:max-w-[240px]">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setCredentialDrafts((prev) => ({ ...prev, [a.id]: pasarguardOperatorTemplate() }))} disabled={(modeDrafts[a.id] || a.credential_mode || "shared") === "shared"}>
+                        <KeyRound size={14} />
+                        Template
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => saveAllocationCredentials(a)} disabled={credentialBusy === a.id}>
+                        <Pencil size={14} />
+                        Save
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => testAllocation(a)} disabled={credentialBusy === a.id}>
+                        <PlugZap size={14} />
+                        Test
+                      </Button>
+                      {a.panel_type === "pasarguard" ? (
+                        <>
+                          <Button type="button" variant="outline" size="sm" onClick={() => importAllocationUsers(a, true)} disabled={credentialBusy === a.id}>
+                            <Database size={14} />
+                            Dry run
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => importAllocationUsers(a, false)} disabled={credentialBusy === a.id}>
+                            <UploadCloud size={14} />
+                            Import
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>

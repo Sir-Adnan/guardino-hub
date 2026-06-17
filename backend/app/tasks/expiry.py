@@ -9,7 +9,7 @@ from app.core.db import AsyncSessionLocal
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node
-from app.services.adapters.factory import get_adapter
+from app.services.panel_access import get_adapter_for_subaccount
 from app.services.status_policy import enforce_time_expiry
 from app.services.locks import redis_lock
 from app.services.task_metrics import TaskRunStats
@@ -67,7 +67,7 @@ async def _expire_due_users_async():
                 if not n:
                     continue
                 try:
-                    adapter = get_adapter(n)
+                    adapter = await get_adapter_for_subaccount(db, s, n)
                     # For all panels, best-effort delete to enforce expiry.
                     stats.remote_actions += 1
                     await enforce_time_expiry(n.panel_type, adapter, s.remote_identifier)

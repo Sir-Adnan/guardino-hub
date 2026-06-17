@@ -15,59 +15,17 @@ from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.services.billing import lock_reseller_for_billing
 from app.services.pricing import resolve_allowed_nodes, calculate_price
-from app.services.adapters.factory import get_adapter
-from app.services.idempotency import find_order_by_request_id, request_id_from
+from app.services.order_replay import existing_create_user_response
+from app.services.panel_access import get_adapter_for_allocation, get_enabled_allocation_map
+from app.services.urls import normalize_url
 from app.services.user_inputs import resolve_days, sanitize_username, random_username
 from app.schemas.reseller_user_ops import CreateUserRequest, CreateUserResponse, PriceQuoteResponse
-from urllib.parse import urlparse
 from app.services.reseller_user_policy import (
     get_effective_user_policy,
 )
 
 router = APIRouter()
 
-
-async def _create_response_for_order(
-    db: AsyncSession,
-    request: Request,
-    reseller: Reseller,
-    order: Order,
-    request_id: str | None,
-) -> CreateUserResponse:
-    try:
-        order_type = order.type if isinstance(order.type, OrderType) else OrderType(order.type)
-    except Exception:
-        order_type = order.type
-    if order_type != OrderType.create:
-        raise HTTPException(status_code=409, detail="request_id was already used for another operation.")
-    if order.status != OrderStatus.completed or not order.user_id:
-        raise HTTPException(status_code=409, detail="request_id is already in progress; retry shortly.")
-
-    q_user = await db.execute(select(GuardinoUser).where(GuardinoUser.id == order.user_id))
-    user = q_user.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=409, detail="request_id points to a missing user.")
-
-    q_subs = await db.execute(select(SubAccount.node_id).where(SubAccount.user_id == user.id))
-    nodes_provisioned = [int(node_id) for node_id in q_subs.scalars().all()]
-    q_ledger = await db.execute(select(LedgerTransaction).where(LedgerTransaction.order_id == order.id))
-    ledger_rows = q_ledger.scalars().all()
-    charged_amount = sum(max(0, -int(tx.amount or 0)) for tx in ledger_rows)
-    balance_after = int(ledger_rows[-1].balance_after) if ledger_rows else int(reseller.balance or 0)
-
-    subscription_url = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
-    return CreateUserResponse(
-        user_id=user.id,
-        label=user.label,
-        order_id=order.id,
-        request_id=request_id,
-        master_sub_token=user.master_sub_token,
-        subscription_url=subscription_url,
-        expire_at=user.expire_at,
-        charged_amount=charged_amount,
-        balance_after=balance_after,
-        nodes_provisioned=nodes_provisioned,
-    )
 
 def _panel_username(base_label: str) -> str:
     # Keep panel username as close as possible to user input/random value.
@@ -83,32 +41,6 @@ def _canonical_username_from_payload(payload: CreateUserRequest) -> str:
     if not candidate:
         raise HTTPException(status_code=400, detail="Username is required unless random is enabled.")
     return candidate
-
-
-def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
-    if not direct:
-        return None
-    u = direct.strip()
-    if not u:
-        return None
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    if not base_url:
-        return u
-    b = base_url.strip()
-    if not b:
-        return u
-    try:
-        p = urlparse(b)
-        if p.scheme and p.netloc:
-            origin = f"{p.scheme}://{p.netloc}"
-        else:
-            origin = b
-    except Exception:
-        origin = b
-    if not u.startswith("/"):
-        u = "/" + u
-    return origin.rstrip("/") + u
 
 
 def _enforce_user_policy(payload: CreateUserRequest, policy: dict) -> int:
@@ -162,11 +94,9 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     reseller: Reseller = Depends(block_if_balance_zero),
 ):
-    request_id = request_id_from(request, payload)
-    if request_id:
-        existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
-        if existing_order:
-            return await _create_response_for_order(db, request, reseller, existing_order, request_id)
+    request_id, replay = await existing_create_user_response(db, request, reseller, payload)
+    if replay:
+        return replay
     reseller = await lock_reseller_for_billing(db, reseller)
 
     policy = await get_effective_user_policy(db, reseller.id)
@@ -174,6 +104,7 @@ async def create_user(
     nodes = await resolve_allowed_nodes(db, reseller.id, payload.node_ids, payload.node_group)
     if not nodes:
         raise HTTPException(status_code=400, detail="No eligible nodes for this reseller/selection")
+    allocation_map = await get_enabled_allocation_map(db, reseller_id=reseller.id, node_ids=[n.id for n in nodes])
     remote_label = _canonical_username_from_payload(payload)
 
     estimated_amount, per_node, time_amount = await calculate_price(db, reseller, nodes, payload.total_gb, days_final, pricing_mode=payload.pricing_mode)
@@ -196,9 +127,9 @@ async def create_user(
     except IntegrityError:
         await db.rollback()
         if request_id:
-            existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
-            if existing_order:
-                return await _create_response_for_order(db, request, reseller, existing_order, request_id)
+            _rid, replay = await existing_create_user_response(db, request, reseller, payload)
+            if replay:
+                return replay
         raise HTTPException(status_code=409, detail="request_id is already in use.")
 
     now = datetime.now(timezone.utc)
@@ -235,7 +166,8 @@ async def create_user(
     try:
         for n in nodes:
             try:
-                adapter = get_adapter(n)
+                allocation = allocation_map.get(n.id)
+                adapter = get_adapter_for_allocation(n, allocation)
                 panel_username = _panel_username(remote_label)
                 pr = await adapter.provision_user(
                     label=panel_username,
@@ -246,10 +178,11 @@ async def create_user(
             except Exception as e:
                 provision_errors.append(f"node#{n.id}: {str(e).strip()[:160]}")
                 continue
-            direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
+            direct_url = normalize_url(pr.direct_sub_url, n.base_url)
             sa = SubAccount(
                 user_id=user.id,
                 node_id=n.id,
+                allocation_id=allocation.id if allocation else None,
                 remote_identifier=pr.remote_identifier,
                 panel_sub_url_cached=direct_url,
                 panel_sub_url_cached_at=now if direct_url else None,

@@ -83,11 +83,15 @@ class CreateAllocationRequest(BaseModel):
     enabled: bool = True
     default_for_reseller: bool = False
     price_per_gb_override: Optional[int] = None
+    credential_mode: str = Field(default="shared", pattern="^(shared|dedicated)$")
+    credentials: dict = Field(default_factory=dict)
 
 class UpdateAllocationRequest(BaseModel):
     enabled: Optional[bool] = None
     default_for_reseller: Optional[bool] = None
     price_per_gb_override: Optional[int] = None
+    credential_mode: Optional[str] = Field(default=None, pattern="^(shared|dedicated)$")
+    credentials: Optional[dict] = None
 
 class AllocationOut(BaseModel):
     id: int
@@ -96,6 +100,8 @@ class AllocationOut(BaseModel):
     enabled: bool
     default_for_reseller: bool
     price_per_gb_override: Optional[int]
+    credential_mode: str = "shared"
+    credentials: dict = Field(default_factory=dict)
 
 class AllocationList(BaseModel):
     items: List[AllocationOut]
@@ -119,6 +125,8 @@ class GroupedAllocationItem(BaseModel):
     enabled: bool
     default_for_reseller: bool
     price_per_gb_override: Optional[int]
+    credential_mode: str = "shared"
+    credentials: dict = Field(default_factory=dict)
 
 
 class ResellerAllocationsGroup(BaseModel):
@@ -138,3 +146,35 @@ class ResellerAllocationsGroupedList(BaseModel):
 class ResellerList(BaseModel):
     items: List[ResellerOut]
     total: int
+
+
+class ImportRemoteUsersRequest(BaseModel):
+    dry_run: bool = True
+    limit: int = Field(default=500, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0)
+    skip_existing: bool = True
+    remote_admin: Optional[str] = Field(default=None, max_length=128)
+
+
+class ImportRemoteUserItem(BaseModel):
+    username: str
+    remote_identifier: str
+    total_gb: int
+    used_bytes: int
+    expire_at: Optional[str] = None
+    status: str
+    action: str
+    detail: Optional[str] = None
+
+
+class ImportRemoteUsersResponse(BaseModel):
+    dry_run: bool
+    allocation_id: int
+    reseller_id: int
+    node_id: int
+    scanned: int
+    imported: int
+    skipped_existing: int
+    errors: int
+    total_remote: Optional[int] = None
+    items: List[ImportRemoteUserItem]

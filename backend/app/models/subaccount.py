@@ -16,6 +16,7 @@ class SubAccount(Base, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     node_id: Mapped[int] = mapped_column(Integer, ForeignKey("nodes.id"), index=True, nullable=False)
+    allocation_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("node_allocations.id"), index=True, nullable=True)
 
     remote_identifier: Mapped[str] = mapped_column(String(128), nullable=False)
 

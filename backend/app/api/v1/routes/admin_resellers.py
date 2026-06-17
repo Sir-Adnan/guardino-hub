@@ -139,6 +139,8 @@ async def list_reseller_allocations_grouped(
                 enabled=allocation.enabled,
                 default_for_reseller=allocation.default_for_reseller,
                 price_per_gb_override=allocation.price_per_gb_override,
+                credential_mode=str(allocation.credential_mode or "shared"),
+                credentials=allocation.credentials or {},
             )
             for allocation, node in rows
         ]

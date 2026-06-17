@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 from app.core.db import get_db
 from app.api.deps import block_if_balance_zero
@@ -11,36 +10,12 @@ from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.base import RemoteUserNotFound
-from app.services.adapters.factory import get_adapter
+from app.services.panel_access import get_adapter_for_subaccount
+from app.services.urls import normalize_url
 from app.schemas.links import UserLinksResponse, NodeLink
 from app.services.user_defaults import (
     get_effective_user_defaults,
 )
-
-def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
-    if not direct:
-        return None
-    u = direct.strip()
-    if not u:
-        return None
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    if not base_url:
-        return u
-    b = base_url.strip()
-    if not b:
-        return u
-    try:
-        p = urlparse(b)
-        if p.scheme and p.netloc:
-            origin = f"{p.scheme}://{p.netloc}"
-        else:
-            origin = b
-    except Exception:
-        origin = b
-    if not u.startswith("/"):
-        u = "/" + u
-    return origin.rstrip("/") + u
 
 router = APIRouter()
 
@@ -106,7 +81,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
 
         direct = sa.panel_sub_url_cached
         if direct and node:
-            normalized_cached = _normalize_url(direct, node.base_url)
+            normalized_cached = normalize_url(direct, node.base_url)
             if normalized_cached:
                 direct = normalized_cached
         status = "ok" if direct else "missing"
@@ -114,7 +89,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
 
         if refresh and sa.node_id in node_map and (node_panel_type != "wg_dashboard"):
             try:
-                adapter = get_adapter(node_map[sa.node_id])
+                adapter = await get_adapter_for_subaccount(db, sa, node_map[sa.node_id], user)
                 if hasattr(adapter, "get_user_snapshot"):
                     snapshot = await adapter.get_user_snapshot(sa.remote_identifier)  # type: ignore[attr-defined]
                     if snapshot.used_bytes is not None:
@@ -122,7 +97,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                     _sync_create_status_meta(user, snapshot.status, int(sa.used_bytes or 0), now)
                 direct_new = await adapter.get_direct_subscription_url(sa.remote_identifier)
                 if direct_new:
-                    normalized_new = _normalize_url(direct_new, node.base_url if node else None)
+                    normalized_new = normalize_url(direct_new, node.base_url if node else None)
                     sa.panel_sub_url_cached = normalized_new or direct_new
                     sa.panel_sub_url_cached_at = now
                     direct = sa.panel_sub_url_cached
@@ -150,7 +125,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                 node_name=node.name if node else None,
                 panel_type=node_panel_type,
                 direct_url=direct,
-                full_url=_normalize_url(direct, node.base_url if node else None),
+                full_url=normalize_url(direct, node.base_url if node else None),
                 config_download_url=wg_download_url,
                 status=status,
                 detail=detail,

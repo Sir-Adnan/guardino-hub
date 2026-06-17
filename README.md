@@ -61,9 +61,9 @@ Guardino Hub از معماری Adapter استفاده می‌کند. هر نوع
 فایل‌های مرجع API داخل مخزن:
 
 ```text
-docs/openapi/MarzbanAPI.json
-docs/openapi/PasarGuardAPI.json
-docs/openapi/WGDashboard.postman_collection.v4.3.0.json
+docs/references/upstream-apis/MarzbanAPI.json
+docs/references/upstream-apis/PasarGuardAPI.json
+docs/references/upstream-apis/WGDashboard.postman_collection.v4.3.0.json
 ```
 
 ## امکانات اصلی
@@ -211,7 +211,7 @@ Infra:
 Guardino با OpenAPI جدید PasarGuard در مسیر زیر تطبیق داده شده است:
 
 ```text
-docs/openapi/PasarGuardAPI.json
+docs/references/upstream-apis/PasarGuardAPI.json
 ```
 
 رفتارهای مهم adapter پاسارگارد:
@@ -226,7 +226,7 @@ docs/openapi/PasarGuardAPI.json
 - fallback برای نسخه‌هایی که payload جدید proxy settings را قبول نمی‌کنند
 - تلاش برای repair کردن کاربر اگر proxy settings یا group_ids کامل اعمال نشده باشد
 
-اگر در آینده API پاسارگارد دوباره تغییر کرد، ابتدا `docs/openapi/PasarGuardAPI.json` را به‌روزرسانی کنید، سپس فقط adapter پاسارگارد و تست‌های مرتبط را تغییر دهید.
+اگر در آینده API پاسارگارد دوباره تغییر کرد، ابتدا `docs/references/upstream-apis/PasarGuardAPI.json` را به‌روزرسانی کنید، سپس فقط adapter پاسارگارد و تست‌های مرتبط را تغییر دهید.
 
 ## تخصیص نود به رسیلر
 
@@ -958,7 +958,7 @@ frontend/
     lib/
 installer/
 deploy/
-docs/openapi/
+docs/references/upstream-apis/
 docker-compose.yml
 README.md
 ```

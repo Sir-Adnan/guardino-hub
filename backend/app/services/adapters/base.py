@@ -34,6 +34,24 @@ class RemoteUserSnapshot:
     raw: dict[str, Any] | None = None
 
 
+@dataclass
+class RemoteUserListItem:
+    username: str
+    remote_identifier: str
+    total_gb: int
+    used_bytes: int
+    expire_at: datetime | None = None
+    status: str | None = None
+    direct_sub_url: str | None = None
+    raw: dict[str, Any] | None = None
+
+
+@dataclass
+class RemoteUserListResult:
+    items: list[RemoteUserListItem]
+    total: int | None = None
+
+
 class PanelAdapter(Protocol):
     async def test_connection(self) -> TestConnectionResult: ...
 

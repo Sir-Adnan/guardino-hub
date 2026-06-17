@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Integer, ForeignKey, Boolean, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db import Base
 from app.models.common import TimestampMixin
@@ -17,3 +17,5 @@ class NodeAllocation(Base, TimestampMixin):
     default_for_reseller: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     price_per_gb_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credential_mode: Mapped[str] = mapped_column(String(16), default="shared", nullable=False)
+    credentials: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

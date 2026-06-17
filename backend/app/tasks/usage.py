@@ -10,8 +10,10 @@ from app.core.db import AsyncSessionLocal
 from app.models.user import GuardinoUser, UserStatus
 from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
+from app.models.node_allocation import NodeAllocation
 from app.services.adapters.factory import get_adapter
 from app.services.adapters.base import RemoteUserNotFound
+from app.services.panel_access import get_adapter_for_allocation, get_adapter_for_subaccount
 from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
 from app.services.task_metrics import TaskRunStats
@@ -73,56 +75,77 @@ async def _sync_usage_async():
             subs = sq.scalars().all()
 
             by_user: dict[int, list[SubAccount]] = {}
-            by_node: dict[int, list[SubAccount]] = {}
+            by_access: dict[tuple[str, int], list[SubAccount]] = {}
             node_ids: set[int] = set()
+            allocation_ids: set[int] = set()
             for s in subs:
                 by_user.setdefault(s.user_id, []).append(s)
-                by_node.setdefault(s.node_id, []).append(s)
                 node_ids.add(s.node_id)
+                if s.allocation_id:
+                    allocation_ids.add(int(s.allocation_id))
 
             nodes: dict[int, Node] = {}
             if node_ids:
                 nq = await db.execute(select(Node).where(Node.id.in_(list(node_ids))))
                 nodes = {n.id: n for n in nq.scalars().all()}
 
-            adapters: dict[int, object] = {}
-            for node_id, node in nodes.items():
+            allocations: dict[int, NodeAllocation] = {}
+            if allocation_ids:
+                aq = await db.execute(select(NodeAllocation).where(NodeAllocation.id.in_(list(allocation_ids))))
+                allocations = {a.id: a for a in aq.scalars().all()}
+
+            for s in subs:
+                key = ("allocation", int(s.allocation_id)) if s.allocation_id and int(s.allocation_id) in allocations else ("node", int(s.node_id))
+                by_access.setdefault(key, []).append(s)
+
+            adapters: dict[tuple[str, int], object] = {}
+            for key, access_subs in by_access.items():
+                first_sub = access_subs[0]
+                node = nodes.get(first_sub.node_id)
+                if not node:
+                    continue
                 try:
-                    adapters[node_id] = get_adapter(node)
+                    allocation = allocations.get(key[1]) if key[0] == "allocation" else None
+                    adapters[key] = get_adapter_for_allocation(node, allocation) if allocation else get_adapter(node)
                 except Exception as e:
+                    stats.remote_failures += len(access_subs)
                     if failure_log_budget > 0:
                         logger.warning(
-                            "sync_usage adapter init failed node_id=%s err=%s",
-                            node_id,
+                            "sync_usage adapter init failed access=%s node_id=%s err=%s",
+                            key,
+                            first_sub.node_id,
                             str(e)[:220],
                         )
                         failure_log_budget -= 1
 
-            wg_usage_map_by_node: dict[int, dict[str, int | None]] = {}
-            wg_failed_nodes: set[int] = set()
-            for node_id, node in nodes.items():
+            wg_usage_map_by_access: dict[tuple[str, int], dict[str, int | None]] = {}
+            wg_failed_access: set[tuple[str, int]] = set()
+            for key, access_subs in by_access.items():
+                node = nodes.get(access_subs[0].node_id)
+                if not node:
+                    continue
                 if node.panel_type != PanelType.wg_dashboard:
                     continue
-                adapter = adapters.get(node_id)
-                node_subs = by_node.get(node_id, [])
+                adapter = adapters.get(key)
                 if not adapter:
-                    wg_failed_nodes.add(node_id)
-                    stats.remote_failures += len(node_subs)
+                    wg_failed_access.add(key)
+                    stats.remote_failures += len(access_subs)
                     continue
                 try:
                     if hasattr(adapter, "get_used_bytes_many"):
-                        ids = [str(s.remote_identifier or "").strip() for s in node_subs if str(s.remote_identifier or "").strip()]
-                        wg_usage_map_by_node[node_id] = await adapter.get_used_bytes_many(ids)  # type: ignore[attr-defined]
+                        ids = [str(s.remote_identifier or "").strip() for s in access_subs if str(s.remote_identifier or "").strip()]
+                        wg_usage_map_by_access[key] = await adapter.get_used_bytes_many(ids)  # type: ignore[attr-defined]
                     else:
-                        wg_usage_map_by_node[node_id] = {}
+                        wg_usage_map_by_access[key] = {}
                 except Exception as e:
-                    wg_failed_nodes.add(node_id)
-                    stats.remote_failures += len(node_subs)
+                    wg_failed_access.add(key)
+                    stats.remote_failures += len(access_subs)
                     if failure_log_budget > 0:
                         logger.warning(
-                            "sync_usage WG bulk fetch failed node_id=%s peers=%s err=%s",
-                            node_id,
-                            len(node_subs),
+                            "sync_usage WG bulk fetch failed access=%s node_id=%s peers=%s err=%s",
+                            key,
+                            node.id,
+                            len(access_subs),
                             str(e)[:220],
                         )
                         failure_log_budget -= 1
@@ -142,19 +165,20 @@ async def _sync_usage_async():
                     if not n:
                         total_used += effective_used
                         continue
-                    adapter = adapters.get(s.node_id)
+                    access_key = ("allocation", int(s.allocation_id)) if s.allocation_id and int(s.allocation_id) in allocations else ("node", int(s.node_id))
+                    adapter = adapters.get(access_key)
                     if not adapter:
-                        if n.panel_type == PanelType.wg_dashboard and s.node_id in wg_failed_nodes:
+                        if n.panel_type == PanelType.wg_dashboard and access_key in wg_failed_access:
                             total_used += effective_used
                             continue
                         stats.remote_failures += 1
                         total_used += effective_used
                         continue
                     if n.panel_type == PanelType.wg_dashboard:
-                        if s.node_id in wg_failed_nodes:
+                        if access_key in wg_failed_access:
                             total_used += effective_used
                             continue
-                        used = wg_usage_map_by_node.get(s.node_id, {}).get(str(s.remote_identifier or "").strip())
+                        used = wg_usage_map_by_access.get(access_key, {}).get(str(s.remote_identifier or "").strip())
                         if used is None:
                             # Fallback for partial bulk misses (stale peer index / recent topology changes).
                             try:
@@ -261,7 +285,8 @@ async def _sync_usage_async():
                         if not n:
                             continue
                         try:
-                            adapter = adapters.get(s.node_id) or get_adapter(n)
+                            access_key = ("allocation", int(s.allocation_id)) if s.allocation_id and int(s.allocation_id) in allocations else ("node", int(s.node_id))
+                            adapter = adapters.get(access_key) or await get_adapter_for_subaccount(db, s, n, u)
                             await enforce_volume_exhausted(n.panel_type, adapter, s.remote_identifier)
                             stats.remote_actions += 1
                         except Exception:

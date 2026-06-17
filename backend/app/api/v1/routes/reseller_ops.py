@@ -17,12 +17,32 @@ from app.models.order import Order, OrderType, OrderStatus
 from app.models.ledger import LedgerTransaction
 from app.services.billing import lock_reseller_for_billing
 from app.services.pricing import calculate_price, resolve_allowed_nodes
-from app.services.adapters.factory import get_adapter
-from app.services.idempotency import find_order_by_request_id, request_id_from
+from app.services.order_replay import existing_op_result
+from app.services.panel_access import (
+    get_adapter_for_allocation,
+    get_adapter_for_subaccount,
+    get_enabled_allocation_map,
+)
 from app.services.refund import BYTES_PER_GB, refundable_gb_for_user
+from app.services.reseller_operation_policy import (
+    enforce_delete_policy,
+    enforce_edit_allowed,
+    enforce_policy_days,
+    enforce_policy_traffic,
+    enforce_renewal_package_policy,
+    policy_refund_window_days,
+    user_used_gb_float,
+)
 from app.services.reseller_user_policy import get_effective_user_policy
+from app.services.remote_sync import (
+    raise_remote_sync_failed,
+    raise_remote_sync_failed_with_rollback,
+    rollback_limit_changes,
+    short_error,
+)
 from app.services.status_policy import enable_if_needed
 from app.services.subscription_tokens import remember_revoked_master_sub_token
+from app.services.urls import normalize_url
 from urllib.parse import urlparse, parse_qs
 from app.services.http_client import build_async_client
 from app.schemas.ops import ExtendRequest, DecreaseTimeRequest, AddTrafficRequest, RenewRequest, ChangeNodesRequest, RefundRequest, SetStatusRequest, OpResult
@@ -31,77 +51,6 @@ router = APIRouter()
 
 def _now():
     return datetime.now(timezone.utc)
-
-
-def _short_err(e: Exception, size: int = 140) -> str:
-    return str(e).strip().replace("\n", " ")[:size]
-
-
-def _raise_remote_sync_failed(action: str, errors: list[str]) -> None:
-    if not errors:
-        return
-    sample = " | ".join(errors[:3])
-    raise HTTPException(
-        status_code=502,
-        detail=f"{action} sync failed on {len(errors)} node(s): {sample}",
-    )
-
-
-async def _op_result_for_order(
-    db: AsyncSession,
-    reseller: Reseller,
-    order: Order,
-    *,
-    expected_types: set[OrderType],
-    request_id: str,
-) -> OpResult:
-    try:
-        order_type = order.type if isinstance(order.type, OrderType) else OrderType(order.type)
-    except Exception:
-        order_type = order.type
-    if order_type not in expected_types:
-        raise HTTPException(status_code=409, detail="request_id was already used for another operation.")
-    if order.status != OrderStatus.completed or not order.user_id:
-        raise HTTPException(status_code=409, detail="request_id is already in progress; retry shortly.")
-
-    q_ledger = await db.execute(select(LedgerTransaction).where(LedgerTransaction.order_id == order.id))
-    ledger_rows = q_ledger.scalars().all()
-    charged = sum(max(0, -int(tx.amount or 0)) for tx in ledger_rows)
-    refunded = sum(max(0, int(tx.amount or 0)) for tx in ledger_rows)
-    balance_after = int(ledger_rows[-1].balance_after) if ledger_rows else int(reseller.balance or 0)
-    return OpResult(
-        ok=True,
-        order_id=order.id,
-        request_id=request_id,
-        charged_amount=charged,
-        refunded_amount=refunded,
-        new_balance=balance_after,
-        user_id=int(order.user_id),
-        detail="idempotent_replay=1",
-    )
-
-
-async def _existing_idempotent_result(
-    db: AsyncSession,
-    reseller: Reseller,
-    request: Request,
-    payload,
-    *,
-    expected_types: set[OrderType],
-) -> tuple[str | None, OpResult | None]:
-    request_id = request_id_from(request, payload)
-    if not request_id:
-        return None, None
-    existing_order = await find_order_by_request_id(db, reseller_id=reseller.id, request_id=request_id)
-    if not existing_order:
-        return request_id, None
-    return request_id, await _op_result_for_order(
-        db,
-        reseller,
-        existing_order,
-        expected_types=expected_types,
-        request_id=request_id,
-    )
 
 
 async def _flush_order_or_conflict(db: AsyncSession, request_id: str | None) -> None:
@@ -114,34 +63,6 @@ async def _flush_order_or_conflict(db: AsyncSession, request_id: str | None) -> 
         raise
 
 
-async def _rollback_limit_changes(
-    successful_sync: list[tuple[SubAccount, Node]],
-    *,
-    total_gb: int,
-    expire_at: datetime,
-) -> list[str]:
-    """Best-effort rollback for partially-synced nodes."""
-    rollback_errors: list[str] = []
-    for sa, n in successful_sync:
-        try:
-            adapter = get_adapter(n)
-            await adapter.update_user_limits(sa.remote_identifier, total_gb=int(total_gb), expire_at=expire_at)
-        except Exception as e:
-            rollback_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
-    return rollback_errors
-
-
-def _raise_remote_sync_failed_with_rollback(action: str, errors: list[str], rollback_errors: list[str]) -> None:
-    if not errors:
-        return
-    sample = " | ".join(errors[:3])
-    detail = f"{action} sync failed on {len(errors)} node(s): {sample}"
-    if rollback_errors:
-        rollback_sample = " | ".join(rollback_errors[:2])
-        detail = f"{detail} || rollback failed on {len(rollback_errors)} node(s): {rollback_sample}"
-    raise HTTPException(status_code=502, detail=detail)
-
-
 async def _new_unique_master_sub_token(db: AsyncSession) -> str:
     for _ in range(8):
         candidate = secrets.token_hex(16)
@@ -149,143 +70,6 @@ async def _new_unique_master_sub_token(db: AsyncSession) -> str:
         if q.scalar_one_or_none() is None:
             return candidate
     return secrets.token_hex(24)
-
-
-def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
-    if not direct:
-        return None
-    u = direct.strip()
-    if not u:
-        return None
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    if not base_url:
-        return u
-    b = base_url.strip()
-    if not b:
-        return u
-    try:
-        p = urlparse(b)
-        if p.scheme and p.netloc:
-            origin = f"{p.scheme}://{p.netloc}"
-        else:
-            origin = b
-    except Exception:
-        origin = b
-    if not u.startswith("/"):
-        u = "/" + u
-    return origin.rstrip("/") + u
-
-
-_POLICY_PRESET_DAYS = {
-    "7d": 7,
-    "1m": 31,
-    "3m": 90,
-    "6m": 180,
-    "1y": 365,
-}
-_DEFAULT_RENEWAL_TRAFFIC_GB = {20, 30, 50, 70, 100, 150, 200}
-
-
-def _policy_window_days(policy: dict) -> int:
-    try:
-        return max(0, min(36500, int(policy.get("delete_refund_window_days", 10))))
-    except Exception:
-        return 10
-
-
-def _policy_allowed_days(policy: dict) -> set[int]:
-    out: set[int] = set()
-    for preset in policy.get("allowed_duration_presets") or []:
-        days = _POLICY_PRESET_DAYS.get(str(preset or "").strip().lower())
-        if days:
-            out.add(days)
-    return out
-
-
-def _enforce_policy_days(policy: dict, days: int) -> None:
-    if not bool(policy.get("enabled")):
-        return
-    d = int(days)
-    min_days = int(policy.get("min_days", 1) or 1)
-    max_days = int(policy.get("max_days", 3650) or 3650)
-    if d < min_days or d > max_days:
-        raise HTTPException(status_code=400, detail=f"Allowed days range is {min_days}-{max_days}.")
-    if not bool(policy.get("allow_custom_days", True)):
-        allowed = _policy_allowed_days(policy)
-        if allowed and d not in allowed:
-            allowed_text = ", ".join(str(x) for x in sorted(allowed))
-            raise HTTPException(status_code=400, detail=f"This day value is not allowed for your account. Allowed: {allowed_text}")
-
-
-def _enforce_policy_traffic(policy: dict, gb: int) -> None:
-    if not bool(policy.get("enabled")):
-        return
-    if bool(policy.get("allow_custom_traffic", True)):
-        return
-    allowed = {int(x) for x in (policy.get("allowed_traffic_gb") or []) if str(x).isdigit()}
-    if allowed and int(gb) not in allowed:
-        allowed_text = ", ".join(str(x) for x in sorted(allowed))
-        raise HTTPException(status_code=400, detail=f"This traffic value is not allowed for your account. Allowed: {allowed_text}")
-
-
-def _enforce_edit_allowed(policy: dict, operation: str) -> None:
-    if bool(policy.get("enabled")) and bool(policy.get("restrict_edit_to_renewal_only")):
-        raise HTTPException(status_code=403, detail=f"{operation} is disabled; package renewal is the only allowed edit.")
-
-
-def _enforce_renewal_package_policy(policy: dict, days: int, gb: int) -> None:
-    if not (bool(policy.get("enabled")) and bool(policy.get("restrict_edit_to_renewal_only"))):
-        return
-
-    allowed_days = _policy_allowed_days(policy) or set(_POLICY_PRESET_DAYS.values())
-    if int(days) not in allowed_days:
-        allowed_text = ", ".join(str(x) for x in sorted(allowed_days))
-        raise HTTPException(status_code=400, detail=f"This renewal duration is not allowed. Allowed: {allowed_text}")
-
-    allowed_traffic = {int(x) for x in (policy.get("allowed_traffic_gb") or []) if str(x).isdigit()} or set(_DEFAULT_RENEWAL_TRAFFIC_GB)
-    if int(gb) not in allowed_traffic:
-        allowed_text = ", ".join(str(x) for x in sorted(allowed_traffic))
-        raise HTTPException(status_code=400, detail=f"This renewal traffic is not allowed. Allowed: {allowed_text}")
-
-
-def _user_expired(user: GuardinoUser) -> bool:
-    expire_at = user.expire_at
-    now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
-    return expire_at < now
-
-
-def _user_used_gb_float(user: GuardinoUser) -> float:
-    return float(user.used_bytes or 0) / float(BYTES_PER_GB)
-
-
-def _user_volume_exhausted(user: GuardinoUser) -> bool:
-    total_bytes = int(user.total_gb or 0) * BYTES_PER_GB
-    return total_bytes > 0 and int(user.used_bytes or 0) >= total_bytes
-
-
-def _enforce_delete_policy(user: GuardinoUser, policy: dict) -> None:
-    if not bool(policy.get("allow_user_delete", True)):
-        raise HTTPException(status_code=403, detail="User delete/refund is disabled for your account.")
-
-    if _user_expired(user) or _user_volume_exhausted(user):
-        raise HTTPException(status_code=400, detail="Expired or volume-exhausted users cannot be deleted/refunded.")
-
-    try:
-        used_limit = float(policy.get("delete_expired_used_gb_limit", 1.0))
-    except Exception:
-        used_limit = 1.0
-    if used_limit > 0 and _user_used_gb_float(user) > used_limit:
-        raise HTTPException(status_code=400, detail="User usage is above the configured delete/refund limit.")
-
-    window_days = _policy_window_days(policy)
-    if window_days > 0:
-        created_at = user.created_at
-        if not created_at:
-            raise HTTPException(status_code=400, detail="User creation date is missing.")
-        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
-        if now - created_at > timedelta(days=window_days):
-            raise HTTPException(status_code=400, detail=f"Delete/refund window expired ({window_days} days).")
 
 
 async def _delete_subaccounts_remote_first(
@@ -300,17 +84,17 @@ async def _delete_subaccounts_remote_first(
         n = node_map.get(sa.node_id)
         if n:
             try:
-                adapter = get_adapter(n)
+                adapter = await get_adapter_for_subaccount(db, sa, n)
                 await adapter.delete_user(sa.remote_identifier)
             except Exception as e:
-                errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+                errors.append(f"node#{sa.node_id}: {short_error(e)}")
         await db.delete(sa)
         deleted_local += 1
     return deleted_local, errors
 
 @router.post("/{user_id}/extend", response_model=OpResult)
 async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -326,8 +110,8 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
-    _enforce_edit_allowed(policy, "Extend")
-    _enforce_policy_days(policy, payload.days)
+    enforce_edit_allowed(policy, "Extend")
+    enforce_policy_days(policy, payload.days)
 
     # price: only time amount (optional)
     time_amount = 0
@@ -358,17 +142,17 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
             if not n:
                 remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
-            adapter = get_adapter(n)
+            adapter = await get_adapter_for_subaccount(db, s, n, user)
             try:
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
                 continue
             remote_synced_ok.append((s, n))
             try:
                 await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
                 continue
 
             # WGDashboard share links (legacy support) - best-effort
@@ -392,8 +176,8 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
             except Exception:
                 pass
     if remote_sync_errors:
-        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
-        _raise_remote_sync_failed_with_rollback("Extend", remote_sync_errors, rollback_errors)
+        rollback_errors = await rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at, db=db)
+        raise_remote_sync_failed_with_rollback("Extend", remote_sync_errors, rollback_errors)
     now = _now()
     charged = 0
     if time_amount > 0:
@@ -408,7 +192,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
 
 @router.post("/{user_id}/renew", response_model=OpResult)
 async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -425,9 +209,9 @@ async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: 
         raise HTTPException(status_code=404, detail="User not found")
 
     policy = await get_effective_user_policy(db, reseller.id)
-    _enforce_policy_days(policy, payload.days)
-    _enforce_policy_traffic(policy, payload.total_gb)
-    _enforce_renewal_package_policy(policy, payload.days, payload.total_gb)
+    enforce_policy_days(policy, payload.days)
+    enforce_policy_traffic(policy, payload.total_gb)
+    enforce_renewal_package_policy(policy, payload.days, payload.total_gb)
 
     qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs.scalars().all()
@@ -497,20 +281,20 @@ async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: 
             remote_sync_errors.append(f"node#{s.node_id}: node not found")
             continue
         try:
-            adapter = get_adapter(n)
+            adapter = await get_adapter_for_subaccount(db, s, n, user)
             await adapter.update_user_limits(s.remote_identifier, total_gb=new_total_gb, expire_at=new_expire_at)
             if reset_usage:
                 await adapter.reset_usage(s.remote_identifier)
                 s.used_bytes = 0
             await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
         except Exception as e:
-            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
             continue
         remote_synced_ok.append((s, n))
 
     if remote_sync_errors:
-        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
-        _raise_remote_sync_failed_with_rollback("Renew", remote_sync_errors, rollback_errors)
+        rollback_errors = await rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at, db=db)
+        raise_remote_sync_failed_with_rollback("Renew", remote_sync_errors, rollback_errors)
 
     user.total_gb = new_total_gb
     user.expire_at = new_expire_at
@@ -536,7 +320,7 @@ async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: 
 
 @router.post("/{user_id}/decrease-time", response_model=OpResult)
 async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -552,8 +336,8 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
-    _enforce_edit_allowed(policy, "Decrease time")
-    _enforce_policy_days(policy, payload.days)
+    enforce_edit_allowed(policy, "Decrease time")
+    enforce_policy_days(policy, payload.days)
 
     order = Order(
         reseller_id=reseller.id,
@@ -584,17 +368,17 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
             if not n:
                 remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
-            adapter = get_adapter(n)
+            adapter = await get_adapter_for_subaccount(db, s, n, user)
             try:
                 await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
                 continue
             remote_synced_ok.append((s, n))
             try:
                 await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
                 continue
 
             # WGDashboard share links (legacy support) - best-effort
@@ -618,8 +402,8 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
             except Exception:
                 pass
     if remote_sync_errors:
-        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
-        _raise_remote_sync_failed_with_rollback("Decrease time", remote_sync_errors, rollback_errors)
+        rollback_errors = await rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at, db=db)
+        raise_remote_sync_failed_with_rollback("Decrease time", remote_sync_errors, rollback_errors)
 
     now = _now()
     refund_amount = 0
@@ -644,7 +428,7 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
 
 @router.post("/{user_id}/add-traffic", response_model=OpResult)
 async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -660,8 +444,8 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request
     if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
-    _enforce_edit_allowed(policy, "Add traffic")
-    _enforce_policy_traffic(policy, payload.add_gb)
+    enforce_edit_allowed(policy, "Add traffic")
+    enforce_policy_traffic(policy, payload.add_gb)
 
     qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
     subs = qs.scalars().all()
@@ -694,17 +478,17 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request
         if not n:
             remote_sync_errors.append(f"node#{s.node_id}: node not found")
             continue
-        adapter = get_adapter(n)
+        adapter = await get_adapter_for_subaccount(db, s, n, user)
         try:
             await adapter.update_user_limits(s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
         except Exception as e:
-            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
             continue
         remote_synced_ok.append((s, n))
         try:
             await enable_if_needed(n.panel_type, adapter, s.remote_identifier)
         except Exception as e:
-            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
             continue
         # WGDashboard: also update share link ExpireDate if we have ShareID in cached url
         try:
@@ -722,8 +506,8 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request
             pass
 
     if remote_sync_errors:
-        rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
-        _raise_remote_sync_failed_with_rollback("Add traffic", remote_sync_errors, rollback_errors)
+        rollback_errors = await rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at, db=db)
+        raise_remote_sync_failed_with_rollback("Add traffic", remote_sync_errors, rollback_errors)
 
     now = _now()
     reseller.balance -= total_amount
@@ -735,7 +519,7 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request
 
 @router.post("/{user_id}/change-nodes", response_model=OpResult)
 async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(block_if_balance_zero)):
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -778,15 +562,15 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
                     remove_errors.append(f"node#{sa.node_id}: node not found")
                     continue
                 try:
-                    adapter = get_adapter(n)
+                    adapter = await get_adapter_for_subaccount(db, sa, n, user)
                     await adapter.delete_user(sa.remote_identifier)
                 except Exception as e:
-                    remove_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+                    remove_errors.append(f"node#{sa.node_id}: {short_error(e)}")
                     continue
                 await db.delete(sa)
                 removed_count += 1
 
-    _raise_remote_sync_failed("Change nodes (remove)", remove_errors)
+    raise_remote_sync_failed("Change nodes (remove)", remove_errors)
 
     charged = 0
     order_id = None
@@ -797,6 +581,7 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
         nodes = await resolve_allowed_nodes(db, reseller.id, add_ids, node_group=None)
         nodes = [n for n in nodes if n.id in add_ids and n.id not in current_ids]
         if nodes:
+            allocation_map = await get_enabled_allocation_map(db, reseller_id=reseller.id, node_ids=[n.id for n in nodes])
             # Charge per GB for adding this user to new nodes: price_per_gb * user.total_gb for each added node
             total_amount, per_node, _ = await calculate_price(db, reseller, nodes, total_gb=int(user.total_gb), days=0)
             if reseller.balance < total_amount:
@@ -807,17 +592,19 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
             order_id = order.id
 
             # Provision on each added node; if partial failure happens, try best-effort cleanup.
-            provisioned_remote: list[tuple[Node, str]] = []
+            provisioned_remote: list[tuple[Node, object, str]] = []
             try:
                 for n in nodes:
-                    adapter = get_adapter(n)
+                    allocation = allocation_map.get(n.id)
+                    adapter = get_adapter_for_allocation(n, allocation)
                     pr = await adapter.provision_user(label=user.label, total_gb=int(user.total_gb), expire_at=user.expire_at)
-                    provisioned_remote.append((n, pr.remote_identifier))
-                    direct_url = _normalize_url(pr.direct_sub_url, n.base_url)
+                    provisioned_remote.append((n, allocation, pr.remote_identifier))
+                    direct_url = normalize_url(pr.direct_sub_url, n.base_url)
                     db.add(
                         SubAccount(
                             user_id=user.id,
                             node_id=n.id,
+                            allocation_id=allocation.id if allocation else None,
                             remote_identifier=pr.remote_identifier,
                             panel_sub_url_cached=direct_url,
                             panel_sub_url_cached_at=now if direct_url else None,
@@ -826,13 +613,13 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
                     )
             except Exception as e:
                 cleanup_errors: list[str] = []
-                for pn, rid in provisioned_remote:
+                for pn, allocation, rid in provisioned_remote:
                     try:
-                        cleanup_adapter = get_adapter(pn)
+                        cleanup_adapter = get_adapter_for_allocation(pn, allocation)
                         await cleanup_adapter.delete_user(rid)
                     except Exception as ce:
-                        cleanup_errors.append(f"node#{pn.id}: {_short_err(ce)}")
-                detail = f"Change nodes provision failed: {_short_err(e)}"
+                        cleanup_errors.append(f"node#{pn.id}: {short_error(ce)}")
+                detail = f"Change nodes provision failed: {short_error(e)}"
                 if cleanup_errors:
                     detail = f"{detail}; cleanup_failures={len(cleanup_errors)}"
                 raise HTTPException(status_code=502, detail=detail)
@@ -851,7 +638,7 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
 @router.post("/{user_id}/refund", response_model=OpResult)
 async def refund_or_delete(user_id: int, payload: RefundRequest, request: Request, db: AsyncSession = Depends(get_db), reseller: Reseller = Depends(require_reseller)):
     expected_type = OrderType.delete if payload.action == "delete" else OrderType.refund
-    request_id, replay = await _existing_idempotent_result(
+    request_id, replay = await existing_op_result(
         db,
         reseller,
         request,
@@ -872,17 +659,17 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
     policy = await get_effective_user_policy(db, reseller.id)
 
     # Determine refundable GB under policy (window + remaining GB).
-    refundable = refundable_gb_for_user(user, window_days=_policy_window_days(policy))
+    refundable = refundable_gb_for_user(user, window_days=policy_refund_window_days(policy))
     if payload.action == "delete":
-        _enforce_delete_policy(user, policy)
+        enforce_delete_policy(user, policy)
         refund_gb = 0
     else:
-        _enforce_edit_allowed(policy, "Decrease traffic")
+        enforce_edit_allowed(policy, "Decrease traffic")
         if refundable <= 0:
             raise HTTPException(status_code=400, detail="Refund window expired or no remaining volume")
         if payload.decrease_gb is None:
             raise HTTPException(status_code=400, detail="decrease_gb is required for decrease")
-        _enforce_policy_traffic(policy, payload.decrease_gb)
+        enforce_policy_traffic(policy, payload.decrease_gb)
         refund_gb = min(int(payload.decrease_gb), int(refundable))
         if refund_gb <= 0:
             raise HTTPException(status_code=400, detail="Nothing to refund")
@@ -890,10 +677,16 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
     # Find the create order snapshot price (fallback to reseller current price)
     q1 = await db.execute(select(Order).where(Order.user_id == user.id, Order.type == OrderType.create).order_by(Order.id.asc()))
     create_order = q1.scalars().first()
-    price_per_gb = int(create_order.price_per_gb_snapshot) if create_order and create_order.price_per_gb_snapshot is not None else int(reseller.price_per_gb)
+    user_meta = user.meta if isinstance(user.meta, dict) else {}
+    if create_order and create_order.price_per_gb_snapshot is not None:
+        price_per_gb = int(create_order.price_per_gb_snapshot)
+    elif user_meta.get("billing_origin") == "external_import":
+        price_per_gb = 0
+    else:
+        price_per_gb = int(reseller.price_per_gb)
 
     if payload.action == "delete":
-        used_float = min(float(user.total_gb or 0), _user_used_gb_float(user))
+        used_float = min(float(user.total_gb or 0), user_used_gb_float(user))
         gross_amount = int(user.total_gb or 0) * int(price_per_gb)
         used_amount = 0 if used_float < 1.0 else int(round(used_float * int(price_per_gb)))
         refund_amount = max(0, gross_amount - used_amount)
@@ -932,7 +725,7 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
 
     if payload.action == "delete":
         _removed, remote_delete_errors = await _delete_subaccounts_remote_first(db, subs, node_map)
-        _raise_remote_sync_failed("Delete", remote_delete_errors)
+        raise_remote_sync_failed("Delete", remote_delete_errors)
         user.status = UserStatus.deleted
         user.used_bytes = 0
     else:
@@ -944,15 +737,15 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
                 remote_limit_errors.append(f"node#{sa.node_id}: node not found")
                 continue
             try:
-                adapter = get_adapter(n)
+                adapter = await get_adapter_for_subaccount(db, sa, n, user)
                 await adapter.update_user_limits(sa.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             except Exception as e:
-                remote_limit_errors.append(f"node#{sa.node_id}: {_short_err(e)}")
+                remote_limit_errors.append(f"node#{sa.node_id}: {short_error(e)}")
                 continue
             remote_synced_ok.append((sa, n))
         if remote_limit_errors:
-            rollback_errors = await _rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at)
-            _raise_remote_sync_failed_with_rollback("Refund/decrease", remote_limit_errors, rollback_errors)
+            rollback_errors = await rollback_limit_changes(remote_synced_ok, total_gb=old_total_gb, expire_at=old_expire_at, db=db)
+            raise_remote_sync_failed_with_rollback("Refund/decrease", remote_limit_errors, rollback_errors)
 
     now = _now()
     if refund_amount > 0:
@@ -1005,15 +798,15 @@ async def set_user_status(user_id: int, payload: SetStatusRequest, db: AsyncSess
                 remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
             try:
-                adapter = get_adapter(n)
+                adapter = await get_adapter_for_subaccount(db, s, n, user)
                 if new_status == UserStatus.active:
                     await adapter.enable_user(s.remote_identifier)
                 else:
                     await adapter.disable_user(s.remote_identifier)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
 
-    _raise_remote_sync_failed("Set status", remote_sync_errors)
+    raise_remote_sync_failed("Set status", remote_sync_errors)
 
     await db.commit()
     return OpResult(ok=True, charged_amount=0, refunded_amount=0, new_balance=reseller.balance, user_id=user.id)
@@ -1041,14 +834,14 @@ async def reset_user_usage(user_id: int, db: AsyncSession = Depends(get_db), res
                 remote_sync_errors.append(f"node#{s.node_id}: node not found")
                 continue
             try:
-                adapter = get_adapter(n)
+                adapter = await get_adapter_for_subaccount(db, s, n, user)
                 await adapter.reset_usage(s.remote_identifier)
             except Exception as e:
-                remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+                remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
                 continue
             s.used_bytes = 0
 
-    _raise_remote_sync_failed("Reset usage", remote_sync_errors)
+    raise_remote_sync_failed("Reset usage", remote_sync_errors)
 
     user.used_bytes = 0
     await db.commit()
@@ -1079,17 +872,17 @@ async def revoke_user_subscription(user_id: int, db: AsyncSession = Depends(get_
             remote_sync_errors.append(f"node#{s.node_id}: node not found")
             continue
         try:
-            adapter = get_adapter(n)
+            adapter = await get_adapter_for_subaccount(db, s, n, user)
             pr = await adapter.revoke_subscription(label=user.label, remote_identifier=s.remote_identifier, total_gb=int(user.total_gb), expire_at=user.expire_at)
             # WGDashboard may return a NEW identifier.
             s.remote_identifier = pr.remote_identifier
             if pr.direct_sub_url:
-                s.panel_sub_url_cached = _normalize_url(pr.direct_sub_url, n.base_url) or pr.direct_sub_url
+                s.panel_sub_url_cached = normalize_url(pr.direct_sub_url, n.base_url) or pr.direct_sub_url
                 s.panel_sub_url_cached_at = now
         except Exception as e:
-            remote_sync_errors.append(f"node#{s.node_id}: {_short_err(e)}")
+            remote_sync_errors.append(f"node#{s.node_id}: {short_error(e)}")
 
-    _raise_remote_sync_failed("Revoke subscription", remote_sync_errors)
+    raise_remote_sync_failed("Revoke subscription", remote_sync_errors)
 
     # Rotate master subscription token as well so old central link is invalidated.
     old_master_sub_token = user.master_sub_token

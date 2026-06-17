@@ -4,7 +4,6 @@ import html
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -17,38 +16,17 @@ from app.models.node import Node, PanelType
 from app.models.node_allocation import NodeAllocation
 from app.models.subaccount import SubAccount
 from app.models.user import GuardinoUser, NodeSelectionMode, UserStatus
-from app.services.adapters.factory import get_adapter
 from app.services.http_client import build_async_client
+from app.services.panel_access import (
+    get_adapter_for_allocation,
+    get_adapter_for_subaccount,
+    get_enabled_allocation_map,
+)
 from app.services.subscription_tokens import is_master_sub_token_revoked
 from app.services.subscription_merge import merge_subscriptions
+from app.services.urls import normalize_url
 
 router = APIRouter()
-
-
-def _normalize_url(direct: str | None, base_url: str | None) -> str | None:
-    if not direct:
-        return None
-    u = direct.strip()
-    if not u:
-        return None
-    if u.startswith("http://") or u.startswith("https://"):
-        return u
-    if not base_url:
-        return u
-    b = base_url.strip()
-    if not b:
-        return u
-    try:
-        p = urlparse(b)
-        if p.scheme and p.netloc:
-            origin = f"{p.scheme}://{p.netloc}"
-        else:
-            origin = b
-    except Exception:
-        origin = b
-    if not u.startswith("/"):
-        u = "/" + u
-    return origin.rstrip("/") + u
 
 
 def _wants_html(request: Request) -> bool:
@@ -1508,19 +1486,26 @@ async def subscription(token: str, request: Request, db: AsyncSession = Depends(
             )
         )
         eligible = [n for n in qn.scalars().all() if user.node_group in (n.tags or [])]
+        allocation_map = await get_enabled_allocation_map(
+            db,
+            reseller_id=user.owner_reseller_id,
+            node_ids=[n.id for n in eligible],
+        )
         qs = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
         existing = {sa.node_id: sa for sa in qs.scalars().all()}
         for n in eligible:
             if n.id in existing:
                 continue
             try:
-                adapter = get_adapter(n)
+                allocation = allocation_map.get(n.id)
+                adapter = get_adapter_for_allocation(n, allocation)
                 pr = await adapter.provision_user(label=user.label, total_gb=user.total_gb, expire_at=user.expire_at)
                 sa = SubAccount(
                     user_id=user.id,
                     node_id=n.id,
+                    allocation_id=allocation.id if allocation else None,
                     remote_identifier=pr.remote_identifier,
-                    panel_sub_url_cached=_normalize_url(pr.direct_sub_url, n.base_url),
+                    panel_sub_url_cached=normalize_url(pr.direct_sub_url, n.base_url),
                     panel_sub_url_cached_at=now if pr.direct_sub_url else None,
                     used_bytes=0,
                 )
@@ -1564,16 +1549,16 @@ async def subscription(token: str, request: Request, db: AsyncSession = Depends(
                 )
                 continue
 
-            direct = _normalize_url(sa.panel_sub_url_cached, node.base_url)
+            direct = normalize_url(sa.panel_sub_url_cached, node.base_url)
             if direct and direct != sa.panel_sub_url_cached:
                 sa.panel_sub_url_cached = direct
                 changed_cache = True
 
             if not direct:
                 try:
-                    adapter = get_adapter(node)
+                    adapter = await get_adapter_for_subaccount(db, sa, node, user)
                     fresh = await adapter.get_direct_subscription_url(sa.remote_identifier)
-                    direct = _normalize_url(fresh, node.base_url)
+                    direct = normalize_url(fresh, node.base_url)
                     if direct:
                         sa.panel_sub_url_cached = direct
                         sa.panel_sub_url_cached_at = now
@@ -1604,9 +1589,9 @@ async def subscription(token: str, request: Request, db: AsyncSession = Depends(
 
             if not ok:
                 try:
-                    adapter = get_adapter(node)
+                    adapter = await get_adapter_for_subaccount(db, sa, node, user)
                     fresh = await adapter.get_direct_subscription_url(sa.remote_identifier)
-                    refreshed_direct = _normalize_url(fresh, node.base_url)
+                    refreshed_direct = normalize_url(fresh, node.base_url)
                     if refreshed_direct and refreshed_direct != direct:
                         sa.panel_sub_url_cached = refreshed_direct
                         sa.panel_sub_url_cached_at = now
@@ -1671,7 +1656,7 @@ async def download_wg_config(token: str, node_id: int, db: AsyncSession = Depend
     if not node or node.panel_type != PanelType.wg_dashboard:
         raise HTTPException(status_code=404, detail="Node is not WGDashboard")
 
-    adapter = get_adapter(node)
+    adapter = await get_adapter_for_subaccount(db, sub, node, user)
     if not hasattr(adapter, "download_peer_config"):
         raise HTTPException(status_code=501, detail="WGDashboard download is not supported by adapter")
 
