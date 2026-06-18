@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, func, not_, or_, select
+from sqlalchemy import BigInteger, and_, cast, func, not_, or_, select
 from datetime import datetime, timezone
 from app.core.db import get_db
 from app.api.deps import require_reseller, enforce_balance_or_readonly_users
@@ -48,9 +48,10 @@ async def list_users(
     now = datetime.now(timezone.utc)
     create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
     on_hold_cond = and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")
+    total_bytes = cast(GuardinoUser.total_gb, BigInteger) * BYTES_PER_GB
     limited_cond = and_(
         GuardinoUser.total_gb > 0,
-        GuardinoUser.used_bytes >= GuardinoUser.total_gb * BYTES_PER_GB,
+        GuardinoUser.used_bytes >= total_bytes,
     )
     expired_cond = GuardinoUser.expire_at < now
     if status_filter == "active":

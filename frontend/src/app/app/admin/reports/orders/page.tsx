@@ -24,6 +24,12 @@ type OrderRow = {
   price_per_gb_snapshot: number | null;
   created_at: string | null;
 };
+type OrderSummary = {
+  total: number;
+  completed: number;
+  pending: number;
+  failed: number;
+};
 
 const ADMIN_FETCH_LIMIT = 200;
 
@@ -79,6 +85,7 @@ export default function OrdersPage() {
   const [resellerQuery, setResellerQuery] = React.useState("");
   const [resellers, setResellers] = React.useState<ResellerMini[]>([]);
   const [items, setItems] = React.useState<OrderRow[]>([]);
+  const [summary, setSummary] = React.useState<OrderSummary | null>(null);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(100);
@@ -96,6 +103,7 @@ export default function OrdersPage() {
       const endpoint = isAdmin ? "/api/v1/admin/reports/orders" : "/api/v1/reseller/reports/orders";
       const res = await apiFetch<any>(`${endpoint}?${q.toString()}`);
       setItems((res.items || []) as OrderRow[]);
+      setSummary((res.summary || null) as OrderSummary | null);
       setTotal(res.total || 0);
     } catch (e: any) {
       push({ title: "خطا", desc: String(e.message || e), type: "error" });
@@ -140,6 +148,7 @@ export default function OrdersPage() {
   const metricCardClass =
     "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
   const stats = React.useMemo(() => {
+    if (summary) return summary;
     const completed = items.filter((x) => (x.status || "").toLowerCase() === "completed").length;
     const pending = items.filter((x) => (x.status || "").toLowerCase() === "pending").length;
     const failed = items.filter((x) => {
@@ -147,7 +156,7 @@ export default function OrdersPage() {
       return s === "failed" || s === "rolled_back";
     }).length;
     return { total: items.length, completed, pending, failed };
-  }, [items]);
+  }, [items, summary]);
 
   return (
     <div className="space-y-6">

@@ -23,6 +23,12 @@ type LedgerRow = {
   balance_after: number;
   occurred_at: string | null;
 };
+type LedgerSummary = {
+  count: number;
+  in_amount: number;
+  out_amount: number;
+  net: number;
+};
 
 const ADMIN_FETCH_LIMIT = 200;
 
@@ -78,6 +84,7 @@ export default function LedgerPage() {
   const [resellerQuery, setResellerQuery] = React.useState("");
   const [resellers, setResellers] = React.useState<ResellerMini[]>([]);
   const [items, setItems] = React.useState<LedgerRow[]>([]);
+  const [summary, setSummary] = React.useState<LedgerSummary | null>(null);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(100);
@@ -95,6 +102,7 @@ export default function LedgerPage() {
       const endpoint = isAdmin ? "/api/v1/admin/reports/ledger" : "/api/v1/reseller/reports/ledger";
       const res = await apiFetch<any>(`${endpoint}?${q.toString()}`);
       setItems((res.items || []) as LedgerRow[]);
+      setSummary((res.summary || null) as LedgerSummary | null);
       setTotal(res.total || 0);
     } catch (e: any) {
       push({ title: "خطا", desc: String(e.message || e), type: "error" });
@@ -139,6 +147,14 @@ export default function LedgerPage() {
   const metricCardClass =
     "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
   const stats = React.useMemo(() => {
+    if (summary) {
+      return {
+        count: summary.count,
+        inAmount: summary.in_amount,
+        outAmount: summary.out_amount,
+        net: summary.net,
+      };
+    }
     let inAmount = 0;
     let outAmount = 0;
     for (const row of items) {
@@ -151,7 +167,7 @@ export default function LedgerPage() {
       outAmount,
       net: inAmount - outAmount,
     };
-  }, [items]);
+  }, [items, summary]);
 
   return (
     <div className="space-y-6">

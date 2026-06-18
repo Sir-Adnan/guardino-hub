@@ -73,6 +73,7 @@ type TwoFactorSetup = {
   period_seconds: number;
   algorithm: string;
 };
+type SettingsTabKey = "security" | "appearance" | "defaults" | "policy";
 
 const EMPTY_DEFAULTS: UserDefaults = {
   default_pricing_mode: "per_node",
@@ -199,6 +200,7 @@ export default function SettingsPage() {
   const r = useRouter();
   const { push } = useToast();
   const { me } = useAuth();
+  const [activeTab, setActiveTab] = React.useState<SettingsTabKey>("security");
 
   const [loadingDefaults, setLoadingDefaults] = React.useState(true);
   const [resellerDefaults, setResellerDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
@@ -515,6 +517,12 @@ export default function SettingsPage() {
     "rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]";
   const guideBoxClass =
     "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
+  const settingsTabs: Array<{ key: SettingsTabKey; label: string; desc: string; icon: React.ReactNode }> = [
+    { key: "security" as const, label: "امنیت", desc: "2FA و رمز عبور", icon: <ShieldCheck size={16} /> },
+    { key: "appearance" as const, label: "ظاهر", desc: "تم و رنگ پنل", icon: <Palette size={16} /> },
+    { key: "defaults" as const, label: "پیش‌فرض‌ها", desc: "ساخت کاربر و نودها", icon: <Sparkles size={16} /> },
+    { key: "policy" as const, label: "سیاست‌ها", desc: "قوانین رسیلرها", icon: <KeyRound size={16} /> },
+  ].filter((tab) => tab.key !== "policy" || me?.role === "admin");
 
   return (
     <div className="space-y-6">
@@ -535,7 +543,61 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <Card className="overflow-hidden">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {settingsTabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={
+                "flex items-center gap-3 rounded-xl border p-3 text-right transition-all duration-200 " +
+                (active
+                  ? "border-[hsl(var(--accent)/0.42)] bg-[hsl(var(--accent)/0.12)] text-[hsl(var(--fg))] shadow-[0_12px_28px_-22px_hsl(var(--accent)/0.9)]"
+                  : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] text-[hsl(var(--fg))]/72 hover:border-[hsl(var(--accent)/0.30)] hover:bg-[hsl(var(--surface-card-3))]")
+              }
+            >
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[hsl(var(--surface-card-3))] text-[hsl(var(--accent))]">
+                {tab.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold">{tab.label}</span>
+                <span className="block truncate text-xs opacity-70">{tab.desc}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <style>{`
+        .settings-tab-content:not([data-settings-tab="security"]) > .settings-logout {
+          display: none;
+        }
+        .settings-tab-content[data-settings-tab="security"] > :nth-child(1),
+        .settings-tab-content[data-settings-tab="security"] > :nth-child(3),
+        .settings-tab-content[data-settings-tab="security"] > :nth-child(4),
+        .settings-tab-content[data-settings-tab="security"] > :nth-child(5),
+        .settings-tab-content[data-settings-tab="security"] > :nth-child(6) {
+          display: none;
+        }
+        .settings-tab-content[data-settings-tab="appearance"] > :nth-child(n + 2) {
+          display: none;
+        }
+        .settings-tab-content[data-settings-tab="defaults"] > :nth-child(1),
+        .settings-tab-content[data-settings-tab="defaults"] > :nth-child(2),
+        .settings-tab-content[data-settings-tab="defaults"] > :nth-child(5),
+        .settings-tab-content[data-settings-tab="defaults"] > :nth-child(6) {
+          display: none;
+        }
+        .settings-tab-content[data-settings-tab="policy"] > :nth-child(1),
+        .settings-tab-content[data-settings-tab="policy"] > :nth-child(2),
+        .settings-tab-content[data-settings-tab="policy"] > :nth-child(3),
+        .settings-tab-content[data-settings-tab="policy"] > :nth-child(4) {
+          display: none;
+        }
+      `}</style>
+
+      <Card className={activeTab === "security" ? "overflow-hidden" : "hidden"}>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -716,8 +778,8 @@ export default function SettingsPage() {
           <div className="text-xl font-semibold">تنظیمات</div>
           <div className="text-sm text-[hsl(var(--fg))]/70">تنظیمات ظاهری، پیش‌فرض‌ها و امنیت حساب</div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 lg:grid-cols-3">
+        <CardContent data-settings-tab={activeTab} className="settings-tab-content space-y-6">
+          <div className={activeTab === "appearance" ? "grid gap-4 lg:grid-cols-3" : "hidden"}>
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-1)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-1)/0.75)]">
               <div className="text-sm font-medium flex items-center gap-2"><Sparkles size={15} /> حالت نمایش</div>
               <div className="flex flex-wrap gap-2">
@@ -1213,7 +1275,7 @@ export default function SettingsPage() {
             </>
           ) : null}
 
-          <div className="pt-2">
+          <div className="settings-logout pt-2">
             <Button variant="outline" onClick={onLogout}>خروج از حساب</Button>
           </div>
         </CardContent>

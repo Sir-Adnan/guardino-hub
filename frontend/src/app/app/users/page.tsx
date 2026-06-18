@@ -633,6 +633,30 @@ export default function UsersPage() {
     return items;
   }
 
+  async function copyPrimaryLinkForUser(u: UserOut, ev?: React.MouseEvent<HTMLElement>) {
+    try {
+      const res = await ensureQuickLinks(u, false);
+      if (!res) {
+        push({ title: "دریافت لینک‌ها ناموفق بود", type: "error" });
+        return;
+      }
+      const direct = (res.node_links || [])
+        .map((nl) => ({ link: resolveNodeLink(nl), name: nodeLinkName(nl) }))
+        .filter((x) => !!x.link);
+      const master = showMasterSub && res.master_link ? res.master_link : "";
+      const target = direct[0] || (master ? { link: master, name: "Guardino" } : null);
+      if (!target?.link) {
+        push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+        return;
+      }
+      const ok = await copyText(target.link);
+      if (ok) showCopyHint(ev || null, direct.length === 1 && !master ? "لینک اشتراک کپی شد" : `لینک ${target.name} کپی شد`);
+      else push({ title: t("common.failed"), type: "error" });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
   async function openLinks(u: UserOut) {
     setLinksUser(u);
     setLinksOpen(true);
@@ -665,7 +689,7 @@ export default function UsersPage() {
     try {
       const res = await fetchUserLinks(u, true);
       const direct = extractDirectLinks(res);
-      const lines = [...direct, res.master_link].filter(Boolean).join("\n");
+      const lines = [...direct, showMasterSub ? res.master_link : null].filter(Boolean).join("\n");
       if (!lines) {
         push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
         return;
@@ -989,7 +1013,9 @@ export default function UsersPage() {
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
             const isSingle = viewMode === "single";
-            const actionSize = isSingle ? "h-11 w-11" : "h-10 w-10";
+            const actionSize = isSingle ? "h-9 w-9 sm:h-10 sm:w-10" : "h-9 w-9";
+            const iconButtonClass = `${actionSize} rounded-full border-transparent bg-transparent p-0 text-[hsl(var(--fg))]/62 shadow-none transition-all duration-200 hover:bg-[hsl(var(--accent)/0.10)] hover:text-[hsl(var(--accent))]`;
+            const iconSize = isSingle ? 17 : 16;
 
             return (
               <Card
@@ -1051,10 +1077,10 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <Button
-                      variant="outline"
-                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-400/60 hover:bg-sky-500/10`}
+                      variant="ghost"
+                      className={iconButtonClass}
                       size="sm"
                       title={t("users.links")}
                       aria-label={t("users.links")}
@@ -1064,11 +1090,11 @@ export default function UsersPage() {
                         openLinks(u);
                       }}
                     >
-                      <Layers size={18} />
+                      <Layers size={iconSize} />
                     </Button>
                     <Button
-                      variant="outline"
-                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/60 hover:bg-indigo-500/10`}
+                      variant="ghost"
+                      className={iconButtonClass}
                       size="sm"
                       title={t("users.details")}
                       aria-label={t("users.details")}
@@ -1078,22 +1104,36 @@ export default function UsersPage() {
                         router.push(`/app/users/${u.id}`);
                       }}
                     >
-                      <SquarePen size={18} />
+                      <SquarePen size={iconSize} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className={iconButtonClass}
+                      size="sm"
+                      title="کپی سریع لینک اشتراک"
+                      aria-label="کپی سریع لینک اشتراک"
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyPrimaryLinkForUser(u, e);
+                      }}
+                    >
+                      <Copy size={iconSize} />
                     </Button>
                     <div onClick={(e) => e.stopPropagation()} onMouseEnter={() => ensureQuickLinks(u, false)}>
                       <Menu
                         className="min-w-[260px]"
                         trigger={
                           <Button
-                            variant="outline"
-                            className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-400/60 hover:bg-teal-500/10`}
+                            variant="ghost"
+                            className={iconButtonClass}
                             size="sm"
                             title="کپی لینک اشتراک"
                             aria-label="کپی لینک اشتراک"
                             disabled={busy}
                             onClick={() => ensureQuickLinks(u, false)}
                           >
-                            <Copy size={18} />
+                            <Link2 size={iconSize} />
                           </Button>
                         }
                         items={quickLinkMenuItems(u)}
@@ -1128,8 +1168,8 @@ export default function UsersPage() {
                       <Link2 size={18} />
                     </Button>
                     <Button
-                      variant="outline"
-                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-fuchsia-400/60 hover:bg-fuchsia-500/10`}
+                      variant="ghost"
+                      className={iconButtonClass}
                       size="sm"
                       title="QR لینک‌ها"
                       aria-label="QR لینک‌ها"
@@ -1139,13 +1179,13 @@ export default function UsersPage() {
                         openQr(u);
                       }}
                     >
-                      <QrCode size={18} />
+                      <QrCode size={iconSize} />
                     </Button>
                     {isSingle ? (
                       <>
                         <Button
-                          variant="outline"
-                          className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-400/60 hover:bg-amber-500/10`}
+                          variant="ghost"
+                          className={iconButtonClass}
                           size="sm"
                           title={t("users.resetUsage")}
                           aria-label={t("users.resetUsage")}
@@ -1155,11 +1195,11 @@ export default function UsersPage() {
                             ask("reset", u);
                           }}
                         >
-                          <Gauge size={18} />
+                          <Gauge size={iconSize} />
                         </Button>
                         <Button
-                          variant="outline"
-                          className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-400/60 hover:bg-rose-500/10`}
+                          variant="ghost"
+                          className={iconButtonClass}
                           size="sm"
                           title={t("users.revoke")}
                           aria-label={t("users.revoke")}
@@ -1169,7 +1209,7 @@ export default function UsersPage() {
                             ask("revoke", u);
                           }}
                         >
-                          <Unlink2 size={18} />
+                          <Unlink2 size={iconSize} />
                         </Button>
                       </>
                     ) : null}
@@ -1178,8 +1218,8 @@ export default function UsersPage() {
                       <Menu
                         trigger={
                           <Button
-                            variant="outline"
-                            className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.6)] hover:bg-[hsl(var(--accent)/0.12)]`}
+                            variant="ghost"
+                            className={iconButtonClass}
                             size="sm"
                             title={t("users.actions")}
                             disabled={busy}
