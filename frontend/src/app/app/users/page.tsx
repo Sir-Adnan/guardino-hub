@@ -39,6 +39,7 @@ import {
   Ban,
   CheckCircle2,
   Clock3,
+  HelpCircle,
   Hourglass,
   LayoutGrid,
   List,
@@ -115,7 +116,7 @@ const DURATION_PRESETS = [
 const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
 type StatusFilter = "all" | "active" | "disabled" | "expired" | "limited" | "on_hold";
-type SortMode = "priority" | "expiry" | "usage" | "newest";
+type SortMode = "priority" | "expiry" | "usage" | "usage_low" | "volume_high" | "volume_low" | "newest" | "oldest" | "name";
 type ViewMode = "grid2" | "single";
 
 function bytesToGb(bytes: number) {
@@ -466,8 +467,33 @@ export default function UsersPage() {
       return arr;
     }
 
+    if (sortMode === "oldest") {
+      arr.sort((a, b) => (a.id || 0) - (b.id || 0));
+      return arr;
+    }
+
+    if (sortMode === "name") {
+      arr.sort((a, b) => (a.label || "").localeCompare(b.label || "", "fa"));
+      return arr;
+    }
+
     if (sortMode === "usage") {
       arr.sort((a, b) => computePriority(b).percent - computePriority(a).percent);
+      return arr;
+    }
+
+    if (sortMode === "usage_low") {
+      arr.sort((a, b) => computePriority(a).percent - computePriority(b).percent);
+      return arr;
+    }
+
+    if (sortMode === "volume_high") {
+      arr.sort((a, b) => Number(b.total_gb || 0) - Number(a.total_gb || 0));
+      return arr;
+    }
+
+    if (sortMode === "volume_low") {
+      arr.sort((a, b) => Number(a.total_gb || 0) - Number(b.total_gb || 0));
       return arr;
     }
 
@@ -718,7 +744,7 @@ export default function UsersPage() {
   const qrItems = React.useMemo(() => {
     if (!qrLinks) return [] as Array<{ key: string; title: string; subtitle: string; url: string; isWg: boolean }>;
     const out: Array<{ key: string; title: string; subtitle: string; url: string; isWg: boolean }> = [];
-    if (qrLinks.master_link) {
+    if (showMasterSub && qrLinks.master_link) {
       out.push({
         key: "master",
         title: "اشتراک مرکزی",
@@ -742,7 +768,7 @@ export default function UsersPage() {
       });
     }
     return out;
-  }, [nodeMap, qrLinks]);
+  }, [nodeMap, qrLinks, showMasterSub]);
 
   async function op(userId: number, path: string, body: any) {
     setBusyId(userId);
@@ -862,6 +888,51 @@ export default function UsersPage() {
     );
   }
 
+  function HelpHint({ text }: { text: string }) {
+    return (
+      <span className="group/help relative inline-flex align-middle">
+        <button
+          type="button"
+          aria-label="راهنما"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] text-[hsl(var(--fg))]/65 transition-all duration-200 hover:border-[hsl(var(--accent)/0.45)] hover:text-[hsl(var(--accent))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.25)]"
+        >
+          <HelpCircle size={15} />
+        </button>
+        <span
+          className="pointer-events-none absolute right-0 top-8 z-30 hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 text-xs leading-6 text-[hsl(var(--fg))]/78 shadow-2xl shadow-black/10 [overflow-wrap:anywhere] group-hover/help:block group-focus-within/help:block"
+          style={{ width: "min(18rem, calc(100vw - 2rem))" }}
+        >
+          {text}
+        </span>
+      </span>
+    );
+  }
+
+  const sortLabels: Record<SortMode, string> = {
+    priority: "نیازمند رسیدگی",
+    expiry: "نزدیک‌ترین انقضا",
+    usage: "بیشترین مصرف",
+    usage_low: "کمترین مصرف",
+    volume_high: "بیشترین حجم",
+    volume_low: "کمترین حجم",
+    newest: "جدیدترین",
+    oldest: "قدیمی‌ترین",
+    name: "نام کاربر",
+  };
+  const sortMenuItems: MenuItem[] = [
+    { label: sortLabels.priority, icon: <Sparkles size={16} />, onClick: () => setSortMode("priority") },
+    { label: sortLabels.expiry, icon: <Clock3 size={16} />, onClick: () => setSortMode("expiry") },
+    { label: sortLabels.usage, icon: <Gauge size={16} />, onClick: () => setSortMode("usage") },
+    { label: sortLabels.usage_low, icon: <Gauge size={16} />, onClick: () => setSortMode("usage_low") },
+    { label: sortLabels.volume_high, icon: <Layers size={16} />, onClick: () => setSortMode("volume_high") },
+    { label: sortLabels.volume_low, icon: <Layers size={16} />, onClick: () => setSortMode("volume_low") },
+    { label: sortLabels.newest, icon: <ArrowDownUp size={16} />, onClick: () => setSortMode("newest") },
+    { label: sortLabels.oldest, icon: <ArrowDownUp size={16} />, onClick: () => setSortMode("oldest") },
+    { label: sortLabels.name, icon: <Users size={16} />, onClick: () => setSortMode("name") },
+  ];
+  const sortLabel = sortLabels[sortMode];
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden rounded-xl border-[hsl(var(--border))]/80">
@@ -930,11 +1001,8 @@ export default function UsersPage() {
               placeholder={t("users.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="h-11 max-w-lg rounded-lg"
+              className="h-11 max-w-xl rounded-lg"
             />
-            <div className="text-sm text-[hsl(var(--fg))]/75">
-              {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -982,15 +1050,11 @@ export default function UsersPage() {
                 trigger={
                   <Button variant="outline" className="h-10 gap-2 rounded-lg">
                     <ArrowDownUp size={16} />
-                    {t("users.sort")}
+                    <span className="hidden sm:inline">{t("users.sort")}:</span>
+                    <span>{sortLabel || t("users.sort")}</span>
                   </Button>
                 }
-                items={[
-                  { label: t("users.sortPriority"), onClick: () => setSortMode("priority") },
-                  { label: t("users.sortExpirySoon"), onClick: () => setSortMode("expiry") },
-                  { label: t("users.sortUsageHigh"), onClick: () => setSortMode("usage") },
-                  { label: t("users.sortNewest"), onClick: () => setSortMode("newest") },
-                ]}
+                items={sortMenuItems}
               />
             </div>
           </div>
@@ -1066,12 +1130,8 @@ export default function UsersPage() {
                       <div className="flex items-center gap-2">
                         <div className={(isSingle ? "text-base" : "text-lg") + " font-bold break-all leading-relaxed"}>{u.label}</div>
                       </div>
-                      <div className={(isSingle ? "mt-2 text-xs" : "mt-2 text-sm") + ` inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 ${sb.noteClass}`}>
-                        <StatusIcon size={15} className="shrink-0" />
-                        <span className="truncate">{sb.note}</span>
-                      </div>
-                      <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " flex items-center gap-1.5 text-[hsl(var(--fg))]/75"}>
-                        <Clock3 size={15} className="shrink-0 opacity-70" />
+                      <div className={(isSingle ? "mt-2 text-xs" : "mt-2 text-sm") + " inline-flex max-w-full items-center gap-1.5 rounded-full border border-[hsl(var(--border))]/75 bg-[hsl(var(--surface-card-1))]/75 px-2.5 py-1 font-medium text-[hsl(var(--fg))]/78 shadow-[inset_0_1px_0_hsl(var(--fg)/0.04)]"}>
+                        <Clock3 size={16} className="shrink-0 text-[hsl(var(--accent))]" />
                         <span>{expText}</span>
                       </div>
                     </div>
@@ -1086,34 +1146,34 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/80">
-                      <div className="font-semibold">{usagePercentLabel(percent, usedBytes)} مصرف</div>
+                  <div className="rounded-xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-1))]/72 p-3 shadow-[inset_0_1px_0_hsl(var(--fg)/0.04)]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/82">
+                      <div className="font-bold">{usagePercentLabel(percent, usedBytes)} مصرف</div>
                       <div className="font-semibold">
                         {fmtTrafficBytes(usedBytes)} / {fmtGig(u.total_gb)} گیگ
                       </div>
                     </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--surface-card-3))]">
+                    <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[hsl(var(--surface-card-3))] ring-1 ring-[hsl(var(--border))]/45">
                       <div
-                        className={"h-full rounded-md bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
+                        className={"h-full rounded-full bg-gradient-to-r shadow-[0_0_14px_hsl(var(--accent)/0.22)] transition-[width] duration-500 ease-out " + progressTone(percent)}
                         style={{ width: `${visiblePercent}%` }}
                       />
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
-                      <div>مجموع مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes)}</span></div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
+                      <div>مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes)}</span></div>
                       <div>باقی‌مانده: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb)} گیگ</span></div>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <UserActionButton
-                      icon={<SquarePen size={20} />}
-                      label="ویرایش"
-                      title="ویرایش سریع"
+                      icon={<Layers size={20} />}
+                      label="لینک‌ها"
+                      title={t("users.links")}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
-                        openQuickEdit(u);
+                        openLinks(u);
                       }}
                     />
                     <UserActionButton
@@ -1171,6 +1231,11 @@ export default function UsersPage() {
                             label: t("users.details"),
                             icon: <Pencil size={16} />,
                             onClick: () => router.push(`/app/users/${u.id}`),
+                          },
+                          {
+                            label: "ویرایش سریع",
+                            icon: <SquarePen size={16} />,
+                            onClick: () => openQuickEdit(u),
                           },
                           {
                             label: isActive ? t("common.disable") : t("common.enable"),
@@ -1466,8 +1531,9 @@ export default function UsersPage() {
         {editUser ? (
           <div className="space-y-4 text-sm">
             {renewalOnly ? (
-              <div className="max-w-full overflow-hidden rounded-xl border border-violet-500/25 bg-violet-500/10 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75 break-words [overflow-wrap:anywhere]">
-                برای این رسیلر ویرایش آزاد بسته شده است؛ فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود.
+              <div className="flex max-w-full items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/10 p-3 text-xs text-[hsl(var(--fg))]/78">
+                <span className="font-medium">ویرایش آزاد بسته است.</span>
+                <HelpHint text="برای این رسیلر فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود." />
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -1491,11 +1557,9 @@ export default function UsersPage() {
 
             {quickMode === "renewal" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div>
+                <div className="flex items-center gap-2">
                   <div className="font-medium">تمدید بسته‌ای</div>
-                  <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">
-                    سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند.
-                  </div>
+                  <HelpHint text="سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند." />
                 </div>
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-[hsl(var(--fg))]/75">مدت تمدید</div>
@@ -1726,7 +1790,7 @@ export default function UsersPage() {
         open={qrOpen}
         onClose={() => setQrOpen(false)}
         title={qrUser ? `QR لینک‌ها: ${qrUser.label}` : "QR لینک‌ها"}
-        className="max-w-5xl"
+        className="max-w-4xl"
       >
         {qrErr ? <div className="text-sm text-red-500">{qrErr}</div> : null}
         {!qrLinks && !qrErr ? <div className="text-sm text-[hsl(var(--fg))]/70">{t("common.loading")}</div> : null}
@@ -1738,24 +1802,24 @@ export default function UsersPage() {
             </div>
 
             {qrItems.length ? (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {qrItems.map((item) => (
-                  <article key={item.key} className="rounded-2xl border border-[hsl(var(--border))] p-3 space-y-3">
+                  <article key={item.key} className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]/72 p-3 sm:p-4">
                     <div>
                       <div className="font-semibold break-all">{item.title}</div>
                       <div className="text-xs text-[hsl(var(--fg))]/70">{item.subtitle}</div>
                     </div>
-                    <div className="mx-auto w-fit rounded-xl border border-[hsl(var(--border))] bg-white p-2">
-                      <img src={qrImageUrl(item.url)} alt={`QR ${item.title}`} width={220} height={220} className="h-[220px] w-[220px] object-contain" />
+                    <div className="mx-auto flex aspect-square w-full max-w-[260px] items-center justify-center rounded-2xl border border-[hsl(var(--border))] bg-white p-3 shadow-inner">
+                      <img src={qrImageUrl(item.url, 280)} alt={`QR ${item.title}`} width={280} height={280} className="h-full w-full object-contain" />
                     </div>
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/50 p-2 text-[11px] break-all">
+                    <div className="max-h-24 overflow-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/50 p-2 font-mono text-[11px] leading-5 break-all [overflow-wrap:anywhere]">
                       {item.url}
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid gap-2 sm:flex sm:flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="gap-2"
+                        className="w-full gap-2 sm:w-auto"
                         onClick={() => {
                           copyText(item.url).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                         }}
@@ -1765,7 +1829,7 @@ export default function UsersPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="gap-2"
+                        className="w-full gap-2 sm:w-auto"
                         onClick={() => {
                           window.open(item.url, "_blank", "noopener,noreferrer");
                         }}
@@ -1776,7 +1840,7 @@ export default function UsersPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="gap-2"
+                          className="w-full gap-2 sm:w-auto"
                           onClick={() => {
                             window.open(item.url, "_blank", "noopener,noreferrer");
                           }}
@@ -1795,7 +1859,7 @@ export default function UsersPage() {
         ) : null}
       </Modal>
 
-      <Modal open={linksOpen} onClose={() => setLinksOpen(false)} title={t("users.linksTitle").replace("{label}", linksUser?.label || "")}>
+      <Modal open={linksOpen} onClose={() => setLinksOpen(false)} title={t("users.linksTitle").replace("{label}", linksUser?.label || "")} className="max-w-4xl">
         {linksErr ? <div className="text-sm text-red-500">{linksErr}</div> : null}
         {!links && !linksErr ? <div className="text-sm text-[hsl(var(--fg))]/70">{t("common.loading")}</div> : null}
 
@@ -1804,13 +1868,14 @@ export default function UsersPage() {
             <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
               پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
             </div>
-            {links.master_link ? (
-            <div className="space-y-2">
+            {showMasterSub && links.master_link ? (
+            <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]/72 p-3 sm:p-4">
               <div className="font-semibold">{t("users.masterSub")}</div>
-              <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 break-all">{links.master_link}</div>
-              <div className="flex gap-2">
+              <div className="max-h-32 overflow-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/70 p-3 font-mono text-xs leading-5 break-all [overflow-wrap:anywhere]">{links.master_link}</div>
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
                 <Button
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     copyText(links.master_link || "").then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
@@ -1819,7 +1884,7 @@ export default function UsersPage() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-2"
+                  className="w-full gap-2 sm:w-auto"
                   onClick={() => {
                     const directList = extractDirectLinks(links);
                     if (!directList.length) {
@@ -1834,10 +1899,10 @@ export default function UsersPage() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-2"
+                  className="w-full gap-2 sm:w-auto"
                   onClick={() => {
                     const direct = extractDirectLinks(links);
-                    const all = [...direct, links.master_link].filter(Boolean).join("\n");
+                    const all = [...direct, showMasterSub ? links.master_link : null].filter(Boolean).join("\n");
                     copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
                 >
@@ -1867,7 +1932,7 @@ export default function UsersPage() {
                 className="gap-2"
                 onClick={() => {
                   const direct = extractDirectLinks(links);
-                  const all = [...direct, links.master_link].filter(Boolean).join("\n");
+                  const all = [...direct, showMasterSub ? links.master_link : null].filter(Boolean).join("\n");
                   if (!all) {
                     push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
                     return;
@@ -1894,18 +1959,19 @@ export default function UsersPage() {
                     ? normalizeUrl(nl.direct_url, node?.base_url)
                     : "";
                   return (
-                  <div key={nl.node_id} className="rounded-xl border border-[hsl(var(--border))] p-3">
+                  <div key={nl.node_id} className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]/68 p-3 sm:p-4">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs text-[hsl(var(--fg))]/70">{nodeName ? `${nodeName} (#${nl.node_id})` : `Node #${nl.node_id}`}</div>
                       <Badge variant={nl.status === "ok" ? "success" : nl.status === "missing" ? "warning" : "danger"}>{nl.status}</Badge>
                     </div>
                     {full ? (
                       <>
-                        <div className="mt-2 break-all text-xs">{full}</div>
-                        <div className="mt-2">
-                          <div className="flex flex-wrap gap-2">
+                        <div className="max-h-32 overflow-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 font-mono text-xs leading-5 break-all [overflow-wrap:anywhere]">{full}</div>
+                        <div>
+                          <div className="grid gap-2 sm:flex sm:flex-wrap">
                             <Button
                               variant="outline"
+                              className="w-full sm:w-auto"
                               onClick={() => {
                                 if (!full) return;
                                 copyText(full).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
@@ -1916,7 +1982,7 @@ export default function UsersPage() {
                             {isWg ? (
                               <Button
                                 variant="outline"
-                                className="gap-2"
+                                className="w-full gap-2 sm:w-auto"
                                 onClick={() => {
                                   window.open(full, "_blank", "noopener,noreferrer");
                                 }}
