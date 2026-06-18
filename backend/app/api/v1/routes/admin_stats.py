@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.reseller import Reseller, ResellerStatus
-from app.models.user import GuardinoUser
+from app.models.user import GuardinoUser, UserStatus
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
 from app.models.ledger import LedgerTransaction
@@ -52,8 +52,8 @@ async def get_admin_stats(
         GuardinoUser.total_gb,
         GuardinoUser.meta,
     )
-    used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0))
-    sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0))
+    used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0)).where(GuardinoUser.status != UserStatus.deleted)
+    sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0)).where(GuardinoUser.status != UserStatus.deleted)
     if reseller_id is not None:
         user_stmt = user_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         used_stmt = used_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)

@@ -73,7 +73,7 @@ def upgrade():
         SELECT
           CURRENT_DATE,
           owner_reseller_id,
-          COUNT(*)::integer,
+          COUNT(*) FILTER (WHERE status <> 'deleted')::integer,
           COUNT(*) FILTER (WHERE status = 'active')::integer,
           COUNT(*) FILTER (WHERE status = 'disabled')::integer,
           COUNT(*) FILTER (WHERE status <> 'deleted' AND expire_at < NOW())::integer,
@@ -87,8 +87,8 @@ def upgrade():
               AND COALESCE(metadata->>'create_status', '') = 'on_hold'
           )::integer,
           COUNT(*) FILTER (WHERE status = 'deleted')::integer,
-          COALESCE(SUM(total_gb), 0)::integer,
-          COALESCE(SUM(used_bytes), 0)::bigint,
+          COALESCE(SUM(total_gb) FILTER (WHERE status <> 'deleted'), 0)::integer,
+          COALESCE(SUM(used_bytes) FILTER (WHERE status <> 'deleted'), 0)::bigint,
           NOW(),
           NOW()
         FROM users

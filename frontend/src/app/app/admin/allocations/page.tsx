@@ -330,7 +330,7 @@ export default function AllocationsPage() {
       });
       push({ title: t("adminAllocations.created"), type: "success" });
       if (addCredentialDraft.mode === "dedicated" && addCredentialDraft.autoImport && selectedNode && isImportSupported(selectedNode.panel_type)) {
-        await importAllocationUsersById(created.id, false);
+        await tryAutoImportUsers(created.id);
       }
       resetAddForm();
       await load(page, pageSize, q);
@@ -366,7 +366,7 @@ export default function AllocationsPage() {
       });
       push({ title: t("adminAllocations.credentialsSaved"), type: "success" });
       if (draft.mode === "dedicated" && draft.autoImport && isImportSupported(a.panel_type)) {
-        await importAllocationUsersById(a.id, false);
+        await tryAutoImportUsers(a.id);
       }
       await load(page, pageSize, q);
     } catch (e: any) {
@@ -402,6 +402,18 @@ export default function AllocationsPage() {
         type: res.errors ? "warning" : "success",
       });
       if (!dryRun) await load(page, pageSize, q);
+  }
+
+  async function tryAutoImportUsers(allocationId: number) {
+    try {
+      await importAllocationUsersById(allocationId, false);
+    } catch (e: any) {
+      push({
+        title: "ورود خودکار کاربران انجام نشد",
+        desc: `اطلاعات اتصال ذخیره شد، اما import خودکار خطا داد: ${String(e.message || e)}`,
+        type: "warning",
+      });
+    }
   }
 
   async function importAllocationUsers(a: GroupedAllocationItem, dryRun: boolean) {

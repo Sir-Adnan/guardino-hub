@@ -53,7 +53,10 @@ async def get_reseller_stats(
         select(
             func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
             func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
-        ).where(GuardinoUser.owner_reseller_id == reseller.id)
+        ).where(
+            GuardinoUser.owner_reseller_id == reseller.id,
+            GuardinoUser.status != UserStatus.deleted,
+        )
     )
     urow = uq.one()
     used_bytes_total = int(urow.used_bytes_total or 0)

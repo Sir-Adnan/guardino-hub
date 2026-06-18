@@ -30,6 +30,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _validate_allocation_credentials(mode: str, credentials: dict | None) -> dict:
+    normalized_mode = str(mode or "shared").strip().lower()
+    if normalized_mode == "shared":
+        return {}
+
+    data = credentials if isinstance(credentials, dict) else {}
+    token = str(data.get("token") or data.get("access_token") or data.get("api_key") or data.get("apikey") or "").strip()
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    if token:
+        return {"token": token}
+    if username and password:
+        return {"username": username, "password": password}
+    raise HTTPException(status_code=400, detail="Dedicated credentials require token or username/password.")
+
+
 def allocation_out(a: NodeAllocation) -> AllocationOut:
     return AllocationOut(
         id=a.id,
@@ -91,7 +107,7 @@ async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession =
         default_for_reseller=payload.default_for_reseller,
         price_per_gb_override=payload.price_per_gb_override,
         credential_mode=payload.credential_mode,
-        credentials=payload.credentials or {},
+        credentials=_validate_allocation_credentials(payload.credential_mode, payload.credentials),
     )
     db.add(a)
     try:
@@ -120,10 +136,11 @@ async def update_allocation(allocation_id: int, payload: UpdateAllocationRequest
 
     if "price_per_gb_override" in fields:
         a.price_per_gb_override = payload.price_per_gb_override
-    if "credential_mode" in fields:
-        a.credential_mode = payload.credential_mode or "shared"
-    if "credentials" in fields:
-        a.credentials = payload.credentials or {}
+    next_mode = payload.credential_mode if "credential_mode" in fields else str(a.credential_mode or "shared")
+    next_credentials = payload.credentials if "credentials" in fields else (a.credentials or {})
+    if "credential_mode" in fields or "credentials" in fields:
+        a.credential_mode = next_mode or "shared"
+        a.credentials = _validate_allocation_credentials(a.credential_mode, next_credentials)
 
     await db.commit()
     await db.refresh(a)
@@ -182,7 +199,19 @@ async def import_remote_users(
         raise HTTPException(status_code=501, detail="Adapter does not support user import.")
 
     remote_admin = payload.remote_admin if node.panel_type == PanelType.pasarguard else None
-    result = await adapter.list_users(offset=payload.offset, limit=payload.limit, admin=remote_admin)  # type: ignore[attr-defined]
+    try:
+        result = await adapter.list_users(offset=payload.offset, limit=payload.limit, admin=remote_admin)  # type: ignore[attr-defined]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "allocation import remote list failed allocation_id=%s reseller_id=%s node_id=%s err=%s",
+            allocation.id,
+            reseller.id,
+            node.id,
+            str(exc)[:220],
+        )
+        raise HTTPException(status_code=502, detail=f"Remote user import failed: {str(exc)[:220]}")
     now = datetime.now(timezone.utc)
     imported = 0
     skipped_existing = 0
@@ -199,7 +228,7 @@ async def import_remote_users(
                     SubAccount.remote_identifier == remote_user.remote_identifier,
                 )
             )
-        ).one_or_none()
+        ).first()
         expire_at = remote_user.expire_at or (now + timedelta(days=36500))
         base_item = {
             "username": remote_user.username,

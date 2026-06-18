@@ -43,10 +43,10 @@ def summarize_users(rows: Iterable[Any], now: datetime | None = None) -> dict[st
     for row in rows:
         status, expire_at, used_bytes, total_gb, meta = row
         status_key = _status_value(status)
-        summary["total"] += 1
         if status_key == "deleted":
             summary["deleted"] += 1
             continue
+        summary["total"] += 1
 
         meta_dict = meta if isinstance(meta, dict) else {}
         create_status = str(meta_dict.get("create_status") or "").lower()
@@ -152,15 +152,15 @@ async def refresh_daily_metrics_for_resellers(
 
     stmt = select(
         GuardinoUser.owner_reseller_id.label("reseller_id"),
-        func.count(GuardinoUser.id).label("users_total"),
+        _count_if(not_deleted).label("users_total"),
         _count_if(GuardinoUser.status == UserStatus.active).label("users_active"),
         _count_if(GuardinoUser.status == UserStatus.disabled).label("users_disabled"),
         _count_if(and_(not_deleted, GuardinoUser.expire_at < now)).label("users_expired"),
         _count_if(limited).label("users_limited"),
         _count_if(and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")).label("users_on_hold"),
         _count_if(GuardinoUser.status == UserStatus.deleted).label("users_deleted"),
-        func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
-        func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
+        func.coalesce(func.sum(case((not_deleted, GuardinoUser.total_gb), else_=0)), 0).label("sold_gb_total"),
+        func.coalesce(func.sum(case((not_deleted, GuardinoUser.used_bytes), else_=0)), 0).label("used_bytes_total"),
     ).group_by(GuardinoUser.owner_reseller_id)
     if clean_ids is not None:
         stmt = stmt.where(GuardinoUser.owner_reseller_id.in_(clean_ids))
