@@ -6,6 +6,7 @@ export type Me = {
   reseller_id: number;
   balance: number;
   status: string;
+  two_factor_enabled?: boolean;
 };
 
 export async function fetchMe(): Promise<Me> {

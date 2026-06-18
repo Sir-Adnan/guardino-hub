@@ -12,7 +12,8 @@ import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
-import { CalendarDays, Palette, Shield, Sparkles } from "lucide-react";
+import { copyText } from "@/lib/copy";
+import { CalendarDays, Copy, KeyRound, Palette, Shield, ShieldCheck, Sparkles } from "lucide-react";
 
 type UserDefaults = {
   default_pricing_mode: "bundle" | "per_node";
@@ -54,6 +55,23 @@ type NodeLite = {
   name: string;
   panel_type?: string;
   tags?: string[];
+};
+
+type TwoFactorStatus = {
+  enabled: boolean;
+  confirmed_at?: string | null;
+  last_used_at?: string | null;
+  recovery_codes_remaining: number;
+};
+
+type TwoFactorSetup = {
+  secret: string;
+  otpauth_uri: string;
+  issuer: string;
+  account_name: string;
+  digits: number;
+  period_seconds: number;
+  algorithm: string;
 };
 
 const EMPTY_DEFAULTS: UserDefaults = {
@@ -197,6 +215,12 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [pwdBusy, setPwdBusy] = React.useState(false);
+  const [twoFactorStatus, setTwoFactorStatus] = React.useState<TwoFactorStatus | null>(null);
+  const [twoFactorSetup, setTwoFactorSetup] = React.useState<TwoFactorSetup | null>(null);
+  const [twoFactorPassword, setTwoFactorPassword] = React.useState("");
+  const [twoFactorCode, setTwoFactorCode] = React.useState("");
+  const [twoFactorBusy, setTwoFactorBusy] = React.useState(false);
+  const [recoveryCodes, setRecoveryCodes] = React.useState<string[]>([]);
 
   function onLogout() {
     storage.del("token");
@@ -272,10 +296,24 @@ export default function SettingsPage() {
     }
   }
 
+  async function loadTwoFactorStatus() {
+    try {
+      const status = await apiFetch<TwoFactorStatus>("/api/v1/auth/2fa/status");
+      setTwoFactorStatus(status);
+    } catch (e: any) {
+      push({ title: "خطا در دریافت وضعیت دومرحله‌ای", desc: String(e?.message || e), type: "error" });
+    }
+  }
+
   React.useEffect(() => {
     loadDefaults();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.role]);
+
+  React.useEffect(() => {
+    loadTwoFactorStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.reseller_id]);
 
   React.useEffect(() => {
     setGlobalTrafficInput((globalPolicy.allowed_traffic_gb || []).join(", "));
@@ -360,6 +398,108 @@ export default function SettingsPage() {
     }
   }
 
+  async function startTwoFactorSetup() {
+    if (!twoFactorPassword) {
+      push({ title: "رمز فعلی را وارد کنید", type: "warning" });
+      return;
+    }
+    setTwoFactorBusy(true);
+    setRecoveryCodes([]);
+    try {
+      const setup = await apiFetch<TwoFactorSetup>("/api/v1/auth/2fa/setup", {
+        method: "POST",
+        body: JSON.stringify({ current_password: twoFactorPassword }),
+      });
+      setTwoFactorSetup(setup);
+      push({ title: "کلید دومرحله‌ای ساخته شد", desc: "آن را در برنامه Authenticator وارد کنید و کد ۶ رقمی را تایید کنید.", type: "success" });
+    } catch (e: any) {
+      push({ title: "خطا در شروع راه‌اندازی", desc: String(e?.message || e), type: "error" });
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  }
+
+  async function enableTwoFactor() {
+    if (!twoFactorSetup) return;
+    if (!twoFactorPassword || !twoFactorCode.trim()) {
+      push({ title: "رمز فعلی و کد Authenticator را وارد کنید", type: "warning" });
+      return;
+    }
+    setTwoFactorBusy(true);
+    try {
+      const res = await apiFetch<{ recovery_codes: string[] }>("/api/v1/auth/2fa/enable", {
+        method: "POST",
+        body: JSON.stringify({ current_password: twoFactorPassword, secret: twoFactorSetup.secret, code: twoFactorCode }),
+      });
+      setRecoveryCodes(res.recovery_codes || []);
+      setTwoFactorSetup(null);
+      setTwoFactorPassword("");
+      setTwoFactorCode("");
+      setTwoFactorStatus({
+        enabled: true,
+        confirmed_at: new Date().toISOString(),
+        last_used_at: new Date().toISOString(),
+        recovery_codes_remaining: res.recovery_codes?.length || 0,
+      });
+      push({ title: "تایید دومرحله‌ای فعال شد", desc: "کدهای بازیابی را همین حالا در جای امن نگه دارید.", type: "success" });
+    } catch (e: any) {
+      push({ title: "فعال‌سازی انجام نشد", desc: String(e?.message || e), type: "error" });
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  }
+
+  async function disableTwoFactor() {
+    if (!twoFactorPassword || !twoFactorCode.trim()) {
+      push({ title: "رمز فعلی و کد دومرحله‌ای را وارد کنید", type: "warning" });
+      return;
+    }
+    setTwoFactorBusy(true);
+    try {
+      await apiFetch("/api/v1/auth/2fa/disable", {
+        method: "POST",
+        body: JSON.stringify({ current_password: twoFactorPassword, code: twoFactorCode }),
+      });
+      setTwoFactorStatus({ enabled: false, recovery_codes_remaining: 0 });
+      setTwoFactorPassword("");
+      setTwoFactorCode("");
+      setTwoFactorSetup(null);
+      setRecoveryCodes([]);
+      push({ title: "تایید دومرحله‌ای غیرفعال شد", type: "success" });
+    } catch (e: any) {
+      push({ title: "غیرفعال‌سازی انجام نشد", desc: String(e?.message || e), type: "error" });
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  }
+
+  async function regenerateRecoveryCodes() {
+    if (!twoFactorPassword || !twoFactorCode.trim()) {
+      push({ title: "رمز فعلی و کد دومرحله‌ای را وارد کنید", type: "warning" });
+      return;
+    }
+    setTwoFactorBusy(true);
+    try {
+      const res = await apiFetch<{ recovery_codes: string[] }>("/api/v1/auth/2fa/recovery-codes", {
+        method: "POST",
+        body: JSON.stringify({ current_password: twoFactorPassword, code: twoFactorCode }),
+      });
+      setRecoveryCodes(res.recovery_codes || []);
+      setTwoFactorPassword("");
+      setTwoFactorCode("");
+      setTwoFactorStatus((current) => ({
+        ...(current || { enabled: true }),
+        enabled: true,
+        recovery_codes_remaining: res.recovery_codes?.length || 0,
+      }));
+      push({ title: "کدهای بازیابی جدید ساخته شد", desc: "کدهای قبلی دیگر معتبر نیستند.", type: "success" });
+    } catch (e: any) {
+      push({ title: "ساخت کدهای بازیابی انجام نشد", desc: String(e?.message || e), type: "error" });
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  }
+
   const todayFa = React.useMemo(
     () =>
       new Date().toLocaleDateString("fa-IR-u-ca-persian", {
@@ -394,6 +534,182 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <Card className="overflow-hidden">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                {twoFactorStatus?.enabled ? <ShieldCheck size={16} /> : <KeyRound size={16} />}
+                تایید دومرحله‌ای حساب
+              </div>
+              <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">
+                برای ورود سوپرادمین و رسیلرها می‌توانید یک لایه امنیتی TOTP فعال کنید. این روش با Google Authenticator، Microsoft Authenticator، 1Password و Bitwarden سازگار است.
+              </div>
+            </div>
+            <div
+              className={`rounded-full border px-3 py-1 text-xs ${
+                twoFactorStatus?.enabled
+                  ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  : "border-amber-400/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              }`}
+            >
+              {twoFactorStatus?.enabled ? "فعال" : "غیرفعال"}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className={guideBoxClass}>
+            راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="text-xs text-[hsl(var(--fg))]/70">رمز فعلی حساب</div>
+              <Input
+                type="password"
+                value={twoFactorPassword}
+                onChange={(e) => setTwoFactorPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder="برای تغییرات امنیتی لازم است"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs text-[hsl(var(--fg))]/70">کد Authenticator یا backup code</div>
+              <Input
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+              />
+            </div>
+          </div>
+
+          {twoFactorSetup ? (
+            <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
+              <div className="text-sm font-medium">کلید راه‌اندازی Authenticator</div>
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 font-mono text-sm break-words [overflow-wrap:anywhere]">
+                  {twoFactorSetup.secret}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    const ok = await copyText(twoFactorSetup.secret);
+                    push({ title: ok ? "Secret کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                  }}
+                >
+                  <Copy size={15} className="ms-1" />
+                  کپی secret
+                </Button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 text-xs break-words [overflow-wrap:anywhere] text-[hsl(var(--fg))]/75">
+                  {twoFactorSetup.otpauth_uri}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    const ok = await copyText(twoFactorSetup.otpauth_uri);
+                    push({ title: ok ? "URI کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                  }}
+                >
+                  <Copy size={15} className="ms-1" />
+                  کپی URI
+                </Button>
+              </div>
+              <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
+                در برنامه Authenticator گزینه manual setup یا enter setup key را بزنید؛ نام حساب را Guardino Hub / {me?.username || "account"} بگذارید، نوع را Time based انتخاب کنید و secret بالا را وارد کنید. سپس کد ۶ رقمی تولیدشده را در فیلد کد وارد و فعال‌سازی را تایید کنید.
+              </div>
+            </div>
+          ) : null}
+
+          {recoveryCodes.length ? (
+            <div className="space-y-3 rounded-xl border border-amber-400/35 bg-amber-500/10 p-3">
+              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">کدهای بازیابی یک‌بارمصرف</div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                {recoveryCodes.map((code) => (
+                  <div key={code} className="rounded-lg border border-amber-400/30 bg-[hsl(var(--surface-card-1))] px-2 py-2 text-center font-mono text-xs">
+                    {code}
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    const ok = await copyText(recoveryCodes.join("\n"));
+                    push({ title: ok ? "کدهای بازیابی کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                  }}
+                >
+                  <Copy size={15} className="ms-1" />
+                  کپی همه
+                </Button>
+                <Button type="button" variant="outline" onClick={onLogout}>
+                  خروج و ورود مجدد امن
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {twoFactorStatus?.enabled ? (
+              <>
+                <Button type="button" onClick={regenerateRecoveryCodes} disabled={twoFactorBusy}>
+                  ساخت backup code جدید
+                </Button>
+                <Button type="button" variant="outline" onClick={disableTwoFactor} disabled={twoFactorBusy}>
+                  غیرفعال‌سازی 2FA
+                </Button>
+              </>
+            ) : twoFactorSetup ? (
+              <>
+                <Button type="button" onClick={enableTwoFactor} disabled={twoFactorBusy}>
+                  فعال‌سازی 2FA
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setTwoFactorSetup(null);
+                    setTwoFactorCode("");
+                  }}
+                  disabled={twoFactorBusy}
+                >
+                  لغو راه‌اندازی
+                </Button>
+              </>
+            ) : (
+              <Button type="button" onClick={startTwoFactorSetup} disabled={twoFactorBusy}>
+                ساخت کلید و شروع راه‌اندازی
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setTwoFactorPassword("");
+                setTwoFactorCode("");
+              }}
+              disabled={twoFactorBusy}
+            >
+              پاک کردن فیلدها
+            </Button>
+          </div>
+
+          {twoFactorStatus?.enabled ? (
+            <div className="grid gap-2 text-xs text-[hsl(var(--fg))]/65 sm:grid-cols-3">
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">کدهای بازیابی باقی‌مانده: {twoFactorStatus.recovery_codes_remaining}</div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">فعال‌سازی: {twoFactorStatus.confirmed_at ? new Date(twoFactorStatus.confirmed_at).toLocaleString("fa-IR") : "-"}</div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">آخرین استفاده: {twoFactorStatus.last_used_at ? new Date(twoFactorStatus.last_used_at).toLocaleString("fa-IR") : "-"}</div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="overflow-hidden">
         <CardHeader>

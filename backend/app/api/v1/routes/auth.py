@@ -5,12 +5,40 @@ from datetime import datetime, timezone
 
 from app.core.db import get_db
 from app.core.security import verify_password, create_access_token, hash_password
-from app.schemas.auth import LoginRequest, TokenResponse, ChangePasswordRequest, MeResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    MeResponse,
+    TokenResponse,
+    TwoFactorEnableRequest,
+    TwoFactorLoginRequest,
+    TwoFactorRecoveryCodesResponse,
+    TwoFactorSetupRequest,
+    TwoFactorSetupResponse,
+    TwoFactorStatusResponse,
+    TwoFactorVerifyRequest,
+)
 from app.models.reseller import Reseller, ResellerStatus
 from app.api.deps import get_current_principal
 from app.models.api_token import ApiToken
 from app.schemas.api_tokens import ApiTokenCreateRequest, ApiTokenCreated, ApiTokenList
 from app.services.api_tokens import api_token_to_out, create_api_token
+from app.services.two_factor import (
+    RECOVERY_CODE_COUNT,
+    TOTP_ALGORITHM,
+    TOTP_DIGITS,
+    TOTP_PERIOD_SECONDS,
+    TWO_FACTOR_CHALLENGE_MINUTES,
+    build_otpauth_uri,
+    create_two_factor_challenge_token,
+    decode_two_factor_challenge_token,
+    encrypt_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
+    hash_recovery_codes,
+    verify_reseller_second_factor,
+    verify_totp,
+)
 
 router = APIRouter()
 
@@ -34,7 +62,44 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     # IMPORTANT: role must come from the database, not from parent_id.
     # Otherwise a reseller with parent_id=None could become an admin.
     role = (user.role or "reseller").strip().lower()
+    if bool(getattr(user, "two_factor_enabled", False)):
+        challenge = create_two_factor_challenge_token(user, role)
+        return TokenResponse(
+            requires_2fa=True,
+            challenge_token=challenge,
+            expires_in_seconds=TWO_FACTOR_CHALLENGE_MINUTES * 60,
+        )
+
     token = create_access_token(subject=user.username, role=role)
+    return TokenResponse(access_token=token)
+
+
+@router.post("/login/2fa", response_model=TokenResponse)
+async def login_two_factor(payload: TwoFactorLoginRequest, db: AsyncSession = Depends(get_db)):
+    challenge = decode_two_factor_challenge_token(payload.challenge_token)
+    if not challenge:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor challenge is invalid or expired.")
+
+    username = str(challenge.get("sub") or "")
+    reseller_id = int(challenge.get("rid") or 0)
+    q = await db.execute(select(Reseller).where(Reseller.id == reseller_id, Reseller.username == username))
+    user = q.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+    if user.status in (ResellerStatus.disabled, ResellerStatus.deleted):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled.")
+    role = (user.role or "reseller").strip().lower()
+    if not bool(getattr(user, "two_factor_enabled", False)):
+        token = create_access_token(subject=user.username, role=role)
+        return TokenResponse(access_token=token)
+
+    ok, _used_recovery = verify_reseller_second_factor(user, payload.code)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid two-factor code.")
+    user.two_factor_last_used_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    token = create_access_token(subject=user.username, role=role, mfa=True)
     return TokenResponse(access_token=token)
 
 @router.get("/me", response_model=MeResponse)
@@ -50,7 +115,103 @@ async def me(principal=Depends(get_current_principal)):
         bundle_price_per_gb=int(getattr(reseller, "bundle_price_per_gb", 0) or 0),
         price_per_day=int(reseller.price_per_day or 0),
         can_create_subreseller=bool(getattr(reseller, "can_create_subreseller", False)),
+        two_factor_enabled=bool(getattr(reseller, "two_factor_enabled", False)),
     )
+
+
+@router.get("/2fa/status", response_model=TwoFactorStatusResponse)
+async def two_factor_status(principal=Depends(get_current_principal)):
+    reseller, _role = principal
+    recovery_hashes = getattr(reseller, "two_factor_recovery_hashes", []) or []
+    return TwoFactorStatusResponse(
+        enabled=bool(getattr(reseller, "two_factor_enabled", False)),
+        confirmed_at=getattr(reseller, "two_factor_confirmed_at", None),
+        last_used_at=getattr(reseller, "two_factor_last_used_at", None),
+        recovery_codes_remaining=len(recovery_hashes),
+    )
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+async def two_factor_setup(payload: TwoFactorSetupRequest, principal=Depends(get_current_principal)):
+    reseller, _role = principal
+    if not verify_password(payload.current_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    secret = generate_totp_secret()
+    issuer = "Guardino Hub"
+    return TwoFactorSetupResponse(
+        secret=secret,
+        otpauth_uri=build_otpauth_uri(secret, reseller.username, issuer),
+        issuer=issuer,
+        account_name=reseller.username,
+        digits=TOTP_DIGITS,
+        period_seconds=TOTP_PERIOD_SECONDS,
+        algorithm=TOTP_ALGORITHM,
+    )
+
+
+@router.post("/2fa/enable", response_model=TwoFactorRecoveryCodesResponse)
+async def two_factor_enable(
+    payload: TwoFactorEnableRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(get_current_principal),
+):
+    reseller, _role = principal
+    if not verify_password(payload.current_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    if not verify_totp(payload.secret, payload.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid authenticator code.")
+
+    recovery_codes = generate_recovery_codes(RECOVERY_CODE_COUNT)
+    now = datetime.now(timezone.utc)
+    reseller.two_factor_enabled = True
+    reseller.two_factor_secret_enc = encrypt_secret(payload.secret)
+    reseller.two_factor_recovery_hashes = hash_recovery_codes(recovery_codes)
+    reseller.two_factor_confirmed_at = now
+    reseller.two_factor_last_used_at = now
+    await db.commit()
+    return TwoFactorRecoveryCodesResponse(recovery_codes=recovery_codes)
+
+
+@router.post("/2fa/disable")
+async def two_factor_disable(
+    payload: TwoFactorVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(get_current_principal),
+):
+    reseller, _role = principal
+    if not verify_password(payload.current_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    if bool(getattr(reseller, "two_factor_enabled", False)):
+        ok, _used_recovery = verify_reseller_second_factor(reseller, payload.code)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid two-factor code.")
+    reseller.two_factor_enabled = False
+    reseller.two_factor_secret_enc = None
+    reseller.two_factor_recovery_hashes = []
+    reseller.two_factor_confirmed_at = None
+    reseller.two_factor_last_used_at = None
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/2fa/recovery-codes", response_model=TwoFactorRecoveryCodesResponse)
+async def two_factor_regenerate_recovery_codes(
+    payload: TwoFactorVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(get_current_principal),
+):
+    reseller, _role = principal
+    if not bool(getattr(reseller, "two_factor_enabled", False)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor authentication is not enabled.")
+    if not verify_password(payload.current_password, reseller.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    ok, _used_recovery = verify_reseller_second_factor(reseller, payload.code)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid two-factor code.")
+    recovery_codes = generate_recovery_codes(RECOVERY_CODE_COUNT)
+    reseller.two_factor_recovery_hashes = hash_recovery_codes(recovery_codes)
+    await db.commit()
+    return TwoFactorRecoveryCodesResponse(recovery_codes=recovery_codes)
 
 
 @router.post("/change-password")

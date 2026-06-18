@@ -35,6 +35,7 @@ async def get_current_principal(
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         sub: str | None = payload.get("sub")
         token_role: str | None = payload.get("role")
+        token_mfa = bool(payload.get("mfa", False))
         if not sub or not token_role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
     except JWTError:
@@ -54,6 +55,9 @@ async def get_current_principal(
         # If role was changed in the DB, old tokens should stop working.
         if token_role != db_role.value:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
+
+        if bool(getattr(reseller, "two_factor_enabled", False)) and not token_mfa:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor authentication is required.")
 
         request.state.auth_type = "jwt"
         return reseller, db_role
