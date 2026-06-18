@@ -277,11 +277,36 @@ async def _sync_usage_async():
                 if u_subs and missing_subs < len(u_subs) and remote_success_count == 0:
                     stats.users_with_stale_usage += 1
 
-                # enforce volume exhaustion
-                if u.used_bytes >= int(u.total_gb) * BYTES_PER_GB and u.status == UserStatus.active:
+                if int(u.total_gb or 0) <= 0 or u.used_bytes < int(u.total_gb) * BYTES_PER_GB:
+                    meta = u.meta if isinstance(u.meta, dict) else {}
+                    if meta.get("volume_exhausted_at") or meta.get("volume_exhausted_policy"):
+                        next_meta = dict(meta)
+                        next_meta.pop("volume_exhausted_at", None)
+                        next_meta.pop("volume_exhausted_policy", None)
+                        u.meta = next_meta
+
+                # Enforce volume exhaustion only when Guardino must coordinate
+                # several remote accounts, or when the panel does not reliably
+                # enforce quota by itself (WGDashboard). Single Marzban/PasarGuard
+                # users stay active locally so reseller actions and subscription UI
+                # remain usable while the upstream panel shows the quota limit.
+                if int(u.total_gb or 0) > 0 and u.used_bytes >= int(u.total_gb) * BYTES_PER_GB and u.status == UserStatus.active:
+                    enforce_subs = [s for s in u_subs if s.id not in missing_sub_ids]
+                    enforce_nodes = [nodes.get(s.node_id) for s in enforce_subs if nodes.get(s.node_id)]
+                    should_enforce_locally = len(enforce_subs) > 1 or any(n.panel_type == PanelType.wg_dashboard for n in enforce_nodes)
+                    if not should_enforce_locally:
+                        meta = u.meta if isinstance(u.meta, dict) else {}
+                        if not meta.get("volume_exhausted_at"):
+                            u.meta = {
+                                **meta,
+                                "volume_exhausted_at": now.isoformat(),
+                                "volume_exhausted_policy": "upstream_single_node",
+                            }
+                        continue
+
                     u.status = UserStatus.disabled
                     stats.affected_users += 1
-                    for s in u_subs:
+                    for s in enforce_subs:
                         if s.id in missing_sub_ids:
                             continue
                         n = nodes.get(s.node_id)

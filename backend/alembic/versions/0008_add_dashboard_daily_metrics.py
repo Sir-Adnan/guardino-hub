@@ -86,9 +86,30 @@ def upgrade():
             WHERE status = 'active'
               AND COALESCE(metadata->>'create_status', '') = 'on_hold'
           )::integer,
-          COUNT(*) FILTER (WHERE status = 'deleted')::integer,
-          COALESCE(SUM(total_gb) FILTER (WHERE status <> 'deleted'), 0)::integer,
-          COALESCE(SUM(used_bytes) FILTER (WHERE status <> 'deleted'), 0)::bigint,
+          COUNT(*) FILTER (
+            WHERE status = 'deleted'
+              AND EXISTS (
+                SELECT 1 FROM orders
+                WHERE orders.user_id = users.id
+                  AND orders.status = 'completed'
+              )
+          )::integer,
+          COALESCE(SUM(total_gb) FILTER (
+            WHERE status <> 'deleted'
+               OR EXISTS (
+                 SELECT 1 FROM orders
+                 WHERE orders.user_id = users.id
+                   AND orders.status = 'completed'
+               )
+          ), 0)::integer,
+          COALESCE(SUM(used_bytes) FILTER (
+            WHERE status <> 'deleted'
+               OR EXISTS (
+                 SELECT 1 FROM orders
+                 WHERE orders.user_id = users.id
+                   AND orders.status = 'completed'
+               )
+          ), 0)::bigint,
           NOW(),
           NOW()
         FROM users

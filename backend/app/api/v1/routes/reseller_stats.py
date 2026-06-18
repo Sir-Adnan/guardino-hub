@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.api.deps import require_reseller
-from app.models.user import GuardinoUser, UserStatus
+from app.models.user import GuardinoUser
 from app.models.node_allocation import NodeAllocation
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
@@ -19,6 +19,7 @@ from app.models.dashboard_metric import DashboardDailyMetric
 from app.schemas.stats import ResellerStats
 from app.services.dashboard_metrics import (
     BYTES_PER_GB,
+    accounted_user_condition,
     build_daily_series,
     build_daily_snapshot_series,
     set_today_series_value,
@@ -47,6 +48,7 @@ async def get_reseller_stats(
                 GuardinoUser.used_bytes,
                 GuardinoUser.total_gb,
                 GuardinoUser.meta,
+                accounted_user_condition().label("is_accounted"),
             ).where(GuardinoUser.owner_reseller_id == reseller.id)
         )
     ).all()
@@ -58,7 +60,7 @@ async def get_reseller_stats(
             func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
         ).where(
             GuardinoUser.owner_reseller_id == reseller.id,
-            GuardinoUser.status != UserStatus.deleted,
+            accounted_user_condition(),
         )
     )
     urow = uq.one()

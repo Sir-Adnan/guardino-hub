@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.reseller import Reseller, ResellerStatus
-from app.models.user import GuardinoUser, UserStatus
+from app.models.user import GuardinoUser
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
 from app.models.ledger import LedgerTransaction
@@ -19,6 +19,7 @@ from app.models.dashboard_metric import DashboardDailyMetric
 from app.schemas.stats import AdminStats
 from app.services.dashboard_metrics import (
     BYTES_PER_GB,
+    accounted_user_condition,
     build_daily_series,
     build_daily_snapshot_series,
     set_today_series_value,
@@ -48,15 +49,17 @@ async def get_admin_stats(
     )
     resellers_total = int(rq.scalar_one() or 0)
 
+    accounted_user = accounted_user_condition()
     user_stmt = select(
         GuardinoUser.status,
         GuardinoUser.expire_at,
         GuardinoUser.used_bytes,
         GuardinoUser.total_gb,
         GuardinoUser.meta,
+        accounted_user.label("is_accounted"),
     )
-    used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0)).where(GuardinoUser.status != UserStatus.deleted)
-    sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0)).where(GuardinoUser.status != UserStatus.deleted)
+    used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0)).where(accounted_user)
+    sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0)).where(accounted_user)
     if reseller_id is not None:
         user_stmt = user_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         used_stmt = used_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)

@@ -13,6 +13,7 @@ import {
   Search,
   Shield,
   ShieldOff,
+  Trash2,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -39,6 +40,7 @@ type NodeOut = {
   tags: string[];
   is_enabled: boolean;
   is_visible_in_sub: boolean;
+  is_deleted?: boolean;
 };
 
 type NodeList = {
@@ -126,6 +128,7 @@ export default function AdminNodesPage() {
   const [formBusy, setFormBusy] = React.useState(false);
   const [actionBusyId, setActionBusyId] = React.useState<number | null>(null);
   const [confirmDisable, setConfirmDisable] = React.useState<NodeOut | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState<NodeOut | null>(null);
 
   const [tests, setTests] = React.useState<Record<number, TestState>>({});
 
@@ -266,8 +269,24 @@ export default function AdminNodesPage() {
   async function disableNode(id: number) {
     setActionBusyId(id);
     try {
-      const res = await apiFetch<{ is_enabled: boolean }>(`/api/v1/admin/nodes/${id}`, { method: "DELETE" });
-      push({ title: t("adminNodes.disabled"), desc: `enabled=${res.is_enabled}`, type: "success" });
+      await apiFetch<NodeOut>(`/api/v1/admin/nodes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_enabled: false }),
+      });
+      push({ title: t("adminNodes.disabled"), desc: `node #${id}`, type: "success" });
+      await load(page, pageSize);
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function deleteNode(id: number) {
+    setActionBusyId(id);
+    try {
+      await apiFetch<{ ok: boolean; is_deleted: boolean }>(`/api/v1/admin/nodes/${id}`, { method: "DELETE" });
+      push({ title: "نود حذف شد", desc: `node #${id}`, type: "success" });
       await load(page, pageSize);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -673,9 +692,14 @@ export default function AdminNodesPage() {
                           <ShieldOff size={14} /> {t("common.disable")}
                         </Button>
                       ) : (
-                        <Button type="button" size="sm" className="gap-2" onClick={() => patchNode(n.id, { is_enabled: true })} disabled={busy}>
-                          <Power size={14} /> {t("common.enable")}
-                        </Button>
+                        <>
+                          <Button type="button" size="sm" className="gap-2" onClick={() => patchNode(n.id, { is_enabled: true })} disabled={busy}>
+                            <Power size={14} /> {t("common.enable")}
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-2 text-red-600" onClick={() => setConfirmDelete(n)} disabled={busy}>
+                            <Trash2 size={14} /> {t("common.delete")}
+                          </Button>
+                        </>
                       )}
                     </div>
 
@@ -724,6 +748,24 @@ export default function AdminNodesPage() {
             await disableNode(confirmDisable.id);
           } finally {
             setConfirmDisable(null);
+          }
+        }}
+      />
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => (actionBusyId != null ? null : setConfirmDelete(null))}
+        title="حذف نود از لیست"
+        body="این نود از لیست‌ها و انتخاب‌های جدید گاردینو حذف می‌شود، اما رکوردهای تاریخی کاربران و سفارش‌ها برای گزارش‌گیری باقی می‌مانند. هیچ تغییری روی پنل مقصد اعمال نمی‌شود."
+        confirmText={t("common.delete")}
+        cancelText={t("common.cancel")}
+        danger
+        busy={actionBusyId != null}
+        onConfirm={async () => {
+          if (!confirmDelete) return;
+          try {
+            await deleteNode(confirmDelete.id);
+          } finally {
+            setConfirmDelete(null);
           }
         }}
       />

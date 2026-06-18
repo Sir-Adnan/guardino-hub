@@ -44,6 +44,30 @@ class CreditRequest(BaseModel):
     amount: int
     reason: str = Field(default="manual_credit")
 
+
+class DeleteResellerRequest(BaseModel):
+    confirm: bool = False
+    user_action: str = Field(default="keep", pattern="^(keep|disable|transfer)$")
+    transfer_to_reseller_id: Optional[int] = None
+
+
+class DeleteResellerPreview(BaseModel):
+    reseller_id: int
+    username: str
+    role: str
+    status: str
+    balance: int
+    users_total: int
+    users_active: int
+    users_disabled: int
+    users_deleted: int
+    active_orders: int = 0
+    ledger_entries: int = 0
+    allocations_total: int = 0
+    api_tokens_active: int = 0
+    requires_confirm: bool
+    warnings: List[str] = Field(default_factory=list)
+
 class CreateNodeRequest(BaseModel):
     name: str
     panel_type: str  # marzban / pasarguard / wg_dashboard
@@ -71,6 +95,7 @@ class NodeOut(BaseModel):
     tags: List[str]
     is_enabled: bool
     is_visible_in_sub: bool
+    is_deleted: bool = False
     last_sync_at: Optional[str] = None
 
 class NodeList(BaseModel):

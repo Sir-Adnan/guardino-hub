@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard_metric import DashboardDailyMetric
+from app.models.order import Order, OrderStatus
 from app.models.user import GuardinoUser, UserStatus
 
 BYTES_PER_GB = 1024 * 1024 * 1024
@@ -41,10 +42,13 @@ def summarize_users(rows: Iterable[Any], now: datetime | None = None) -> dict[st
     }
 
     for row in rows:
-        status, expire_at, used_bytes, total_gb, meta = row
+        values = tuple(row)
+        status, expire_at, used_bytes, total_gb, meta = values[:5]
+        is_accounted = bool(values[5]) if len(values) > 5 else True
         status_key = _status_value(status)
         if status_key == "deleted":
-            summary["deleted"] += 1
+            if is_accounted:
+                summary["deleted"] += 1
             continue
         summary["total"] += 1
 
@@ -128,6 +132,14 @@ def _count_if(condition: Any) -> Any:
     return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
 
 
+def accounted_user_condition() -> Any:
+    has_completed_order = exists().where(
+        Order.user_id == GuardinoUser.id,
+        Order.status == OrderStatus.completed,
+    )
+    return or_(GuardinoUser.status != UserStatus.deleted, has_completed_order)
+
+
 async def refresh_daily_metrics_for_resellers(
     db: AsyncSession,
     reseller_ids: Iterable[int] | None = None,
@@ -144,6 +156,7 @@ async def refresh_daily_metrics_for_resellers(
 
     create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
     not_deleted = GuardinoUser.status != UserStatus.deleted
+    accounted = accounted_user_condition()
     limited = and_(
         not_deleted,
         GuardinoUser.total_gb > 0,
@@ -158,9 +171,9 @@ async def refresh_daily_metrics_for_resellers(
         _count_if(and_(not_deleted, GuardinoUser.expire_at < now)).label("users_expired"),
         _count_if(limited).label("users_limited"),
         _count_if(and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")).label("users_on_hold"),
-        _count_if(GuardinoUser.status == UserStatus.deleted).label("users_deleted"),
-        func.coalesce(func.sum(case((not_deleted, GuardinoUser.total_gb), else_=0)), 0).label("sold_gb_total"),
-        func.coalesce(func.sum(case((not_deleted, GuardinoUser.used_bytes), else_=0)), 0).label("used_bytes_total"),
+        _count_if(and_(GuardinoUser.status == UserStatus.deleted, accounted)).label("users_deleted"),
+        func.coalesce(func.sum(case((accounted, GuardinoUser.total_gb), else_=0)), 0).label("sold_gb_total"),
+        func.coalesce(func.sum(case((accounted, GuardinoUser.used_bytes), else_=0)), 0).label("used_bytes_total"),
     ).group_by(GuardinoUser.owner_reseller_id)
     if clean_ids is not None:
         stmt = stmt.where(GuardinoUser.owner_reseller_id.in_(clean_ids))

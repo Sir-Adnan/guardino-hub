@@ -96,7 +96,7 @@ async def create_allocation(payload: CreateAllocationRequest, db: AsyncSession =
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
 
-    n = (await db.execute(select(Node).where(Node.id == payload.node_id))).scalar_one_or_none()
+    n = (await db.execute(select(Node).where(Node.id == payload.node_id, Node.is_deleted.is_(False)))).scalar_one_or_none()
     if not n:
         raise HTTPException(status_code=404, detail="Node not found")
 
@@ -154,7 +154,7 @@ async def test_allocation_connection(allocation_id: int, db: AsyncSession = Depe
         await db.execute(
             select(NodeAllocation, Node)
             .join(Node, Node.id == NodeAllocation.node_id)
-            .where(NodeAllocation.id == allocation_id)
+            .where(NodeAllocation.id == allocation_id, Node.is_deleted.is_(False))
         )
     ).one_or_none()
     if not row:
@@ -185,7 +185,7 @@ async def import_remote_users(
             select(NodeAllocation, Node, Reseller)
             .join(Node, Node.id == NodeAllocation.node_id)
             .join(Reseller, Reseller.id == NodeAllocation.reseller_id)
-            .where(NodeAllocation.id == allocation_id)
+            .where(NodeAllocation.id == allocation_id, Node.is_deleted.is_(False))
         )
     ).one_or_none()
     if not row:

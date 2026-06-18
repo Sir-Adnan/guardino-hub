@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, case
 
@@ -10,6 +10,9 @@ from app.core.security import hash_password
 from app.models.reseller import Reseller, ResellerStatus
 from app.models.ledger import LedgerTransaction
 from app.models.api_token import ApiToken
+from app.models.user import GuardinoUser, UserStatus
+from app.models.order import Order
+from app.models.subaccount import SubAccount
 from app.schemas.admin import (
     CreateResellerRequest,
     ResellerOut,
@@ -21,6 +24,8 @@ from app.schemas.admin import (
     ResellerAllocationsGroup,
     UpdateResellerRequest,
     SetResellerStatusRequest,
+    DeleteResellerPreview,
+    DeleteResellerRequest,
 )
 from app.schemas.api_tokens import ApiTokenCreateRequest, ApiTokenCreated, ApiTokenList
 from app.models.node import Node
@@ -67,8 +72,12 @@ async def list_resellers(
     admin=Depends(require_admin),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
+    include_deleted: bool = Query(False),
 ):
-    base = select(Reseller).order_by(Reseller.id.desc())
+    base = select(Reseller)
+    if not include_deleted:
+        base = base.where(Reseller.status != ResellerStatus.deleted)
+    base = base.order_by(Reseller.id.desc())
     total_q = await db.execute(select(func.count()).select_from(base.subquery()))
     total = int(total_q.scalar_one())
     q = await db.execute(base.limit(limit).offset(offset))
@@ -116,7 +125,7 @@ async def list_reseller_allocations_grouped(
         await db.execute(
             select(NodeAllocation, Node)
             .join(Node, Node.id == NodeAllocation.node_id)
-            .where(NodeAllocation.reseller_id.in_(reseller_ids))
+            .where(NodeAllocation.reseller_id.in_(reseller_ids), Node.is_deleted.is_(False))
             .order_by(NodeAllocation.reseller_id.asc(), Node.id.asc())
         )
     ).all()
@@ -179,6 +188,14 @@ async def get_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), adm
     return _to_out(r, policy)
 
 
+@router.get("/{reseller_id}/delete-preview", response_model=DeleteResellerPreview)
+async def preview_delete_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    r = (await db.execute(select(Reseller).where(Reseller.id == reseller_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reseller not found")
+    return await _delete_preview(db, r)
+
+
 @router.get("/{reseller_id}/api-tokens", response_model=ApiTokenList)
 async def list_reseller_api_tokens(
     reseller_id: int,
@@ -195,6 +212,77 @@ async def list_reseller_api_tokens(
     )
     items = [api_token_to_out(t) for t in q.scalars().all()]
     return ApiTokenList(items=items, total=len(items))
+
+
+async def _delete_preview(db: AsyncSession, r: Reseller) -> DeleteResellerPreview:
+    user_counts = (
+        await db.execute(
+            select(
+                func.count(GuardinoUser.id).label("users_total"),
+                func.coalesce(func.sum(case((GuardinoUser.status == UserStatus.active, 1), else_=0)), 0).label("users_active"),
+                func.coalesce(func.sum(case((GuardinoUser.status == UserStatus.disabled, 1), else_=0)), 0).label("users_disabled"),
+                func.coalesce(func.sum(case((GuardinoUser.status == UserStatus.deleted, 1), else_=0)), 0).label("users_deleted"),
+            ).where(GuardinoUser.owner_reseller_id == r.id)
+        )
+    ).one()
+    active_orders = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(Order).where(Order.reseller_id == r.id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    ledger_entries = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(LedgerTransaction).where(LedgerTransaction.reseller_id == r.id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    allocations_total = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(NodeAllocation).where(NodeAllocation.reseller_id == r.id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    api_tokens_active = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(ApiToken).where(ApiToken.reseller_id == r.id, ApiToken.revoked_at.is_(None))
+            )
+        ).scalar_one()
+        or 0
+    )
+    warnings: list[str] = []
+    if int(r.balance or 0) != 0:
+        warnings.append("Reseller has non-zero balance.")
+    if int(user_counts.users_active or 0) > 0:
+        warnings.append("Reseller has active users.")
+    if int(user_counts.users_total or 0) > 0:
+        warnings.append("Reseller has users in Guardino.")
+    if active_orders > 0 or ledger_entries > 0:
+        warnings.append("Reseller has financial history; it will be preserved.")
+    return DeleteResellerPreview(
+        reseller_id=r.id,
+        username=r.username,
+        role=r.role or "reseller",
+        status=r.status.value,
+        balance=int(r.balance or 0),
+        users_total=int(user_counts.users_total or 0),
+        users_active=int(user_counts.users_active or 0),
+        users_disabled=int(user_counts.users_disabled or 0),
+        users_deleted=int(user_counts.users_deleted or 0),
+        active_orders=active_orders,
+        ledger_entries=ledger_entries,
+        allocations_total=allocations_total,
+        api_tokens_active=api_tokens_active,
+        requires_confirm=bool(warnings),
+        warnings=warnings,
+    )
 
 
 @router.post("/{reseller_id}/api-tokens", response_model=ApiTokenCreated)
@@ -328,11 +416,90 @@ async def set_reseller_status(
 
 
 @router.delete("/{reseller_id}", response_model=ResellerOut)
-async def delete_reseller(reseller_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+async def delete_reseller(
+    reseller_id: int,
+    payload: DeleteResellerRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    payload = payload or DeleteResellerRequest()
     q = await db.execute(select(Reseller).where(Reseller.id == reseller_id))
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
+    if (r.role or "reseller") == "admin":
+        raise HTTPException(status_code=400, detail="Admin accounts cannot be deleted from this endpoint.")
+    preview = await _delete_preview(db, r)
+    if preview.requires_confirm and not payload.confirm:
+        raise HTTPException(status_code=409, detail=preview.model_dump())
+
+    action = payload.user_action
+    if action == "transfer":
+        target_id = int(payload.transfer_to_reseller_id or 0)
+        if target_id <= 0 or target_id == r.id:
+            raise HTTPException(status_code=400, detail="A valid target reseller is required for transfer.")
+        target = (await db.execute(select(Reseller).where(Reseller.id == target_id))).scalar_one_or_none()
+        if not target or target.status == ResellerStatus.deleted:
+            raise HTTPException(status_code=400, detail="Target reseller not found or deleted.")
+
+        target_alloc_rows = (
+            await db.execute(select(NodeAllocation).where(NodeAllocation.reseller_id == target.id))
+        ).scalars().all()
+        target_alloc_by_node = {int(a.node_id): a for a in target_alloc_rows}
+
+        users = (
+            await db.execute(
+                select(GuardinoUser).where(
+                    GuardinoUser.owner_reseller_id == r.id,
+                    GuardinoUser.status != UserStatus.deleted,
+                )
+            )
+        ).scalars().all()
+        user_ids = [u.id for u in users]
+        subs: list[SubAccount] = []
+        if user_ids:
+            subs = (await db.execute(select(SubAccount).where(SubAccount.user_id.in_(user_ids)))).scalars().all()
+        now = datetime.now(timezone.utc)
+        for u in users:
+            meta = u.meta if isinstance(u.meta, dict) else {}
+            u.owner_reseller_id = target.id
+            u.meta = {
+                **meta,
+                "transferred_from_reseller_id": r.id,
+                "transferred_to_reseller_id": target.id,
+                "transferred_at": now.isoformat(),
+                "transfer_reason": "source_reseller_deleted",
+            }
+        for sub in subs:
+            target_alloc = target_alloc_by_node.get(int(sub.node_id))
+            sub.allocation_id = target_alloc.id if target_alloc else None
+    elif action == "disable":
+        users = (
+            await db.execute(
+                select(GuardinoUser).where(
+                    GuardinoUser.owner_reseller_id == r.id,
+                    GuardinoUser.status == UserStatus.active,
+                )
+            )
+        ).scalars().all()
+        now = datetime.now(timezone.utc)
+        for u in users:
+            meta = u.meta if isinstance(u.meta, dict) else {}
+            u.status = UserStatus.disabled
+            u.meta = {
+                **meta,
+                "disabled_at": now.isoformat(),
+                "disabled_reason": "source_reseller_deleted",
+            }
+
+    now = datetime.now(timezone.utc)
+    active_tokens = (
+        await db.execute(
+            select(ApiToken).where(ApiToken.reseller_id == r.id, ApiToken.revoked_at.is_(None))
+        )
+    ).scalars().all()
+    for token in active_tokens:
+        token.revoked_at = now
     r.status = ResellerStatus.deleted
     await db.commit()
     await db.refresh(r)

@@ -107,7 +107,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
 
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
-    if not user or user.status != UserStatus.active:
+    if not user or user.status == UserStatus.deleted or (payload.action != "delete" and user.status != UserStatus.active):
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
     enforce_edit_allowed(policy, "Extend")
@@ -660,8 +660,14 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
 
     # Determine refundable GB under policy (window + remaining GB).
     refundable = refundable_gb_for_user(user, window_days=policy_refund_window_days(policy))
+    delete_refund_allowed = True
     if payload.action == "delete":
-        enforce_delete_policy(user, policy)
+        try:
+            enforce_delete_policy(user, policy)
+        except HTTPException as exc:
+            if exc.status_code == 403:
+                raise
+            delete_refund_allowed = False
         refund_gb = 0
     else:
         enforce_edit_allowed(policy, "Decrease traffic")
@@ -685,12 +691,15 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
     else:
         price_per_gb = int(reseller.price_per_gb)
 
-    if payload.action == "delete":
+    if payload.action == "delete" and delete_refund_allowed:
         used_float = min(float(user.total_gb or 0), user_used_gb_float(user))
         gross_amount = int(user.total_gb or 0) * int(price_per_gb)
         used_amount = 0 if used_float < 1.0 else int(round(used_float * int(price_per_gb)))
         refund_amount = max(0, gross_amount - used_amount)
         refund_gb = max(0, int(math.floor(refund_amount / int(price_per_gb)))) if int(price_per_gb) > 0 else 0
+    elif payload.action == "delete":
+        refund_amount = 0
+        refund_gb = 0
     else:
         refund_amount = int(refund_gb) * int(price_per_gb)
 
@@ -727,7 +736,6 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
         _removed, remote_delete_errors = await _delete_subaccounts_remote_first(db, subs, node_map)
         raise_remote_sync_failed("Delete", remote_delete_errors)
         user.status = UserStatus.deleted
-        user.used_bytes = 0
     else:
         # For partial refund, keep user and sync reduced limits to remote panels.
         remote_synced_ok: list[tuple[SubAccount, Node]] = []

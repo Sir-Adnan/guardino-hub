@@ -22,3 +22,4 @@ class Node(Base, TimestampMixin):
 
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_visible_in_sub: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

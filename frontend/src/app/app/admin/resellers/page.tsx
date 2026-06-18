@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
 import { ConfirmModal } from "@/components/ui/confirm";
+import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
 import { fmtNumber } from "@/lib/format";
@@ -31,6 +32,25 @@ type ResellerOut = {
   user_policy?: ResellerUserPolicy | null;
 };
 type ResellerList = { items: ResellerOut[]; total: number };
+
+type DeleteUserAction = "keep" | "disable" | "transfer";
+type DeleteResellerPreview = {
+  reseller_id: number;
+  username: string;
+  role: string;
+  status: string;
+  balance: number;
+  users_total: number;
+  users_active: number;
+  users_disabled: number;
+  users_deleted: number;
+  active_orders: number;
+  ledger_entries: number;
+  allocations_total: number;
+  api_tokens_active: number;
+  requires_confirm: boolean;
+  warnings: string[];
+};
 
 type ResellerUserPolicy = {
   enabled: boolean;
@@ -294,6 +314,16 @@ function policySummary(policy: ResellerUserPolicy | null | undefined): string {
   return `${daysMode} | ${trafficMode} | بازه روز: ${p.min_days}-${p.max_days}`;
 }
 
+function resellerDeleteWarningText(warning: string): string {
+  const table: Record<string, string> = {
+    "Reseller has non-zero balance.": "این رسیلر موجودی غیرصفر دارد.",
+    "Reseller has active users.": "این رسیلر کاربر فعال دارد.",
+    "Reseller has users in Guardino.": "برای این رسیلر کاربر در گاردینو ثبت شده است.",
+    "Reseller has financial history; it will be preserved.": "این رسیلر سابقه مالی دارد و این سابقه حفظ می‌شود.",
+  };
+  return table[warning] || warning;
+}
+
 export default function AdminResellersPage() {
   const { push } = useToast();
   const { t } = useI18n();
@@ -332,6 +362,9 @@ export default function AdminResellersPage() {
   const [creditMode, setCreditMode] = React.useState<"credit" | "debit">("credit");
 
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
+  const [deletePreview, setDeletePreview] = React.useState<DeleteResellerPreview | null>(null);
+  const [deleteUserAction, setDeleteUserAction] = React.useState<DeleteUserAction>("keep");
+  const [deleteTransferId, setDeleteTransferId] = React.useState<number | "">("");
   const [confirmToggleStatus, setConfirmToggleStatus] = React.useState<{ r: ResellerOut; to: "active" | "disabled" } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [editingAllocationSummary, setEditingAllocationSummary] = React.useState<ResellerAllocationSummary | null>(null);
@@ -672,9 +705,32 @@ export default function AdminResellersPage() {
     }
   }
 
+  async function openDeleteReseller(x: ResellerOut) {
+    setConfirmDelete(x);
+    setDeletePreview(null);
+    setDeleteUserAction("keep");
+    setDeleteTransferId("");
+    try {
+      const preview = await apiFetch<DeleteResellerPreview>(`/api/v1/admin/resellers/${x.id}/delete-preview`);
+      setDeletePreview(preview);
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
   async function del(x: ResellerOut) {
     try {
-      await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}`, { method: "DELETE" });
+      if (deleteUserAction === "transfer" && deleteTransferId === "") {
+        throw new Error("برای انتقال کاربران، رسیلر مقصد را انتخاب کنید.");
+      }
+      await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          confirm: true,
+          user_action: deleteUserAction,
+          transfer_to_reseller_id: deleteUserAction === "transfer" ? Number(deleteTransferId) : null,
+        }),
+      });
       push({ title: t("adminResellers.deleted"), desc: x.username, type: "success" });
       await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
@@ -1475,7 +1531,7 @@ export default function AdminResellersPage() {
                                   setConfirmToggleStatus({ r: x, to: x.status === "active" ? "disabled" : "active" }),
                               }
                             : { label: t("adminResellers.toggleStatus"), icon: <Power size={16} />, onClick: () => {} , disabled: true },
-                          { label: t("common.delete"), icon: <Trash2 size={16} />, onClick: () => setConfirmDelete(x), danger: true },
+                          { label: t("common.delete"), icon: <Trash2 size={16} />, onClick: () => openDeleteReseller(x), danger: true },
                         ]}
                       />
                     </td>
@@ -1526,26 +1582,112 @@ export default function AdminResellersPage() {
           }
         }}
       />
-<ConfirmModal
+      <Modal
         open={!!confirmDelete}
-        onClose={() => (busy ? null : setConfirmDelete(null))}
-        title={t("common.areYouSure")}
-        body={t("common.thisActionCannotBeUndone")}
-        confirmText={t("common.delete")}
-        cancelText={t("common.cancel")}
-        danger
-        busy={busy}
-        onConfirm={async () => {
-          if (!confirmDelete) return;
-          setBusy(true);
-          try {
-            await del(confirmDelete);
-          } finally {
-            setBusy(false);
-            setConfirmDelete(null);
-          }
+        onClose={() => {
+          if (busy) return;
+          setConfirmDelete(null);
+          setDeletePreview(null);
         }}
-      />
+        title="حذف رسیلر"
+        className="!max-w-2xl"
+      >
+        {confirmDelete ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-red-400/35 bg-red-500/10 p-3 text-sm leading-6 text-red-700 dark:text-red-300">
+              حذف رسیلر فقط حساب او را از پنل مدیریت مخفی و غیرفعال می‌کند؛ سابقه مالی، سفارش‌ها و گزارش‌ها حذف نمی‌شوند.
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className={metricCardClass}>
+                <div className="text-xs text-[hsl(var(--fg))]/60">موجودی</div>
+                <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.balance ?? confirmDelete.balance)}</div>
+              </div>
+              <div className={metricCardClass}>
+                <div className="text-xs text-[hsl(var(--fg))]/60">کاربران فعال</div>
+                <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.users_active ?? 0)}</div>
+              </div>
+              <div className={metricCardClass}>
+                <div className="text-xs text-[hsl(var(--fg))]/60">کل کاربران</div>
+                <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.users_total ?? 0)}</div>
+              </div>
+              <div className={metricCardClass}>
+                <div className="text-xs text-[hsl(var(--fg))]/60">دفترکل</div>
+                <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.ledger_entries ?? 0)}</div>
+              </div>
+            </div>
+
+            {deletePreview?.warnings?.length ? (
+              <div className="rounded-xl border border-amber-400/35 bg-amber-500/10 p-3 text-xs leading-6 text-amber-700 dark:text-amber-300">
+                {deletePreview.warnings.map((warning) => (
+                  <div key={warning}>- {resellerDeleteWarningText(warning)}</div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">رفتار کاربران این رسیلر بعد از حذف</div>
+              <div className="grid gap-2">
+                <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
+                  <input type="radio" className="mt-1" checked={deleteUserAction === "keep"} onChange={() => setDeleteUserAction("keep")} />
+                  <span>کاربران در دیتابیس برای همین رسیلر باقی بمانند و وضعیتشان تغییر نکند.</span>
+                </label>
+                <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
+                  <input type="radio" className="mt-1" checked={deleteUserAction === "disable"} onChange={() => setDeleteUserAction("disable")} />
+                  <span>کاربران فعال این رسیلر در گاردینو غیرفعال شوند.</span>
+                </label>
+                <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
+                  <input type="radio" className="mt-1" checked={deleteUserAction === "transfer"} onChange={() => setDeleteUserAction("transfer")} />
+                  <span>کاربران فعال و غیرفعال حذف‌نشده به رسیلر دیگری منتقل شوند.</span>
+                </label>
+              </div>
+              {deleteUserAction === "transfer" ? (
+                <select className={selectClass} value={deleteTransferId} onChange={(e) => setDeleteTransferId(e.target.value === "" ? "" : Number(e.target.value))}>
+                  <option value="">انتخاب رسیلر مقصد</option>
+                  {creditOptions
+                    .filter((r) => r.id !== confirmDelete.id && r.status !== "deleted")
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.username} (#{r.id})
+                      </option>
+                    ))}
+                </select>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setDeletePreview(null);
+                }}
+                disabled={busy}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                className="bg-red-600 text-white hover:opacity-90"
+                disabled={busy || !deletePreview || (deleteUserAction === "transfer" && deleteTransferId === "")}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await del(confirmDelete);
+                  } finally {
+                    setBusy(false);
+                    setConfirmDelete(null);
+                    setDeletePreview(null);
+                  }
+                }}
+              >
+                {busy ? "..." : t("common.delete")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

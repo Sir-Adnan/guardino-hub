@@ -21,6 +21,7 @@ def node_out(n: Node, last_sync_at=None) -> NodeOut:
         tags=n.tags,
         is_enabled=n.is_enabled,
         is_visible_in_sub=n.is_visible_in_sub,
+        is_deleted=bool(getattr(n, "is_deleted", False)),
         last_sync_at=last_sync_at.isoformat() if last_sync_at else None,
     )
 
@@ -58,11 +59,12 @@ async def list_nodes(
         .group_by(SubAccount.node_id)
         .subquery()
     )
-    total_q = await db.execute(select(func.count()).select_from(Node))
+    total_q = await db.execute(select(func.count()).select_from(Node).where(Node.is_deleted.is_(False)))
     total = int(total_q.scalar_one())
     q = await db.execute(
         select(Node, latest_sync.c.last_sync_at)
         .outerjoin(latest_sync, latest_sync.c.node_id == Node.id)
+        .where(Node.is_deleted.is_(False))
         .order_by(Node.id.desc())
         .limit(limit)
         .offset(offset)
@@ -72,7 +74,7 @@ async def list_nodes(
 
 @router.patch("/{node_id}", response_model=NodeOut)
 async def update_node(node_id: int, payload: UpdateNodeRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(Node).where(Node.id == node_id))
+    q = await db.execute(select(Node).where(Node.id == node_id, Node.is_deleted.is_(False)))
     n = q.scalar_one_or_none()
     if not n:
         raise HTTPException(status_code=404, detail="Node not found")
@@ -102,19 +104,23 @@ async def update_node(node_id: int, payload: UpdateNodeRequest, db: AsyncSession
 
 @router.delete("/{node_id}")
 async def soft_delete_node(node_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(Node).where(Node.id == node_id))
+    q = await db.execute(select(Node).where(Node.id == node_id, Node.is_deleted.is_(False)))
     n = q.scalar_one_or_none()
     if not n:
         raise HTTPException(status_code=404, detail="Node not found")
 
     # Soft delete: فقط از Guardino غیرفعال می‌کنیم؛ هیچ تغییری در پنل مقصد اعمال نمی‌شود.
+    if n.is_enabled:
+        raise HTTPException(status_code=400, detail="Disable the node before deleting it.")
     n.is_enabled = False
+    n.is_visible_in_sub = False
+    n.is_deleted = True
     await db.commit()
-    return {"ok": True, "is_enabled": n.is_enabled}
+    return {"ok": True, "is_enabled": n.is_enabled, "is_deleted": n.is_deleted}
 
 @router.post("/{node_id}/test-connection")
 async def test_connection(node_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
-    q = await db.execute(select(Node).where(Node.id == node_id))
+    q = await db.execute(select(Node).where(Node.id == node_id, Node.is_deleted.is_(False)))
     n = q.scalar_one_or_none()
     if not n:
         raise HTTPException(status_code=404, detail="Node not found")
