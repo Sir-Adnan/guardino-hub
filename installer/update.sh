@@ -5,7 +5,8 @@ set -euo pipefail
 # - Pull latest code (if git repo)
 # - Ensure critical .env keys exist with safe defaults
 # - Recreate services (applies restart policies and new images)
-# - Run DB migrations
+# - Create a pre-migration PostgreSQL backup
+# - Run all pending DB migrations
 
 DEFAULT_INSTALL_DIR="/opt/guardino-hub"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,15 +114,15 @@ patch_runtime_nginx_docs_routes() {
 }
 
 if [ -d ".git" ]; then
-  log "[1/6] Syncing latest source..."
+  log "[1/7] Syncing latest source..."
   sync_git_source "${INSTALL_DIR}"
 else
-  warn "[1/6] No .git directory found; skipping source sync."
+  warn "[1/7] No .git directory found; skipping source sync."
 fi
 
 patch_runtime_nginx_docs_routes
 
-log "[2/6] Ensuring .env and critical sync settings..."
+log "[2/7] Ensuring .env and critical sync settings..."
 if [ ! -f .env ]; then
   if [ -f .env.example ]; then
     cp .env.example .env
@@ -166,7 +167,7 @@ env_get() {
   fi
 }
 
-log "[3/6] Validating compose config..."
+log "[3/7] Validating compose config..."
 docker compose -f docker-compose.yml config >/dev/null
 
 COMPOSE=(docker compose -f docker-compose.yml)
@@ -188,7 +189,7 @@ wait_for_db() {
 
 create_pre_update_backup() {
   if [ "${SKIP_PRE_UPDATE_BACKUP:-0}" = "1" ]; then
-    warn "[4/6] Pre-update DB backup skipped by SKIP_PRE_UPDATE_BACKUP=1"
+    warn "[4/7] Pre-update DB backup skipped by SKIP_PRE_UPDATE_BACKUP=1"
     return 0
   fi
 
@@ -200,7 +201,7 @@ create_pre_update_backup() {
   dump_file="${backup_dir}/db.sql"
   archive_file="${dump_file}.gz"
 
-  log "[4/6] Creating pre-migration database backup..."
+  log "[4/7] Creating pre-migration database backup..."
   mkdir -p "${backup_dir}"
   "${COMPOSE[@]}" up -d db >/dev/null
   if ! wait_for_db "${db_user}" "${db_name}"; then
@@ -220,11 +221,14 @@ create_pre_update_backup() {
 
 create_pre_update_backup
 
-log "[5/6] Recreating services..."
-"${COMPOSE[@]}" up -d --build --force-recreate
+log "[5/7] Building updated images..."
+"${COMPOSE[@]}" build
 
-log "[6/6] Applying migrations..."
+log "[6/7] Applying migrations before starting updated app services..."
 "${COMPOSE[@]}" run --rm api alembic upgrade head
+
+log "[7/7] Recreating services..."
+"${COMPOSE[@]}" up -d --force-recreate
 
 if [ -x "${INSTALL_DIR}/installer/guardinoctl.sh" ]; then
   log "Refreshing guardino command..."

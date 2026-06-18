@@ -13,8 +13,15 @@ from app.models.node_allocation import NodeAllocation
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
 from app.models.ledger import LedgerTransaction
+from app.models.dashboard_metric import DashboardDailyMetric
 from app.schemas.stats import ResellerStats
-from app.services.dashboard_metrics import BYTES_PER_GB, build_daily_series, summarize_users
+from app.services.dashboard_metrics import (
+    BYTES_PER_GB,
+    build_daily_series,
+    build_daily_snapshot_series,
+    set_today_series_value,
+    summarize_users,
+)
 
 router = APIRouter()
 
@@ -98,14 +105,27 @@ async def get_reseller_stats(
             )
         )
     ).all()
-    usage_series_rows = (
+    metric_series_rows = (
         await db.execute(
-            select(GuardinoUser.updated_at, GuardinoUser.used_bytes).where(
-                GuardinoUser.owner_reseller_id == reseller.id,
-                GuardinoUser.updated_at >= series_since,
+            select(DashboardDailyMetric.day, DashboardDailyMetric.used_bytes_total)
+            .where(
+                DashboardDailyMetric.reseller_id == reseller.id,
+                DashboardDailyMetric.day >= series_since.date(),
             )
+            .order_by(DashboardDailyMetric.day)
         )
     ).all()
+    daily_used_gb = set_today_series_value(
+        build_daily_snapshot_series(
+            metric_series_rows,
+            lambda row: row.day,
+            lambda row: (row.used_bytes_total or 0) / BYTES_PER_GB,
+            days,
+            now.date(),
+        ),
+        used_bytes_total / BYTES_PER_GB,
+        now.date(),
+    )
 
     return ResellerStats(
         reseller_id=reseller.id,
@@ -129,10 +149,5 @@ async def get_reseller_stats(
         spent_30d=spent_30d,
         daily_sales=build_daily_series(ledger_series_rows, lambda row: row.occurred_at, lambda row: abs(row.amount), days),
         daily_traffic_gb=build_daily_series(order_series_rows, lambda row: row.created_at, lambda row: row.purchased_gb or 0, days),
-        daily_used_gb=build_daily_series(
-            usage_series_rows,
-            lambda row: row.updated_at,
-            lambda row: (row.used_bytes or 0) / BYTES_PER_GB,
-            days,
-        ),
+        daily_used_gb=daily_used_gb,
     )

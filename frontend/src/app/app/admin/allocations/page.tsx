@@ -111,11 +111,11 @@ function statusVariant(status: string): "success" | "warning" | "danger" | "mute
   return "danger";
 }
 
-function allocationVariant(a: GroupedAllocationItem): "default" | "success" | "warning" | "danger" | "muted" {
-  if (!a.node_is_enabled) return "danger";
-  if (!a.enabled) return "muted";
-  if (a.default_for_reseller) return "success";
-  return "default";
+function allocationDotClass(a: GroupedAllocationItem) {
+  if (!a.node_is_enabled) return "bg-red-500";
+  if (!a.enabled) return "bg-slate-400";
+  if (a.default_for_reseller) return "bg-emerald-500";
+  return "bg-sky-500";
 }
 
 function isAdminGroup(group: ResellerAllocationGroup | null): boolean {
@@ -124,6 +124,54 @@ function isAdminGroup(group: ResellerAllocationGroup | null): boolean {
 
 function accountRoleLabel(group: ResellerAllocationGroup | null): string {
   return isAdminGroup(group) ? "سوپرادمین" : "رسیلر";
+}
+
+function AllocationNodeCloud({ allocations }: { allocations: GroupedAllocationItem[] }) {
+  if (!allocations.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-3 py-2 text-xs text-[hsl(var(--fg))]/60">
+        بدون تخصیص
+      </div>
+    );
+  }
+
+  const sorted = [...allocations].sort((a, b) => {
+    const aRank = a.enabled && a.node_is_enabled ? 0 : a.node_is_enabled ? 1 : 2;
+    const bRank = b.enabled && b.node_is_enabled ? 0 : b.node_is_enabled ? 1 : 2;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.node_name.localeCompare(b.node_name);
+  });
+
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-[11px] text-[hsl(var(--fg))]/56">
+        <span>نودهای تخصیص داده‌شده</span>
+        <span>{fmtNumber(allocations.length)} نود</span>
+      </div>
+      <div className="grid max-h-44 min-w-0 gap-1.5 overflow-y-auto pr-1 sm:max-h-36 sm:grid-cols-2 xl:max-h-32">
+        {sorted.map((a) => (
+          <div
+            key={a.id}
+            className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2.5 py-2 shadow-[0_8px_18px_-18px_hsl(var(--fg)/0.5)]"
+            title={`${a.node_name} · ${a.panel_type} · #${a.node_id}`}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${allocationDotClass(a)}`} />
+              <span className="truncate text-xs font-semibold">{a.node_name}</span>
+              {a.default_for_reseller ? (
+                <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                  پیش‌فرض
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1 truncate text-[10px] text-[hsl(var(--fg))]/54">
+              {a.panel_type} · node #{a.node_id}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function AllocationsPage() {
@@ -592,17 +640,7 @@ export default function AllocationsPage() {
                     </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <div className="flex max-h-16 flex-wrap gap-1.5 overflow-hidden">
-                      {group.allocations.slice(0, 6).map((a) => (
-                        <Badge key={a.id} variant={allocationVariant(a)}>
-                          {a.node_name} · {a.panel_type}
-                        </Badge>
-                      ))}
-                      {group.allocations.length > 6 ? <Badge variant="muted">+{fmtNumber(group.allocations.length - 6)}</Badge> : null}
-                      {!group.allocations.length ? <Badge variant="muted">بدون تخصیص</Badge> : null}
-                    </div>
-                  </div>
+                  <AllocationNodeCloud allocations={group.allocations} />
 
                   <div className="flex justify-end">
                     <Button type="button" size="sm" variant="outline" onClick={() => setSelectedResellerId(group.reseller_id)}>

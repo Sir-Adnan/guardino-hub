@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,8 +24,10 @@ from app.schemas.admin import (
 )
 from app.services.panel_access import get_adapter_for_allocation
 from app.services.urls import normalize_url
+from app.services.dashboard_metrics import refresh_daily_metrics_for_resellers
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def allocation_out(a: NodeAllocation) -> AllocationOut:
@@ -293,6 +296,17 @@ async def import_remote_users(
         await db.rollback()
     else:
         await db.commit()
+        try:
+            await refresh_daily_metrics_for_resellers(db, [reseller.id], metric_day=now.date(), now=now)
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            logger.warning(
+                "allocation import metrics refresh failed allocation_id=%s reseller_id=%s err=%s",
+                allocation.id,
+                reseller.id,
+                str(exc)[:220],
+            )
 
     return ImportRemoteUsersResponse(
         dry_run=payload.dry_run,

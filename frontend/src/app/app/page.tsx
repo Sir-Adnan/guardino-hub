@@ -1068,9 +1068,9 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold">مصرف ثبت‌شده</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">مصرف کاربرانی که در همین بازه sync/بروزرسانی شده‌اند</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">آخرین snapshot روزانه از مصرف کاربران برای همین حساب</div>
                     </div>
-                    <Badge variant="success">{fmtGig(usedSeries.reduce((acc, p) => acc + Number(p.value || 0), 0))} GB</Badge>
+                    <Badge variant="success">{fmtGig(scopedTraffic.usedGb)} GB</Badge>
                   </div>
                   <MiniBars data={usedSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="green" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
                 </div>

@@ -17,6 +17,7 @@ from app.services.panel_access import get_adapter_for_allocation, get_adapter_fo
 from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
 from app.services.task_metrics import TaskRunStats
+from app.services.dashboard_metrics import refresh_daily_metrics_for_resellers
 
 BYTES_PER_GB = 1024 ** 3
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ async def _sync_usage_async():
                 break
 
             stats.scanned_users += len(users)
+            touched_reseller_ids: set[int] = set()
             user_ids = [u.id for u in users]
             sq = await db.execute(select(SubAccount).where(SubAccount.user_id.in_(user_ids)))
             subs = sq.scalars().all()
@@ -151,6 +153,7 @@ async def _sync_usage_async():
                         failure_log_budget -= 1
 
             for u in users:
+                touched_reseller_ids.add(int(u.owner_reseller_id))
                 u_subs = by_user.get(u.id, [])
                 total_used = 0
                 remote_success_count = 0
@@ -294,6 +297,12 @@ async def _sync_usage_async():
                             continue
 
             await db.commit()
+            try:
+                await refresh_daily_metrics_for_resellers(db, touched_reseller_ids, metric_day=now.date(), now=now)
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                logger.warning("sync_usage daily metrics refresh failed reseller_count=%s err=%s", len(touched_reseller_ids), str(e)[:220])
             last_id = users[-1].id
             if len(users) < batch_size:
                 break

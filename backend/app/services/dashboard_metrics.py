@@ -3,6 +3,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
+from sqlalchemy import and_, case, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.dashboard_metric import DashboardDailyMetric
+from app.models.user import GuardinoUser, UserStatus
+
 BYTES_PER_GB = 1024 * 1024 * 1024
 
 
@@ -83,3 +90,104 @@ def build_daily_series(
         if key in values:
             values[key] += max(0.0, float(value_getter(row) or 0))
     return [{"date": key, "value": round(values[key], 2)} for key in keys]
+
+
+def build_daily_snapshot_series(
+    rows: Iterable[Any],
+    day_getter: Callable[[Any], date | datetime | None],
+    value_getter: Callable[[Any], float],
+    days: int = 14,
+    today: date | None = None,
+) -> list[dict[str, float | str]]:
+    keys = day_keys(days, today)
+    values = {key: 0.0 for key in keys}
+    for row in rows:
+        value_day = day_getter(row)
+        if not value_day:
+            continue
+        key = value_day.date().isoformat() if isinstance(value_day, datetime) else value_day.isoformat()
+        if key in values:
+            values[key] += max(0.0, float(value_getter(row) or 0))
+    return [{"date": key, "value": round(values[key], 2)} for key in keys]
+
+
+def set_today_series_value(
+    series: list[dict[str, float | str]],
+    value: float,
+    today: date | None = None,
+) -> list[dict[str, float | str]]:
+    today_key = (today or datetime.now(timezone.utc).date()).isoformat()
+    current_value = round(max(0.0, float(value or 0)), 2)
+    return [
+        {**point, "value": current_value} if point.get("date") == today_key else point
+        for point in series
+    ]
+
+
+def _count_if(condition: Any) -> Any:
+    return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+
+async def refresh_daily_metrics_for_resellers(
+    db: AsyncSession,
+    reseller_ids: Iterable[int] | None = None,
+    metric_day: date | None = None,
+    now: datetime | None = None,
+) -> None:
+    now = now or _aware_now()
+    metric_day = metric_day or now.date()
+    clean_ids: list[int] | None = None
+    if reseller_ids is not None:
+        clean_ids = sorted({int(rid) for rid in reseller_ids if int(rid or 0) > 0})
+        if not clean_ids:
+            return
+
+    create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
+    not_deleted = GuardinoUser.status != UserStatus.deleted
+    limited = and_(
+        not_deleted,
+        GuardinoUser.total_gb > 0,
+        GuardinoUser.used_bytes >= GuardinoUser.total_gb * BYTES_PER_GB,
+    )
+
+    stmt = select(
+        GuardinoUser.owner_reseller_id.label("reseller_id"),
+        func.count(GuardinoUser.id).label("users_total"),
+        _count_if(GuardinoUser.status == UserStatus.active).label("users_active"),
+        _count_if(GuardinoUser.status == UserStatus.disabled).label("users_disabled"),
+        _count_if(and_(not_deleted, GuardinoUser.expire_at < now)).label("users_expired"),
+        _count_if(limited).label("users_limited"),
+        _count_if(and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")).label("users_on_hold"),
+        _count_if(GuardinoUser.status == UserStatus.deleted).label("users_deleted"),
+        func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
+        func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
+    ).group_by(GuardinoUser.owner_reseller_id)
+    if clean_ids is not None:
+        stmt = stmt.where(GuardinoUser.owner_reseller_id.in_(clean_ids))
+
+    rows = (await db.execute(stmt)).mappings().all()
+    table = DashboardDailyMetric.__table__
+    for row in rows:
+        values = {
+            "day": metric_day,
+            "reseller_id": int(row["reseller_id"]),
+            "users_total": int(row["users_total"] or 0),
+            "users_active": int(row["users_active"] or 0),
+            "users_disabled": int(row["users_disabled"] or 0),
+            "users_expired": int(row["users_expired"] or 0),
+            "users_limited": int(row["users_limited"] or 0),
+            "users_on_hold": int(row["users_on_hold"] or 0),
+            "users_deleted": int(row["users_deleted"] or 0),
+            "sold_gb_total": int(row["sold_gb_total"] or 0),
+            "used_bytes_total": int(row["used_bytes_total"] or 0),
+        }
+        update_values = {key: value for key, value in values.items() if key not in {"day", "reseller_id"}}
+        update_values["updated_at"] = now
+        await db.execute(
+            pg_insert(table)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["day", "reseller_id"],
+                set_=update_values,
+            )
+        )

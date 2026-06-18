@@ -540,6 +540,8 @@ cmd_update() {
   need_root "$@"
   need_source
   chmod +x "${INSTALL_DIR}/installer/update.sh" "${INSTALL_DIR}/installer/guardinoctl.sh"
+  echo "Guardino update will create a pre-migration DB backup unless SKIP_PRE_UPDATE_BACKUP=1 is set."
+  echo "All pending Alembic migrations are applied with: alembic upgrade head"
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/update.sh"
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes || true
 }

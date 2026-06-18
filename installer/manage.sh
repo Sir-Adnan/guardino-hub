@@ -415,7 +415,7 @@ show_detailed_help() {
   echo " [1] Install Panel"
   echo "     - Fresh install or repair install from INSTALL_DIR."
   echo " [2] Update Panel"
-  echo "     - Pull/rebuild stack and run migrations."
+  echo "     - Pull/rebuild stack, create a pre-migration DB backup, and run migrations."
   echo " [3] Status"
   echo "     - Shows compose service status and /health response."
   echo " [4] Logs"
@@ -947,8 +947,8 @@ run_update() {
   echo ""
   echo -e "${WHITE}Update Guide${NC}"
   echo " - Pulls latest source (if git exists)."
-  echo " - Rebuilds/recreates containers."
-  echo " - Applies latest migrations."
+  echo " - Creates a pre-migration PostgreSQL backup unless SKIP_PRE_UPDATE_BACKUP=1 is set."
+  echo " - Builds updated images, applies all pending migrations, then recreates containers."
   echo ""
   if ! assert_source_ready_or_fail; then
     return 1

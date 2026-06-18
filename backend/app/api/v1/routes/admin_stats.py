@@ -13,8 +13,15 @@ from app.models.user import GuardinoUser
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
 from app.models.ledger import LedgerTransaction
+from app.models.dashboard_metric import DashboardDailyMetric
 from app.schemas.stats import AdminStats
-from app.services.dashboard_metrics import BYTES_PER_GB, build_daily_series, summarize_users
+from app.services.dashboard_metrics import (
+    BYTES_PER_GB,
+    build_daily_series,
+    build_daily_snapshot_series,
+    set_today_series_value,
+    summarize_users,
+)
 
 router = APIRouter()
 
@@ -47,20 +54,15 @@ async def get_admin_stats(
     )
     used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0))
     sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0))
-    usage_series_stmt = select(GuardinoUser.updated_at, GuardinoUser.used_bytes).where(
-        GuardinoUser.updated_at >= series_since
-    )
     if reseller_id is not None:
         user_stmt = user_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         used_stmt = used_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         sold_stmt = sold_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
-        usage_series_stmt = usage_series_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
 
     user_rows = (await db.execute(user_stmt)).all()
     user_summary = summarize_users(user_rows, now)
     used_bytes_total = int((await db.execute(used_stmt)).scalar_one() or 0)
     sold_gb_total = int((await db.execute(sold_stmt)).scalar_one() or 0)
-    usage_series_rows = (await db.execute(usage_series_stmt)).all()
 
     nq = await db.execute(select(func.count()).select_from(Node))
     nodes_total = int(nq.scalar_one() or 0)
@@ -90,6 +92,29 @@ async def get_admin_stats(
     ledger_net_30d = int((await db.execute(ledger_net_stmt)).scalar_one() or 0)
     order_series_rows = (await db.execute(order_series_stmt)).all()
     ledger_series_rows = (await db.execute(ledger_series_stmt)).all()
+    metric_series_stmt = (
+        select(
+            DashboardDailyMetric.day,
+            func.coalesce(func.sum(DashboardDailyMetric.used_bytes_total), 0).label("used_bytes_total"),
+        )
+        .where(DashboardDailyMetric.day >= series_since.date())
+        .group_by(DashboardDailyMetric.day)
+        .order_by(DashboardDailyMetric.day)
+    )
+    if reseller_id is not None:
+        metric_series_stmt = metric_series_stmt.where(DashboardDailyMetric.reseller_id == reseller_id)
+    metric_series_rows = (await db.execute(metric_series_stmt)).all()
+    daily_used_gb = set_today_series_value(
+        build_daily_snapshot_series(
+            metric_series_rows,
+            lambda row: row.day,
+            lambda row: (row.used_bytes_total or 0) / BYTES_PER_GB,
+            days,
+            now.date(),
+        ),
+        used_bytes_total / BYTES_PER_GB,
+        now.date(),
+    )
 
     if reseller_id is None:
         pavg = await db.execute(
@@ -121,10 +146,5 @@ async def get_admin_stats(
         sold_gb_total=sold_gb_total,
         daily_sales=build_daily_series(ledger_series_rows, lambda row: row.occurred_at, lambda row: abs(row.amount), days),
         daily_traffic_gb=build_daily_series(order_series_rows, lambda row: row.created_at, lambda row: row.purchased_gb or 0, days),
-        daily_used_gb=build_daily_series(
-            usage_series_rows,
-            lambda row: row.updated_at,
-            lambda row: (row.used_bytes or 0) / BYTES_PER_GB,
-            days,
-        ),
+        daily_used_gb=daily_used_gb,
     )
