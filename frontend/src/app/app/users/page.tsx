@@ -14,7 +14,7 @@ import { useI18n } from "@/components/i18n-context";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
-import { Menu } from "@/components/ui/menu";
+import { Menu, type MenuItem } from "@/components/ui/menu";
 import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,8 +22,11 @@ import { Pagination } from "@/components/ui/pagination";
 import {
   ArrowDownUp,
   Copy,
+  ClipboardList,
   Pencil,
   Power,
+  RotateCcw,
+  Server,
   Trash2,
   Users,
   Link2,
@@ -32,12 +35,16 @@ import {
   Download,
   QrCode,
   ExternalLink,
+  AlertTriangle,
   Ban,
   CheckCircle2,
+  Clock3,
+  Hourglass,
   LayoutGrid,
   List,
   Sparkles,
   Gauge,
+  Unlink2,
 } from "lucide-react";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string; create_status?: string | null };
@@ -65,6 +72,11 @@ type LinksResp = {
 };
 type NodeLinkOut = LinksResp["node_links"][number];
 type NodeLite = { id: number; name: string; base_url: string };
+type UserDefaultsEnvelope = {
+  effective?: {
+    show_guardino_master_sub?: boolean;
+  };
+};
 type ResellerUserPolicy = {
   enabled: boolean;
   restrict_edit_to_renewal_only: boolean;
@@ -102,7 +114,7 @@ const DURATION_PRESETS = [
 ];
 const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
-type StatusFilter = "all" | "active" | "disabled" | "expired";
+type StatusFilter = "all" | "active" | "disabled" | "expired" | "limited" | "on_hold";
 type SortMode = "priority" | "expiry" | "usage" | "newest";
 type ViewMode = "grid2" | "single";
 
@@ -118,6 +130,90 @@ function safeDaysLeft(expire_at: string): number | null {
   if (Number.isNaN(exp.getTime())) return null;
   const now = new Date();
   return Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function isUsageLimited(u: UserOut): boolean {
+  const totalBytes = Math.max(0, Number(u.total_gb || 0)) * 1024 * 1024 * 1024;
+  return totalBytes > 0 && Number(u.used_bytes || 0) >= totalBytes;
+}
+
+function userStatusInfo(u: UserOut) {
+  const s = (u.status || "").toLowerCase();
+  const createStatus = String(u.create_status || "").toLowerCase();
+  const days = safeDaysLeft(u.expire_at);
+  const expired = days !== null && days < 0;
+  const limited = isUsageLimited(u);
+
+  if (s === "active" && createStatus === "on_hold" && !expired && !limited) {
+    return {
+      key: "on_hold" as const,
+      v: "default" as const,
+      label: "در انتظار اتصال",
+      note: "هنوز اولین اتصال کاربر ثبت نشده است.",
+      Icon: Hourglass,
+      badgeClass: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
+      noteClass: "border-violet-400/35 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+      cardGlow: "from-violet-500/12 via-transparent to-sky-500/10",
+    };
+  }
+  if (expired) {
+    return {
+      key: "expired" as const,
+      v: "danger" as const,
+      label: "منقضی شده",
+      note: "زمان اشتراک این کاربر تمام شده است.",
+      Icon: Clock3,
+      badgeClass: "border-rose-500/35 bg-rose-500/15 text-rose-700 dark:text-rose-300",
+      noteClass: "border-rose-400/35 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+      cardGlow: "from-rose-500/14 via-transparent to-orange-500/10",
+    };
+  }
+  if (limited) {
+    return {
+      key: "limited" as const,
+      v: "warning" as const,
+      label: "اتمام حجم",
+      note: "حجم اشتراک به سقف تعیین‌شده رسیده است.",
+      Icon: AlertTriangle,
+      badgeClass: "border-amber-500/35 bg-amber-500/15 text-amber-700 dark:text-amber-300",
+      noteClass: "border-amber-400/35 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      cardGlow: "from-amber-500/14 via-transparent to-yellow-500/10",
+    };
+  }
+  if (s === "disabled") {
+    return {
+      key: "disabled" as const,
+      v: "muted" as const,
+      label: "غیرفعال",
+      note: "دسترسی این کاربر در گاردینو غیرفعال است.",
+      Icon: Ban,
+      badgeClass: "",
+      noteClass: "border-slate-400/25 bg-slate-500/10 text-[hsl(var(--fg))]/75",
+      cardGlow: "from-slate-500/10 via-transparent to-slate-500/5",
+    };
+  }
+  if (s === "active") {
+    return {
+      key: "active" as const,
+      v: "success" as const,
+      label: "فعال",
+      note: "اشتراک فعال است.",
+      Icon: CheckCircle2,
+      badgeClass: "",
+      noteClass: "border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+      cardGlow: "from-emerald-500/12 via-transparent to-sky-500/10",
+    };
+  }
+  return {
+    key: "unknown" as const,
+    v: "default" as const,
+    label: u.status || "نامشخص",
+    note: "وضعیت کاربر نامشخص است.",
+    Icon: Sparkles,
+    badgeClass: "",
+    noteClass: "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 text-[hsl(var(--fg))]/75",
+    cardGlow: "from-[hsl(var(--accent)/0.10)] via-transparent to-transparent",
+  };
 }
 
 function statusBadge(status: string, createStatus?: string | null) {
@@ -142,7 +238,9 @@ function computePriority(u: UserOut) {
   const pct = totalBytes > 0 ? clamp01((u.used_bytes || 0) / totalBytes) : 0;
   const percent = Math.round(pct * 100);
   const days = safeDaysLeft(u.expire_at);
+  const state = userStatusInfo(u);
 
+  if (state.key === "expired" || state.key === "limited") return { level: "high" as const, percent, days };
   if (s === "expired" || (days !== null && days < 0)) return { level: "high" as const, percent, days };
   if ((days !== null && days <= 3) || percent >= 90) return { level: "high" as const, percent, days };
   if ((days !== null && days <= 7) || percent >= 80) return { level: "med" as const, percent, days };
@@ -202,6 +300,8 @@ export default function UsersPage() {
 
   const [nodes, setNodes] = React.useState<NodeLite[] | null>(null);
   const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy | null>(null);
+  const [showMasterSub, setShowMasterSub] = React.useState<boolean>(true);
+  const [quickLinks, setQuickLinks] = React.useState<Record<number, { loading: boolean; data?: LinksResp; error?: string }>>({});
   const nodeMap = React.useMemo(() => {
     const m = new Map<number, NodeLite>();
     (nodes || []).forEach((n) => m.set(n.id, n));
@@ -277,6 +377,15 @@ export default function UsersPage() {
     }
   }
 
+  async function loadUserDefaults() {
+    try {
+      const env = await apiFetch<UserDefaultsEnvelope>("/api/v1/reseller/settings/user-defaults");
+      setShowMasterSub(!!env?.effective?.show_guardino_master_sub);
+    } catch {
+      setShowMasterSub(true);
+    }
+  }
+
   React.useEffect(() => {
     load();
   }, [page, pageSize, debouncedQ, filter]);
@@ -303,6 +412,7 @@ export default function UsersPage() {
   React.useEffect(() => {
     loadNodes().catch(() => undefined);
     loadPolicy().catch(() => undefined);
+    loadUserDefaults().catch(() => undefined);
   }, []);
 
   React.useEffect(() => {
@@ -335,11 +445,13 @@ export default function UsersPage() {
 
     if (filter !== "all") {
       out = out.filter((u) => {
-        if (filter === "expired") {
-          const days = safeDaysLeft(u.expire_at);
-          return days !== null && days < 0;
-        }
-        return (u.status || "").toLowerCase() === filter;
+        const state = userStatusInfo(u).key;
+        if (filter === "active") return state === "active";
+        if (filter === "disabled") return state === "disabled";
+        if (filter === "expired") return state === "expired";
+        if (filter === "limited") return state === "limited";
+        if (filter === "on_hold") return state === "on_hold";
+        return true;
       });
     }
 
@@ -440,6 +552,85 @@ export default function UsersPage() {
 
   function extractDirectLinks(res: LinksResp) {
     return (res.node_links || []).map((nl) => resolveNodeLink(nl)).filter(Boolean);
+  }
+
+  function nodeLinkName(nl: NodeLinkOut) {
+    const node = nodeMap.get(nl.node_id);
+    return node?.name || nl.node_name || `Node #${nl.node_id}`;
+  }
+
+  async function copyResolvedLink(value: string, label: string) {
+    if (!value) {
+      push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+      return;
+    }
+    const ok = await copyText(value);
+    if (ok) showCopyHint(null, label);
+    else push({ title: t("common.failed"), type: "error" });
+  }
+
+  async function ensureQuickLinks(u: UserOut, refresh = false) {
+    const current = quickLinks[u.id];
+    if (!refresh && current?.data) return current.data;
+    setQuickLinks((prev) => ({ ...prev, [u.id]: { loading: true, data: current?.data } }));
+    try {
+      const res = await fetchUserLinks(u, refresh);
+      setQuickLinks((prev) => ({ ...prev, [u.id]: { loading: false, data: res } }));
+      return res;
+    } catch (e: any) {
+      const message = String(e.message || e);
+      setQuickLinks((prev) => ({ ...prev, [u.id]: { loading: false, error: message } }));
+      return null;
+    }
+  }
+
+  function quickLinkMenuItems(u: UserOut) {
+    const state = quickLinks[u.id];
+    const data = state?.data;
+    if (state?.loading && !data) {
+      return [{ label: "در حال دریافت لینک‌ها...", icon: <Sparkles size={16} />, disabled: true, onClick: () => {} }];
+    }
+    if (state?.error && !data) {
+      return [
+        { label: "دریافت لینک‌ها ناموفق بود", icon: <AlertTriangle size={16} />, disabled: true, onClick: () => {} },
+        { label: "تلاش دوباره", icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } },
+      ];
+    }
+    if (!data) {
+      return [{ label: "برای دریافت لینک‌ها کلیک کنید", icon: <Link2 size={16} />, onClick: () => { void ensureQuickLinks(u, true); } }];
+    }
+
+    const directItems: MenuItem[] = (data.node_links || []).map((nl) => {
+      const link = resolveNodeLink(nl);
+      const name = nodeLinkName(nl);
+      return {
+        label: link ? `کپی لینک ساب ${name}` : `${name} - لینک موجود نیست`,
+        icon: <Server size={16} />,
+        disabled: !link,
+        onClick: () => copyResolvedLink(link, `لینک ${name} کپی شد`),
+      };
+    });
+    const copyableDirect = (data.node_links || []).map((nl) => resolveNodeLink(nl)).filter(Boolean);
+    const allLinks = [...copyableDirect, showMasterSub ? data.master_link : null].filter(Boolean) as string[];
+    const items: MenuItem[] = [
+      {
+        label: "کپی همه لینک‌های قابل استفاده",
+        icon: <ClipboardList size={16} />,
+        disabled: allLinks.length === 0,
+        onClick: () => copyResolvedLink(allLinks.join("\n"), "همه لینک‌ها کپی شد"),
+      },
+      ...directItems,
+    ];
+    if (showMasterSub) {
+      items.push({
+        label: data.master_link ? "کپی ساب مرکزی Guardino" : "ساب مرکزی Guardino غیرفعال است",
+        icon: <Link2 size={16} />,
+        disabled: !data.master_link,
+        onClick: () => copyResolvedLink(data.master_link || "", "ساب مرکزی کپی شد"),
+      });
+    }
+    items.push({ label: "به‌روزرسانی لینک‌ها", icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } });
+    return items;
   }
 
   async function openLinks(u: UserOut) {
@@ -698,6 +889,8 @@ export default function UsersPage() {
             <div className="flex flex-wrap gap-2">
               <FilterButton value="all" label={t("users.filterAll")} />
               <FilterButton value="active" label={t("users.filterActive")} />
+              <FilterButton value="on_hold" label="در انتظار اتصال" />
+              <FilterButton value="limited" label="اتمام حجم" />
               <FilterButton value="disabled" label={t("users.filterDisabled")} />
               <FilterButton value="expired" label={t("users.filterExpired")} />
             </div>
@@ -791,7 +984,7 @@ export default function UsersPage() {
             const pr = computePriority(u);
             const expText = pr.days === null ? "—" : pr.days >= 0 ? t("users.expiresIn").replace("{days}", String(pr.days)) : t("users.expired");
 
-            const sb = statusBadge(u.status, u.create_status);
+            const sb = userStatusInfo(u);
             const StatusIcon = sb.Icon;
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
@@ -810,19 +1003,26 @@ export default function UsersPage() {
                     openQuickEdit(u);
                   }
                 }}
-                className="group relative cursor-pointer overflow-hidden rounded-xl border-[hsl(var(--border))]/85 transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-2xl hover:shadow-sky-500/10"
+                className="group relative cursor-pointer overflow-hidden rounded-xl border-[hsl(var(--border))]/85 bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-2))_52%,hsl(var(--surface-card-3))_100%)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-2xl hover:shadow-sky-500/10"
               >
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_100%_0%,rgba(14,165,233,0.16),transparent_55%),radial-gradient(50%_90%_at_0%_100%,rgba(16,185,129,0.14),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${sb.cardGlow} opacity-80 transition-opacity duration-300 group-hover:opacity-100`} />
                 <CardContent className={"relative " + (isSingle ? "space-y-3 p-4" : "space-y-4 p-5")}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <div className={(isSingle ? "text-base" : "text-lg") + " font-bold break-all leading-relaxed"}>{u.label}</div>
                       </div>
-                      <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " text-[hsl(var(--fg))]/75"}>{expText}</div>
+                      <div className={(isSingle ? "mt-2 text-xs" : "mt-2 text-sm") + ` inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 ${sb.noteClass}`}>
+                        <StatusIcon size={14} className="shrink-0" />
+                        <span className="truncate">{sb.note}</span>
+                      </div>
+                      <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " flex items-center gap-1.5 text-[hsl(var(--fg))]/75"}>
+                        <Clock3 size={14} className="shrink-0 opacity-70" />
+                        <span>{expText}</span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={sb.v} className={`gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${sb.className || ""}`}>
+                      <Badge variant={sb.v} className={`gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${sb.badgeClass || ""}`}>
                         <StatusIcon size={14} />
                         {sb.label}
                       </Badge>
@@ -880,9 +1080,28 @@ export default function UsersPage() {
                     >
                       <SquarePen size={18} />
                     </Button>
+                    <div onClick={(e) => e.stopPropagation()} onMouseEnter={() => ensureQuickLinks(u, false)}>
+                      <Menu
+                        className="min-w-[260px]"
+                        trigger={
+                          <Button
+                            variant="outline"
+                            className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-400/60 hover:bg-teal-500/10`}
+                            size="sm"
+                            title="کپی لینک اشتراک"
+                            aria-label="کپی لینک اشتراک"
+                            disabled={busy}
+                            onClick={() => ensureQuickLinks(u, false)}
+                          >
+                            <Copy size={18} />
+                          </Button>
+                        }
+                        items={quickLinkMenuItems(u)}
+                      />
+                    </div>
                     <Button
                       variant="outline"
-                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10`}
+                      className={`hidden ${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10`}
                       size="sm"
                       title="کپی لینک اصلی اشتراک"
                       aria-label="کپی لینک اصلی اشتراک"
@@ -896,7 +1115,7 @@ export default function UsersPage() {
                     </Button>
                     <Button
                       variant="outline"
-                      className={`${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10`}
+                      className={`hidden ${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10`}
                       size="sm"
                       title="کپی همه لینک‌ها"
                       aria-label="کپی همه لینک‌ها"
@@ -950,7 +1169,7 @@ export default function UsersPage() {
                             ask("revoke", u);
                           }}
                         >
-                          <Trash2 size={18} />
+                          <Unlink2 size={18} />
                         </Button>
                       </>
                     ) : null}
@@ -983,6 +1202,7 @@ export default function UsersPage() {
                           {
                             label: "کپی لینک اصلی اشتراک",
                             icon: <Copy size={16} />,
+                            disabled: !showMasterSub,
                             onClick: () => copyMaster(u),
                           },
                           {
@@ -1009,7 +1229,7 @@ export default function UsersPage() {
                           },
                           {
                             label: t("users.revoke"),
-                            icon: <Trash2 size={16} />,
+                            icon: <Unlink2 size={16} />,
                             disabled: busy,
                             danger: true,
                             onClick: () => ask("revoke", u),
@@ -1321,7 +1541,7 @@ export default function UsersPage() {
                     ask("revoke", editUser);
                   }}
                 >
-                  <Trash2 size={15} /> بازسازی لینک
+                  <Unlink2 size={15} /> بازسازی لینک
                 </Button>
               </div>
             </div>

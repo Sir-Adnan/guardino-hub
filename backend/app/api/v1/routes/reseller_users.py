@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import and_, func, not_, or_, select
 from datetime import datetime, timezone
 from app.core.db import get_db
 from app.api.deps import require_reseller, enforce_balance_or_readonly_users
@@ -8,6 +8,8 @@ from app.models.user import GuardinoUser, UserStatus
 from app.schemas.user import UsersPage, UserOut
 
 router = APIRouter()
+
+BYTES_PER_GB = 1024 ** 3
 
 
 def _create_status_for(user: GuardinoUser) -> str | None:
@@ -24,7 +26,7 @@ async def list_users(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     q: str | None = Query(default=None, max_length=128),
-    status: str | None = Query(default=None, pattern="^(all|active|disabled|expired)$"),
+    status: str | None = Query(default=None, pattern="^(all|active|disabled|expired|limited|on_hold)$"),
 ):
     enforce_balance_or_readonly_users(reseller, request.url.path, request.method)
 
@@ -43,12 +45,29 @@ async def list_users(
             conditions.append(GuardinoUser.id == int(term))
         base = base.where(or_(*conditions))
     status_filter = (status or "all").strip().lower()
+    now = datetime.now(timezone.utc)
+    create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
+    on_hold_cond = and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")
+    limited_cond = and_(
+        GuardinoUser.total_gb > 0,
+        GuardinoUser.used_bytes >= GuardinoUser.total_gb * BYTES_PER_GB,
+    )
+    expired_cond = GuardinoUser.expire_at < now
     if status_filter == "active":
-        base = base.where(GuardinoUser.status == UserStatus.active, GuardinoUser.expire_at >= datetime.now(timezone.utc))
+        base = base.where(
+            GuardinoUser.status == UserStatus.active,
+            GuardinoUser.expire_at >= now,
+            not_(on_hold_cond),
+            not_(limited_cond),
+        )
     elif status_filter == "disabled":
-        base = base.where(GuardinoUser.status == UserStatus.disabled)
+        base = base.where(GuardinoUser.status == UserStatus.disabled, not_(expired_cond), not_(limited_cond))
     elif status_filter == "expired":
-        base = base.where(GuardinoUser.expire_at < datetime.now(timezone.utc))
+        base = base.where(expired_cond)
+    elif status_filter == "limited":
+        base = base.where(limited_cond, not_(expired_cond))
+    elif status_filter == "on_hold":
+        base = base.where(on_hold_cond, not_(expired_cond), not_(limited_cond))
     total_q = await db.execute(select(func.count()).select_from(base.subquery()))
     total = int(total_q.scalar_one())
     q = await db.execute(base.limit(limit).offset(offset))
