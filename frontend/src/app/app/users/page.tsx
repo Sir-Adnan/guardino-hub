@@ -823,10 +823,10 @@ export default function UsersPage() {
         type="button"
         onClick={() => setFilter(value)}
         className={
-          "h-9 shrink-0 rounded-full border px-3.5 text-xs font-semibold transition-all duration-200 " +
+          "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-200 " +
           (active
             ? "border-transparent bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))] shadow-soft"
-            : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] text-[hsl(var(--fg))]/78 hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--surface-card-3))]")
+            : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] hover:border-[hsl(var(--accent)/0.35)] hover:bg-[hsl(var(--surface-card-3))]")
         }
       >
         {label}
@@ -854,18 +854,18 @@ export default function UsersPage() {
         aria-label={title || label}
         disabled={disabled}
         onClick={onClick}
-        className="flex h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-1))]/80 px-1.5 text-[hsl(var(--fg))]/76 shadow-[0_8px_18px_-18px_hsl(var(--fg)/0.55)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.36)] hover:bg-[hsl(var(--accent)/0.10)] hover:text-[hsl(var(--accent))] disabled:pointer-events-none disabled:opacity-45 sm:h-12"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-transparent bg-transparent text-[hsl(var(--fg))]/74 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[hsl(var(--accent)/0.10)] hover:text-[hsl(var(--accent))] disabled:pointer-events-none disabled:opacity-45"
       >
-        <span className="flex h-5 items-center justify-center [&>svg]:h-[19px] [&>svg]:w-[19px]">{icon}</span>
-        <span className="max-w-full truncate text-[10px] font-semibold leading-none sm:text-[11px]">{label}</span>
+        <span className="flex items-center justify-center [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
+        <span className="sr-only">{label}</span>
       </button>
     );
   }
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden rounded-2xl border-[hsl(var(--border))]/75 shadow-[0_18px_40px_-30px_hsl(var(--fg)/0.45)]">
-        <CardHeader className="p-4 sm:p-5">
+      <Card className="overflow-hidden rounded-xl border-[hsl(var(--border))]/80">
+        <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-2xl font-bold tracking-tight">{t("users.title")}</div>
@@ -878,79 +878,76 @@ export default function UsersPage() {
                 if (locked) e.preventDefault();
               }}
               className={
-                "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[hsl(var(--accent))] px-4 text-sm font-semibold text-[hsl(var(--accent-fg))] shadow-soft transition-all duration-200 hover:translate-y-[-1px] hover:brightness-95 " +
+                "rounded-lg bg-[hsl(var(--accent))] px-4 py-2 text-sm font-semibold text-[hsl(var(--accent-fg))] shadow-soft transition-all duration-200 hover:translate-y-[-1px] hover:brightness-95 " +
                 (locked ? "pointer-events-none opacity-55" : "")
               }
             >
-              <span className="text-xl leading-none">+</span>
-              <span className="hidden sm:inline">{t("users.create")}</span>
+              {t("users.create")}
             </a>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0 xl:grid-cols-5">
-            <div className="min-w-[136px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(59,130,246,0.10),rgba(14,165,233,0.06))] p-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(59,130,246,0.10),rgba(14,165,233,0.06))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{t("users.statsTotal")}</div>
                 <Users size={18} className="opacity-70" />
               </div>
-              <div className="mt-1 text-xl font-bold">{fmtNumber(stats.total)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.total)}</div>
             </div>
-            <div className="min-w-[136px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(5,150,105,0.06))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(5,150,105,0.06))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{t("users.statsActive")}</div>
                 <CheckCircle2 size={18} className="text-emerald-600" />
               </div>
-              <div className="mt-1 text-xl font-bold">{fmtNumber(stats.active)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.active)}</div>
             </div>
-            <div className="min-w-[136px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(251,113,133,0.06))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(251,113,133,0.06))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">غیرفعال</div>
                 <Ban size={18} className="text-rose-600" />
               </div>
-              <div className="mt-1 text-xl font-bold">{fmtNumber(stats.disabled)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.disabled)}</div>
             </div>
-            <div className="min-w-[136px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(249,115,22,0.05))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(249,115,22,0.05))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">حجم مصرف کل کاربران</div>
                 <Gauge size={18} className="text-amber-600" />
               </div>
-              <div className="mt-1 text-xl font-bold">{fmtTrafficBytes(stats.usedGb * 1024 * 1024 * 1024)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtTrafficBytes(stats.usedGb * 1024 * 1024 * 1024)}</div>
             </div>
-            <div className="min-w-[136px] rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(129,140,248,0.14),rgba(56,189,248,0.06))] p-3">
+            <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(129,140,248,0.14),rgba(56,189,248,0.06))] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-[hsl(var(--fg))]/70">مجموع حجم فروخته‌شده</div>
                 <Layers size={18} className="text-indigo-600" />
               </div>
-              <div className="mt-1 text-xl font-bold">{fmtGig(stats.soldGb)} گیگ</div>
+              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.soldGb)} گیگ</div>
             </div>
           </div>
 
-          <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_auto]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Input
               placeholder={t("users.search")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="h-11 rounded-xl"
+              className="h-11 max-w-lg rounded-lg"
             />
-            <div className="inline-flex h-11 items-center rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 text-sm text-[hsl(var(--fg))]/75">
+            <div className="text-sm text-[hsl(var(--fg))]/75">
               {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-3))]/45 p-2.5">
-            <div className="-mx-1 overflow-x-auto px-1 pb-2">
-              <div className="flex min-w-max gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
               <FilterButton value="all" label={t("users.filterAll")} />
               <FilterButton value="active" label={t("users.filterActive")} />
               <FilterButton value="on_hold" label="در انتظار اتصال" />
               <FilterButton value="limited" label="اتمام حجم" />
               <FilterButton value="disabled" label={t("users.filterDisabled")} />
               <FilterButton value="expired" label={t("users.filterExpired")} />
-              </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               <div className="inline-flex items-center overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
                 <button
                   type="button"
@@ -1008,7 +1005,7 @@ export default function UsersPage() {
       </Card>
 
       {!data ? (
-        <div className={"grid gap-3 sm:gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
+        <div className={"grid gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="rounded-xl">
               <CardContent className="p-4 space-y-3">
@@ -1026,7 +1023,7 @@ export default function UsersPage() {
           ))}
         </div>
       ) : (
-        <div className={"grid gap-3 sm:gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
+        <div className={"grid gap-4 " + (viewMode === "single" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
           {items.map((u) => {
             const totalBytes = (u.total_gb || 0) * 1024 * 1024 * 1024;
             const usedBytes = Number(u.used_bytes || 0);
@@ -1044,9 +1041,9 @@ export default function UsersPage() {
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
             const isSingle = viewMode === "single";
-            const actionSize = "h-12 w-12";
-            const iconButtonClass = `${actionSize} rounded-xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-1))]/80 p-0 text-[hsl(var(--fg))]/74 shadow-none transition-all duration-200 hover:bg-[hsl(var(--accent)/0.10)] hover:text-[hsl(var(--accent))]`;
-            const iconSize = 20;
+            const actionSize = isSingle ? "h-11 w-11" : "h-10 w-10";
+            const iconButtonClass = `${actionSize} rounded-xl border border-transparent bg-transparent p-0 text-[hsl(var(--fg))]/72 shadow-none transition-all duration-200 hover:bg-[hsl(var(--accent)/0.10)] hover:text-[hsl(var(--accent))]`;
+            const iconSize = isSingle ? 21 : 20;
 
             return (
               <Card
@@ -1060,61 +1057,55 @@ export default function UsersPage() {
                     openQuickEdit(u);
                   }
                 }}
-                className="group relative cursor-pointer overflow-hidden rounded-2xl border-[hsl(var(--border))]/80 bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-2))_54%,hsl(var(--surface-card-3))_100%)] shadow-[0_18px_38px_-30px_hsl(var(--fg)/0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.38)] hover:shadow-2xl hover:shadow-[hsl(var(--accent)/0.10)]"
+                className="group relative cursor-pointer overflow-hidden rounded-xl border-[hsl(var(--border))]/85 bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-2))_52%,hsl(var(--surface-card-3))_100%)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-2xl hover:shadow-sky-500/10"
               >
-                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${sb.cardGlow} opacity-70 transition-opacity duration-300 group-hover:opacity-100`} />
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent)/0.55)]" />
-                <CardContent className={"relative " + (isSingle ? "space-y-3 p-3.5 sm:p-4" : "space-y-3 p-4")}>
+                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${sb.cardGlow} opacity-80 transition-opacity duration-300 group-hover:opacity-100`} />
+                <CardContent className={"relative " + (isSingle ? "space-y-3 p-4" : "space-y-4 p-5")}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-1))] text-[hsl(var(--accent))] shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.55)]">
-                        <StatusIcon size={22} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className={(isSingle ? "text-base" : "text-lg") + " font-bold break-all leading-relaxed"}>{u.label}</div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xl font-black tracking-normal text-[hsl(var(--fg))] sm:text-2xl">{u.label}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--fg))]/62">
-                          <span className="inline-flex items-center gap-1">
-                            <Clock3 size={14} className="opacity-70" />
-                            {expText}
-                          </span>
-                          <span className="rounded-full bg-[hsl(var(--surface-card-3))] px-2 py-0.5">#{u.id}</span>
-                        </div>
+                      <div className={(isSingle ? "mt-2 text-xs" : "mt-2 text-sm") + ` inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 ${sb.noteClass}`}>
+                        <StatusIcon size={15} className="shrink-0" />
+                        <span className="truncate">{sb.note}</span>
+                      </div>
+                      <div className={(isSingle ? "mt-1 text-xs" : "mt-1.5 text-sm") + " flex items-center gap-1.5 text-[hsl(var(--fg))]/75"}>
+                        <Clock3 size={15} className="shrink-0 opacity-70" />
+                        <span>{expText}</span>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2" onClick={(e) => e.stopPropagation()}>
-                      <Switch checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
-                      <Badge variant={sb.v} className={`gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${sb.badgeClass || ""}`}>
-                        <StatusIcon size={13} />
+                    <div className="flex items-center gap-2">
+                      <Badge variant={sb.v} className={`gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${sb.badgeClass || ""}`}>
+                        <StatusIcon size={15} />
                         {sb.label}
                       </Badge>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Switch className="h-6 w-11" checked={isActive} disabled={locked || busy} onCheckedChange={(v) => setStatus(u, v)} />
+                      </div>
                     </div>
                   </div>
 
-                  <div className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs leading-5 ${sb.noteClass}`}>
-                    <StatusIcon size={15} className="shrink-0" />
-                    <span className="truncate">{sb.note}</span>
-                  </div>
-
-                  <div className="rounded-2xl border border-[hsl(var(--border))]/65 bg-[hsl(var(--surface-card-1))]/78 p-3 shadow-[inset_0_1px_0_hsl(var(--fg)/0.04)]">
+                  <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/80">
                       <div className="font-semibold">{usagePercentLabel(percent, usedBytes)} مصرف</div>
                       <div className="font-semibold">
                         {fmtTrafficBytes(usedBytes)} / {fmtGig(u.total_gb)} گیگ
                       </div>
                     </div>
-                    <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[hsl(var(--surface-card-3))]">
+                    <div className="h-2.5 w-full overflow-hidden rounded-md bg-[hsl(var(--surface-card-3))]">
                       <div
-                        className={"h-full rounded-full bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
+                        className={"h-full rounded-md bg-gradient-to-r transition-[width] duration-500 ease-out " + progressTone(percent)}
                         style={{ width: `${visiblePercent}%` }}
                       />
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[hsl(var(--fg))]/70">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
                       <div>مجموع مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes)}</span></div>
                       <div>باقی‌مانده: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb)} گیگ</span></div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <UserActionButton
                       icon={<SquarePen size={20} />}
                       label="ویرایش"
