@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+import math
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
-from app.services.adapters.base import AdapterError, ProvisionResult, RemoteUserNotFound, RemoteUserSnapshot, TestConnectionResult
+from app.services.adapters.base import (
+    AdapterError,
+    ProvisionResult,
+    RemoteUserListItem,
+    RemoteUserListResult,
+    RemoteUserNotFound,
+    RemoteUserSnapshot,
+    TestConnectionResult,
+)
 
 
 class MarzbanAdapter:
@@ -105,6 +115,55 @@ class MarzbanAdapter:
         except Exception:
             return None
 
+    @staticmethod
+    def _as_datetime(value: Any) -> datetime | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+            if timestamp <= 0:
+                return None
+            if timestamp > 10_000_000_000:
+                timestamp = timestamp / 1000.0
+            try:
+                return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            except Exception:
+                return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+    @classmethod
+    def _list_item_from_user_payload(cls, payload: Any) -> RemoteUserListItem | None:
+        if not isinstance(payload, dict):
+            return None
+        username = str(payload.get("username") or "").strip()
+        if not username:
+            return None
+
+        data_limit = cls._as_int(payload.get("data_limit")) or 0
+        total_gb = int(math.ceil(max(0, data_limit) / float(1024 ** 3))) if data_limit > 0 else 0
+        used_bytes = cls._as_int(payload.get("used_traffic")) or 0
+        status = str(payload.get("status") or "").strip().lower() or None
+        direct_sub_url = str(payload.get("subscription_url") or "").strip() or None
+        return RemoteUserListItem(
+            username=username,
+            remote_identifier=username,
+            total_gb=max(0, total_gb),
+            used_bytes=max(0, int(used_bytes)),
+            expire_at=cls._as_datetime(payload.get("expire")),
+            status=status,
+            direct_sub_url=direct_sub_url,
+            raw=payload,
+        )
+
     @classmethod
     def _snapshot_from_user_payload(cls, payload: Any) -> RemoteUserSnapshot:
         if not isinstance(payload, dict):
@@ -147,6 +206,28 @@ class MarzbanAdapter:
             return TestConnectionResult(ok=True, detail="ok", meta={"system": js})
         except Exception as e:
             return TestConnectionResult(ok=False, detail=str(e))
+
+    async def list_users(self, *, offset: int = 0, limit: int = 500, admin: str | None = None) -> RemoteUserListResult:
+        params: dict[str, Any] = {
+            "offset": max(0, int(offset or 0)),
+            "limit": max(1, min(5000, int(limit or 500))),
+        }
+        js = await self._get_json(f"/api/users?{urlencode(params)}")
+        if isinstance(js, dict):
+            raw_items = js.get("users") if isinstance(js.get("users"), list) else []
+            total = self._as_int(js.get("total"))
+        elif isinstance(js, list):
+            raw_items = js
+            total = len(js)
+        else:
+            raw_items = []
+            total = 0
+        items: list[RemoteUserListItem] = []
+        for raw in raw_items:
+            item = self._list_item_from_user_payload(raw)
+            if item:
+                items.append(item)
+        return RemoteUserListResult(items=items, total=total)
 
     async def provision_user(self, label: str, total_gb: int, expire_at: datetime, status: str = "active") -> ProvisionResult:
         create_status = "on_hold" if str(status or "").strip().lower() == "on_hold" else "active"

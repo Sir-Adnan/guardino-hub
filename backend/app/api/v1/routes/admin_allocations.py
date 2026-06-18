@@ -171,14 +171,15 @@ async def import_remote_users(
     if not row:
         raise HTTPException(status_code=404, detail="Allocation not found")
     allocation, node, reseller = row
-    if node.panel_type != PanelType.pasarguard:
-        raise HTTPException(status_code=400, detail="Remote user import is currently supported for PasarGuard allocations.")
+    if node.panel_type not in (PanelType.pasarguard, PanelType.marzban):
+        raise HTTPException(status_code=400, detail="Remote user import is currently supported for PasarGuard and Marzban allocations.")
 
     adapter = get_adapter_for_allocation(node, allocation)
     if not hasattr(adapter, "list_users"):
         raise HTTPException(status_code=501, detail="Adapter does not support user import.")
 
-    result = await adapter.list_users(offset=payload.offset, limit=payload.limit, admin=payload.remote_admin)  # type: ignore[attr-defined]
+    remote_admin = payload.remote_admin if node.panel_type == PanelType.pasarguard else None
+    result = await adapter.list_users(offset=payload.offset, limit=payload.limit, admin=remote_admin)  # type: ignore[attr-defined]
     now = datetime.now(timezone.utc)
     imported = 0
     skipped_existing = 0
@@ -186,14 +187,16 @@ async def import_remote_users(
     out_items: list[ImportRemoteUserItem] = []
 
     for remote_user in result.items:
-        existing = (
+        existing_row = (
             await db.execute(
-                select(SubAccount.id).where(
+                select(SubAccount, GuardinoUser)
+                .join(GuardinoUser, GuardinoUser.id == SubAccount.user_id)
+                .where(
                     SubAccount.node_id == node.id,
                     SubAccount.remote_identifier == remote_user.remote_identifier,
                 )
             )
-        ).scalar_one_or_none()
+        ).one_or_none()
         expire_at = remote_user.expire_at or (now + timedelta(days=36500))
         base_item = {
             "username": remote_user.username,
@@ -203,9 +206,42 @@ async def import_remote_users(
             "expire_at": expire_at.isoformat(),
             "status": str(remote_user.status or "active"),
         }
-        if existing:
-            skipped_existing += 1
-            out_items.append(ImportRemoteUserItem(**base_item, action="skip_existing", detail="Already imported."))
+        if existing_row:
+            existing_subaccount, existing_user = existing_row
+            if payload.skip_existing or int(existing_user.owner_reseller_id) != int(reseller.id):
+                detail = "Already imported."
+                if int(existing_user.owner_reseller_id) != int(reseller.id):
+                    detail = "Already exists on this node under another reseller."
+                    errors += 1
+                else:
+                    skipped_existing += 1
+                out_items.append(ImportRemoteUserItem(**base_item, action="skip_existing", detail=detail))
+                continue
+
+            if payload.dry_run:
+                out_items.append(ImportRemoteUserItem(**base_item, action="would_update_existing"))
+                continue
+
+            direct_url = normalize_url(remote_user.direct_sub_url, node.base_url)
+            existing_user.total_gb = int(remote_user.total_gb or 0)
+            existing_user.used_bytes = int(remote_user.used_bytes or 0)
+            existing_user.expire_at = expire_at
+            existing_user.status = _import_status(remote_user.status)
+            existing_user.meta = {
+                **(existing_user.meta if isinstance(existing_user.meta, dict) else {}),
+                "billing_origin": "external_import",
+                "imported_from": node.panel_type.value,
+                "imported_at": now.isoformat(),
+                "remote_admin": remote_admin or (allocation.credentials or {}).get("username"),
+                "remote_raw": remote_user.raw,
+                "no_expire": remote_user.expire_at is None,
+            }
+            existing_subaccount.allocation_id = allocation.id
+            existing_subaccount.panel_sub_url_cached = direct_url
+            existing_subaccount.panel_sub_url_cached_at = now if direct_url else None
+            existing_subaccount.used_bytes = int(remote_user.used_bytes or 0)
+            existing_subaccount.last_sync_at = now
+            out_items.append(ImportRemoteUserItem(**base_item, action="updated_existing"))
             continue
 
         if payload.dry_run:
@@ -225,9 +261,9 @@ async def import_remote_users(
                 node_group=None,
                 meta={
                     "billing_origin": "external_import",
-                    "imported_from": "pasarguard",
+                    "imported_from": node.panel_type.value,
                     "imported_at": now.isoformat(),
-                    "remote_admin": payload.remote_admin or (allocation.credentials or {}).get("username"),
+                    "remote_admin": remote_admin or (allocation.credentials or {}).get("username"),
                     "remote_raw": remote_user.raw,
                     "no_expire": remote_user.expire_at is None,
                 },

@@ -930,9 +930,16 @@ updater باید:
 
 - کد جدید را دریافت کند
 - فایل `.env` را بدون حذف مقادیر قبلی تکمیل کند
-- migrationها را اجرا کند
+- قبل از migration یک بکاپ دیتابیس در `backups/pre-update-*` بسازد
 - سرویس‌ها را rebuild/recreate کند
+- migrationها را با `alembic upgrade head` اجرا کند
 - تنظیمات sync پیش‌فرض را پایدار نگه دارد
+
+اگر عمداً می‌خواهید بکاپ قبل از آپدیت را رد کنید:
+
+```bash
+SKIP_PRE_UPDATE_BACKUP=1 sudo -E bash installer/update.sh
+```
 
 برای تغییرات دیتابیس، همیشه Alembic migration اضافه کنید. تغییر مستقیم مدل بدون migration باعث خرابی آپدیت‌های production می‌شود.
 

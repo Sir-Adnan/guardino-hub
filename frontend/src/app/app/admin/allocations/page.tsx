@@ -53,6 +53,42 @@ type GroupedAllocationList = { items: ResellerAllocationGroup[]; total: number }
 
 const ADMIN_FETCH_LIMIT = 200;
 
+type CredentialAuthType = "password" | "token";
+type CredentialDraft = {
+  mode: "shared" | "dedicated";
+  authType: CredentialAuthType;
+  username: string;
+  password: string;
+  token: string;
+  autoImport: boolean;
+};
+
+function emptyCredentialDraft(mode: "shared" | "dedicated" = "shared"): CredentialDraft {
+  return {
+    mode,
+    authType: "password",
+    username: "",
+    password: "",
+    token: "",
+    autoImport: true,
+  };
+}
+
+function credentialDraftFromAllocation(a: Pick<AllocationOut, "credential_mode" | "credentials">): CredentialDraft {
+  const credentials = a.credentials || {};
+  const token = String(credentials.token || credentials.access_token || credentials.api_key || credentials.apikey || "");
+  const username = String(credentials.username || "");
+  const password = String(credentials.password || "");
+  return {
+    mode: a.credential_mode || "shared",
+    authType: token && !username ? "token" : "password",
+    username,
+    password,
+    token,
+    autoImport: true,
+  };
+}
+
 async function fetchAllNodesForAdmin(maxPages = 50): Promise<NodeOut[]> {
   const all: NodeOut[] = [];
   let offset = 0;
@@ -106,11 +142,9 @@ export default function AllocationsPage() {
   const [addPriceOverride, setAddPriceOverride] = React.useState<number | "">("");
   const [addEnabled, setAddEnabled] = React.useState(true);
   const [addDefault, setAddDefault] = React.useState(false);
-  const [addCredentialMode, setAddCredentialMode] = React.useState<"shared" | "dedicated">("shared");
-  const [addCredentials, setAddCredentials] = React.useState("{}");
+  const [addCredentialDraft, setAddCredentialDraft] = React.useState<CredentialDraft>(() => emptyCredentialDraft());
   const [priceDrafts, setPriceDrafts] = React.useState<Record<number, number | "">>({});
-  const [modeDrafts, setModeDrafts] = React.useState<Record<number, "shared" | "dedicated">>({});
-  const [credentialDrafts, setCredentialDrafts] = React.useState<Record<number, string>>({});
+  const [credentialDrafts, setCredentialDrafts] = React.useState<Record<number, CredentialDraft>>({});
   const [confirmDelete, setConfirmDelete] = React.useState<GroupedAllocationItem | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [credentialBusy, setCredentialBusy] = React.useState<number | null>(null);
@@ -178,23 +212,41 @@ export default function AllocationsPage() {
     setAddPriceOverride("");
     setAddEnabled(true);
     setAddDefault(false);
-    setAddCredentialMode("shared");
-    setAddCredentials("{}");
+    setAddCredentialDraft(emptyCredentialDraft());
   }
 
-  function parseCredentialJson(raw: string) {
-    try {
-      const parsed = JSON.parse(raw || "{}");
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON");
-      return parsed as Record<string, unknown>;
-    } catch {
-      push({ title: t("common.error"), desc: "Credentials JSON is invalid.", type: "error" });
+  function credentialsFromDraft(draft: CredentialDraft): Record<string, unknown> | null {
+    if (draft.mode === "shared") return {};
+    if (draft.authType === "token") {
+      const token = draft.token.trim();
+      if (!token) {
+        push({ title: t("common.error"), desc: t("adminAllocations.errCredentials"), type: "error" });
+        return null;
+      }
+      return { token };
+    }
+
+    const username = draft.username.trim();
+    const password = draft.password;
+    if (!username || !password) {
+      push({ title: t("common.error"), desc: t("adminAllocations.errCredentials"), type: "error" });
       return null;
     }
+    return { username, password };
   }
 
-  function pasarguardOperatorTemplate() {
-    return JSON.stringify({ username: "", password: "" }, null, 2);
+  function isImportSupported(panelType: string) {
+    return panelType === "pasarguard" || panelType === "marzban";
+  }
+
+  function updateAllocationDraft(id: number, patch: Partial<CredentialDraft>) {
+    setCredentialDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || emptyCredentialDraft()),
+        ...patch,
+      },
+    }));
   }
 
   async function patchAllocation(id: number, payload: Partial<AllocationOut>) {
@@ -211,11 +263,12 @@ export default function AllocationsPage() {
 
   async function addAllocation() {
     if (!selectedGroup || addNodeId === "") return;
-    const parsedCredentials = addCredentialMode === "dedicated" ? parseCredentialJson(addCredentials) : {};
+    const selectedNode = nodes.find((n) => n.id === Number(addNodeId));
+    const parsedCredentials = credentialsFromDraft(addCredentialDraft);
     if (!parsedCredentials) return;
     setBusy(true);
     try {
-      await apiFetch<AllocationOut>("/api/v1/admin/allocations", {
+      const created = await apiFetch<AllocationOut>("/api/v1/admin/allocations", {
         method: "POST",
         body: JSON.stringify({
           reseller_id: selectedGroup.reseller_id,
@@ -223,11 +276,14 @@ export default function AllocationsPage() {
           enabled: addEnabled,
           default_for_reseller: addDefault,
           price_per_gb_override: addPriceOverride === "" ? null : Number(addPriceOverride),
-          credential_mode: addCredentialMode,
-          credentials: addCredentialMode === "dedicated" ? parsedCredentials : {},
+          credential_mode: addCredentialDraft.mode,
+          credentials: addCredentialDraft.mode === "dedicated" ? parsedCredentials : {},
         }),
       });
       push({ title: t("adminAllocations.created"), type: "success" });
+      if (addCredentialDraft.mode === "dedicated" && addCredentialDraft.autoImport && selectedNode && isImportSupported(selectedNode.panel_type)) {
+        await importAllocationUsersById(created.id, false);
+      }
       resetAddForm();
       await load(page, pageSize, q);
     } catch (e: any) {
@@ -248,19 +304,22 @@ export default function AllocationsPage() {
   }
 
   async function saveAllocationCredentials(a: GroupedAllocationItem) {
-    const mode = modeDrafts[a.id] || a.credential_mode || "shared";
-    const parsedCredentials = mode === "dedicated" ? parseCredentialJson(credentialDrafts[a.id] || "{}") : {};
+    const draft = credentialDrafts[a.id] || credentialDraftFromAllocation(a);
+    const parsedCredentials = credentialsFromDraft(draft);
     if (!parsedCredentials) return;
     setCredentialBusy(a.id);
     try {
       await apiFetch<AllocationOut>(`/api/v1/admin/allocations/${a.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          credential_mode: mode,
-          credentials: mode === "dedicated" ? parsedCredentials : {},
+          credential_mode: draft.mode,
+          credentials: draft.mode === "dedicated" ? parsedCredentials : {},
         }),
       });
-      push({ title: "Credential saved", type: "success" });
+      push({ title: t("adminAllocations.credentialsSaved"), type: "success" });
+      if (draft.mode === "dedicated" && draft.autoImport && isImportSupported(a.panel_type)) {
+        await importAllocationUsersById(a.id, false);
+      }
       await load(page, pageSize, q);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -273,7 +332,7 @@ export default function AllocationsPage() {
     setCredentialBusy(a.id);
     try {
       const res = await apiFetch<{ ok: boolean; detail: string }>(`/api/v1/admin/allocations/${a.id}/test-connection`, { method: "POST" });
-      push({ title: res.ok ? "Connection ok" : "Connection failed", desc: res.detail || "-", type: res.ok ? "success" : "error" });
+      push({ title: res.ok ? t("adminAllocations.connectionOk") : t("adminAllocations.connectionFailed"), desc: res.detail || "-", type: res.ok ? "success" : "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
@@ -281,22 +340,26 @@ export default function AllocationsPage() {
     }
   }
 
-  async function importAllocationUsers(a: GroupedAllocationItem, dryRun: boolean) {
-    setCredentialBusy(a.id);
-    try {
+  async function importAllocationUsersById(allocationId: number, dryRun: boolean) {
       const res = await apiFetch<{ scanned: number; imported: number; skipped_existing: number; errors: number; total_remote?: number }>(
-        `/api/v1/admin/allocations/${a.id}/import-users`,
+        `/api/v1/admin/allocations/${allocationId}/import-users`,
         {
           method: "POST",
           body: JSON.stringify({ dry_run: dryRun, limit: 500, offset: 0, skip_existing: true }),
         }
       );
       push({
-        title: dryRun ? "Import preview" : "Import completed",
+        title: dryRun ? t("adminAllocations.importPreview") : t("adminAllocations.importCompleted"),
         desc: `scanned=${fmtNumber(res.scanned)} imported=${fmtNumber(res.imported)} skipped=${fmtNumber(res.skipped_existing)} errors=${fmtNumber(res.errors)}`,
         type: res.errors ? "warning" : "success",
       });
       if (!dryRun) await load(page, pageSize, q);
+  }
+
+  async function importAllocationUsers(a: GroupedAllocationItem, dryRun: boolean) {
+    setCredentialBusy(a.id);
+    try {
+      await importAllocationUsersById(a.id, dryRun);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
@@ -335,15 +398,12 @@ export default function AllocationsPage() {
       return;
     }
     const drafts: Record<number, number | ""> = {};
-    const modeNext: Record<number, "shared" | "dedicated"> = {};
-    const credentialNext: Record<number, string> = {};
+    const credentialNext: Record<number, CredentialDraft> = {};
     selectedGroup.allocations.forEach((a) => {
       drafts[a.id] = a.price_per_gb_override == null ? "" : a.price_per_gb_override;
-      modeNext[a.id] = a.credential_mode || "shared";
-      credentialNext[a.id] = JSON.stringify(a.credentials || {}, null, 2);
+      credentialNext[a.id] = credentialDraftFromAllocation(a);
     });
     setPriceDrafts(drafts);
-    setModeDrafts(modeNext);
     setCredentialDrafts(credentialNext);
     resetAddForm();
   }, [selectedGroup]);
@@ -352,6 +412,79 @@ export default function AllocationsPage() {
     "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
   const metricCardClass =
     "rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 shadow-[0_10px_22px_-20px_hsl(var(--fg)/0.6)]";
+  const credentialBoxClass =
+    "rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3";
+  const selectedAddNode = React.useMemo(
+    () => nodes.find((n) => n.id === Number(addNodeId)) || null,
+    [nodes, addNodeId]
+  );
+
+  function renderCredentialEditor(
+    draft: CredentialDraft,
+    onChange: (patch: Partial<CredentialDraft>) => void,
+    panelType?: string | null
+  ) {
+    const dedicated = draft.mode === "dedicated";
+    const importable = !!panelType && isImportSupported(panelType);
+    return (
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-medium text-[hsl(var(--fg))]/75">
+            <KeyRound size={13} />
+            {t("adminAllocations.credentialsTitle")}
+          </div>
+          <select className={selectClass} value={draft.mode} onChange={(e) => onChange({ mode: e.target.value as "shared" | "dedicated" })}>
+            <option value="shared">{t("adminAllocations.credentialsShared")}</option>
+            <option value="dedicated">{t("adminAllocations.credentialsDedicated")}</option>
+          </select>
+          <Badge variant={dedicated ? "warning" : "muted"}>
+            {dedicated ? t("adminAllocations.roleDedicated") : t("adminAllocations.roleShared")}
+          </Badge>
+        </div>
+
+        {dedicated ? (
+          <div className={credentialBoxClass}>
+            <div className="grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="space-y-1">
+                <div className="text-xs text-[hsl(var(--fg))]/65">{t("adminAllocations.authMethod")}</div>
+                <select className={selectClass} value={draft.authType} onChange={(e) => onChange({ authType: e.target.value as CredentialAuthType })}>
+                  <option value="password">{t("adminAllocations.authPassword")}</option>
+                  <option value="token">{t("adminAllocations.authToken")}</option>
+                </select>
+              </div>
+              {draft.authType === "password" ? (
+                <>
+                  <div className="space-y-1">
+                    <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.username")}</div>
+                    <Input value={draft.username} onChange={(e) => onChange({ username: e.target.value })} autoComplete="off" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.password")}</div>
+                    <Input value={draft.password} onChange={(e) => onChange({ password: e.target.value })} type="password" autoComplete="new-password" />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1 md:col-span-2">
+                  <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.token")}</div>
+                  <Input value={draft.token} onChange={(e) => onChange({ token: e.target.value })} type="password" autoComplete="off" />
+                </div>
+              )}
+            </div>
+            {importable ? (
+              <label className="mt-3 flex items-start gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs leading-5 text-[hsl(var(--fg))]/75">
+                <Switch checked={draft.autoImport} onCheckedChange={(v) => onChange({ autoImport: v })} />
+                <span>{t("adminAllocations.autoImportHint")}</span>
+              </label>
+            ) : null}
+          </div>
+        ) : (
+          <div className={credentialBoxClass}>
+            <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">{t("adminAllocations.sharedHint")}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -559,28 +692,12 @@ export default function AllocationsPage() {
                   افزودن
                 </Button>
               </div>
-              <div className="mt-3 grid gap-2 lg:grid-cols-[180px_minmax(0,1fr)_auto] lg:items-start">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/65">
-                    <KeyRound size={13} />
-                    Panel credentials
-                  </div>
-                  <select className={selectClass} value={addCredentialMode} onChange={(e) => setAddCredentialMode(e.target.value as "shared" | "dedicated")}>
-                    <option value="shared">Shared node credential</option>
-                    <option value="dedicated">Dedicated reseller credential</option>
-                  </select>
-                </div>
-                <textarea
-                  className="min-h-[92px] w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-xs outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.32)] disabled:opacity-60"
-                  value={addCredentials}
-                  disabled={addCredentialMode === "shared"}
-                  onChange={(e) => setAddCredentials(e.target.value)}
-                  spellCheck={false}
-                />
-                <Button type="button" variant="outline" size="sm" onClick={() => setAddCredentials(pasarguardOperatorTemplate())} disabled={addCredentialMode === "shared"}>
-                  <KeyRound size={14} />
-                  Template
-                </Button>
+              <div className="mt-3">
+                {renderCredentialEditor(
+                  addCredentialDraft,
+                  (patch) => setAddCredentialDraft((prev) => ({ ...prev, ...patch })),
+                  selectedAddNode?.panel_type
+                )}
               </div>
             </div>
 
@@ -642,53 +759,30 @@ export default function AllocationsPage() {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 border-t border-[hsl(var(--border))] pt-3 lg:grid-cols-[180px_minmax(0,1fr)_auto] lg:items-start">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-xs text-[hsl(var(--fg))]/65">
-                        <KeyRound size={13} />
-                        Panel credentials
-                      </div>
-                      <select
-                        className={selectClass}
-                        value={modeDrafts[a.id] || a.credential_mode || "shared"}
-                        onChange={(e) => setModeDrafts((prev) => ({ ...prev, [a.id]: e.target.value as "shared" | "dedicated" }))}
-                      >
-                        <option value="shared">Shared node credential</option>
-                        <option value="dedicated">Dedicated reseller credential</option>
-                      </select>
-                      <Badge variant={(modeDrafts[a.id] || a.credential_mode) === "dedicated" ? "warning" : "muted"}>
-                        {(modeDrafts[a.id] || a.credential_mode || "shared") === "dedicated" ? "operator" : "node sudo/shared"}
-                      </Badge>
-                    </div>
-                    <textarea
-                      className="min-h-[92px] w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-xs outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.32)] disabled:opacity-60"
-                      value={credentialDrafts[a.id] || "{}"}
-                      disabled={(modeDrafts[a.id] || a.credential_mode || "shared") === "shared"}
-                      onChange={(e) => setCredentialDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                      spellCheck={false}
-                    />
-                    <div className="flex flex-wrap gap-2 lg:max-w-[240px]">
-                      <Button type="button" variant="outline" size="sm" onClick={() => setCredentialDrafts((prev) => ({ ...prev, [a.id]: pasarguardOperatorTemplate() }))} disabled={(modeDrafts[a.id] || a.credential_mode || "shared") === "shared"}>
-                        <KeyRound size={14} />
-                        Template
-                      </Button>
+                  <div className="mt-3 grid gap-3 border-t border-[hsl(var(--border))] pt-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+                    {renderCredentialEditor(
+                      credentialDrafts[a.id] || credentialDraftFromAllocation(a),
+                      (patch) => updateAllocationDraft(a.id, patch),
+                      a.panel_type
+                    )}
+                    <div className="flex flex-wrap gap-2 xl:max-w-[260px]">
                       <Button type="button" variant="outline" size="sm" onClick={() => saveAllocationCredentials(a)} disabled={credentialBusy === a.id}>
                         <Pencil size={14} />
-                        Save
+                        {t("common.save")}
                       </Button>
                       <Button type="button" variant="outline" size="sm" onClick={() => testAllocation(a)} disabled={credentialBusy === a.id}>
                         <PlugZap size={14} />
-                        Test
+                        {t("common.test")}
                       </Button>
-                      {a.panel_type === "pasarguard" ? (
+                      {isImportSupported(a.panel_type) ? (
                         <>
                           <Button type="button" variant="outline" size="sm" onClick={() => importAllocationUsers(a, true)} disabled={credentialBusy === a.id}>
                             <Database size={14} />
-                            Dry run
+                            {t("common.preview")}
                           </Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => importAllocationUsers(a, false)} disabled={credentialBusy === a.id}>
                             <UploadCloud size={14} />
-                            Import
+                            {t("common.import")}
                           </Button>
                         </>
                       ) : null}

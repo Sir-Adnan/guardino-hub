@@ -5,4 +5,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 backend/.venv/
+frontend/.next/
+frontend/node_modules/
+frontend/dev-server*.log
 !.gitkeep

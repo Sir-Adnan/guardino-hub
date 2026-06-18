@@ -113,15 +113,15 @@ patch_runtime_nginx_docs_routes() {
 }
 
 if [ -d ".git" ]; then
-  log "[1/5] Syncing latest source..."
+  log "[1/6] Syncing latest source..."
   sync_git_source "${INSTALL_DIR}"
 else
-  warn "[1/5] No .git directory found; skipping source sync."
+  warn "[1/6] No .git directory found; skipping source sync."
 fi
 
 patch_runtime_nginx_docs_routes
 
-log "[2/5] Ensuring .env and critical sync settings..."
+log "[2/6] Ensuring .env and critical sync settings..."
 if [ ! -f .env ]; then
   if [ -f .env.example ]; then
     cp .env.example .env
@@ -155,7 +155,18 @@ ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
 ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
 ensure_kv_if_missing "NEXT_PUBLIC_API_BASE" "/api"
 
-log "[3/5] Validating compose config..."
+env_get() {
+  local key="$1"; local default_val="${2:-}"
+  local raw
+  raw="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"
+  if [ -z "$raw" ]; then
+    echo "$default_val"
+  else
+    echo "$raw"
+  fi
+}
+
+log "[3/6] Validating compose config..."
 docker compose -f docker-compose.yml config >/dev/null
 
 COMPOSE=(docker compose -f docker-compose.yml)
@@ -163,10 +174,56 @@ if [ -f deploy/docker-compose.ssl.yml ] && grep -q "listen 443" deploy/nginx.con
   COMPOSE=(docker compose -f docker-compose.yml -f deploy/docker-compose.ssl.yml)
 fi
 
-log "[4/5] Recreating services..."
+wait_for_db() {
+  local db_user="$1"; local db_name="$2"
+  local i
+  for i in $(seq 1 60); do
+    if "${COMPOSE[@]}" exec -T db pg_isready -U "${db_user}" -d "${db_name}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+create_pre_update_backup() {
+  if [ "${SKIP_PRE_UPDATE_BACKUP:-0}" = "1" ]; then
+    warn "[4/6] Pre-update DB backup skipped by SKIP_PRE_UPDATE_BACKUP=1"
+    return 0
+  fi
+
+  local db_user db_name ts backup_dir dump_file archive_file
+  db_user="$(env_get POSTGRES_USER guardino)"
+  db_name="$(env_get POSTGRES_DB guardino)"
+  ts="$(date -u +'%Y%m%dT%H%M%SZ')"
+  backup_dir="${INSTALL_DIR}/backups/pre-update-${ts}"
+  dump_file="${backup_dir}/db.sql"
+  archive_file="${dump_file}.gz"
+
+  log "[4/6] Creating pre-migration database backup..."
+  mkdir -p "${backup_dir}"
+  "${COMPOSE[@]}" up -d db >/dev/null
+  if ! wait_for_db "${db_user}" "${db_name}"; then
+    err "Database is not ready; update aborted before migrations."
+    err "No schema change was applied. Re-run after DB is healthy, or set SKIP_PRE_UPDATE_BACKUP=1 if you intentionally accept the risk."
+    exit 1
+  fi
+
+  if ! "${COMPOSE[@]}" exec -T db pg_dump -U "${db_user}" -d "${db_name}" --no-owner --no-privileges > "${dump_file}"; then
+    err "Pre-update database backup failed; update aborted before migrations."
+    err "No schema change was applied. Fix PostgreSQL/permissions, or set SKIP_PRE_UPDATE_BACKUP=1 if you intentionally accept the risk."
+    exit 1
+  fi
+  gzip -9 "${dump_file}"
+  log "Pre-update DB backup saved: ${archive_file}"
+}
+
+create_pre_update_backup
+
+log "[5/6] Recreating services..."
 "${COMPOSE[@]}" up -d --build --force-recreate
 
-log "[5/5] Applying migrations..."
+log "[6/6] Applying migrations..."
 "${COMPOSE[@]}" run --rm api alembic upgrade head
 
 if [ -x "${INSTALL_DIR}/installer/guardinoctl.sh" ]; then

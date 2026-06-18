@@ -15,7 +15,7 @@ import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
 import { Pagination } from "@/components/ui/pagination";
-import { Activity, MoreHorizontal, Pencil, Trash2, Wallet, Power, Users } from "lucide-react";
+import { Activity, ChevronDown, KeyRound, MoreHorizontal, Pencil, Trash2, Wallet, Power, Users } from "lucide-react";
 
 type ResellerOut = {
   id: number;
@@ -58,6 +58,34 @@ type NodeOut = {
 };
 type NodeList = { items: NodeOut[]; total: number };
 
+type AllocationOut = {
+  id: number;
+  reseller_id: number;
+  node_id: number;
+  enabled: boolean;
+  default_for_reseller: boolean;
+  price_per_gb_override?: number | null;
+  credential_mode?: "shared" | "dedicated";
+  credentials?: Record<string, unknown>;
+};
+
+type CredentialAuthType = "password" | "token";
+type CredentialDraft = {
+  mode: "shared" | "dedicated";
+  authType: CredentialAuthType;
+  username: string;
+  password: string;
+  token: string;
+  autoImport: boolean;
+};
+
+type InitialNodeDraft = {
+  selected: boolean;
+  defaultForReseller: boolean;
+  priceOverride: number | "";
+  credential: CredentialDraft;
+};
+
 type ResellerAllocationSummaryItem = {
   id: number;
   reseller_id: number;
@@ -83,6 +111,30 @@ type ResellerAllocationSummaryList = { items: ResellerAllocationSummary[]; total
 const ADMIN_FETCH_LIMIT = 200;
 const DURATION_PRESET_OPTIONS = ["7d", "1m", "3m", "6m", "1y", "unlimited"];
 const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
+
+function emptyCredentialDraft(mode: "shared" | "dedicated" = "shared"): CredentialDraft {
+  return {
+    mode,
+    authType: "password",
+    username: "",
+    password: "",
+    token: "",
+    autoImport: true,
+  };
+}
+
+function emptyInitialNodeDraft(): InitialNodeDraft {
+  return {
+    selected: false,
+    defaultForReseller: false,
+    priceOverride: "",
+    credential: emptyCredentialDraft(),
+  };
+}
+
+function isImportSupported(panelType: string) {
+  return panelType === "pasarguard" || panelType === "marzban";
+}
 
 function defaultUserPolicy(): ResellerUserPolicy {
   return {
@@ -262,7 +314,9 @@ export default function AdminResellersPage() {
   const [bundleGb, setBundleGb] = React.useState<number>(0);
   const [priceDay, setPriceDay] = React.useState<number>(0);
   const [canCreateSub, setCanCreateSub] = React.useState(true);
-  const [assignAllNodes, setAssignAllNodes] = React.useState(true);
+  const [nodes, setNodes] = React.useState<NodeOut[]>([]);
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [initialNodeDrafts, setInitialNodeDrafts] = React.useState<Record<number, InitialNodeDraft>>({});
   const [useCustomPolicy, setUseCustomPolicy] = React.useState(false);
   const [globalPolicy, setGlobalPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
   const [userPolicy, setUserPolicy] = React.useState<ResellerUserPolicy>(defaultUserPolicy());
@@ -357,7 +411,14 @@ export default function AdminResellersPage() {
     setBundleGb(0);
     setPriceDay(0);
     setCanCreateSub(true);
-    setAssignAllNodes(true);
+    setAdvancedOpen(false);
+    setInitialNodeDrafts((prev) => {
+      const next: Record<number, InitialNodeDraft> = {};
+      nodes.forEach((n) => {
+        next[n.id] = { ...(prev[n.id] || emptyInitialNodeDraft()), selected: false, defaultForReseller: false, priceOverride: "", credential: emptyCredentialDraft() };
+      });
+      return next;
+    });
     setUseCustomPolicy(false);
     const p = defaultUserPolicy();
     setUserPolicy(p);
@@ -403,6 +464,22 @@ export default function AdminResellersPage() {
     }
   }
 
+  async function loadNodesForCreate() {
+    try {
+      const all = await fetchAllNodesForAdmin();
+      setNodes(all);
+      setInitialNodeDrafts((prev) => {
+        const next: Record<number, InitialNodeDraft> = {};
+        all.forEach((n) => {
+          next[n.id] = prev[n.id] || emptyInitialNodeDraft();
+        });
+        return next;
+      });
+    } catch (e: any) {
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    }
+  }
+
   async function loadAllocationSummary(resellerId: number) {
     try {
       const params = new URLSearchParams({ offset: "0", limit: "1000", q: String(resellerId) });
@@ -414,25 +491,90 @@ export default function AdminResellersPage() {
   }
 
 
-async function assignAllNodesForReseller(resellerId: number) {
-  // Best-effort: allocate all enabled nodes to this reseller for immediate usability.
-  const nodes = await fetchAllNodesForAdmin();
-  const enabled = nodes.filter((n) => n.is_enabled);
-  await Promise.all(
-    enabled.map((n, idx) =>
-      apiFetch("/api/v1/admin/allocations", {
+  function updateInitialNodeDraft(nodeId: number, patch: Partial<InitialNodeDraft>) {
+    setInitialNodeDrafts((prev) => ({
+      ...prev,
+      [nodeId]: {
+        ...(prev[nodeId] || emptyInitialNodeDraft()),
+        ...patch,
+      },
+    }));
+  }
+
+  function updateInitialNodeCredential(nodeId: number, patch: Partial<CredentialDraft>) {
+    setInitialNodeDrafts((prev) => {
+      const current = prev[nodeId] || emptyInitialNodeDraft();
+      return {
+        ...prev,
+        [nodeId]: {
+          ...current,
+          credential: {
+            ...current.credential,
+            ...patch,
+          },
+        },
+      };
+    });
+  }
+
+  function credentialsFromDraft(draft: CredentialDraft): Record<string, unknown> | null {
+    if (draft.mode === "shared") return {};
+    if (draft.authType === "token") {
+      const token = draft.token.trim();
+      if (!token) {
+        push({ title: t("common.error"), desc: t("adminAllocations.errCredentials"), type: "error" });
+        return null;
+      }
+      return { token };
+    }
+    const username = draft.username.trim();
+    const password = draft.password;
+    if (!username || !password) {
+      push({ title: t("common.error"), desc: t("adminAllocations.errCredentials"), type: "error" });
+      return null;
+    }
+    return { username, password };
+  }
+
+  function selectedInitialNodeRows() {
+    return nodes
+      .map((node) => ({ node, draft: initialNodeDrafts[node.id] || emptyInitialNodeDraft() }))
+      .filter(({ draft }) => draft.selected);
+  }
+
+  async function createSelectedAllocationsForReseller(resellerId: number) {
+    const selected = selectedInitialNodeRows();
+    if (!selected.length) return;
+    const hasDefault = selected.some(({ draft }) => draft.defaultForReseller);
+
+    for (const row of selected) {
+      const credentials = credentialsFromDraft(row.draft.credential);
+      if (!credentials) throw new Error(t("adminAllocations.errCredentials"));
+      const created = await apiFetch<AllocationOut>("/api/v1/admin/allocations", {
         method: "POST",
         body: JSON.stringify({
           reseller_id: resellerId,
-          node_id: n.id,
+          node_id: row.node.id,
           enabled: true,
-          default_for_reseller: idx === 0,
-          price_per_gb_override: null,
+          default_for_reseller: row.draft.defaultForReseller || (!hasDefault && selected[0].node.id === row.node.id),
+          price_per_gb_override: row.draft.priceOverride === "" ? null : Number(row.draft.priceOverride),
+          credential_mode: row.draft.credential.mode,
+          credentials: row.draft.credential.mode === "dedicated" ? credentials : {},
         }),
-      }).catch(() => null)
-    )
-  );
-}
+      });
+
+      if (row.draft.credential.mode === "dedicated" && row.draft.credential.autoImport && isImportSupported(row.node.panel_type)) {
+        try {
+          await apiFetch(`/api/v1/admin/allocations/${created.id}/import-users`, {
+            method: "POST",
+            body: JSON.stringify({ dry_run: false, limit: 500, offset: 0, skip_existing: true }),
+          });
+        } catch (e: any) {
+          push({ title: t("common.warn"), desc: `${row.node.name}: ${String(e.message || e)}`, type: "warning" });
+        }
+      }
+    }
+  }
 
   async function createOrSave() {
     try {
@@ -453,12 +595,13 @@ async function assignAllNodesForReseller(resellerId: number) {
           }),
         });
         push({ title: t("adminResellers.created"), desc: `ID: ${res.id}`, type: "success" });
-        if (assignAllNodes) {
+        const selectedAllocations = selectedInitialNodeRows();
+        if (selectedAllocations.length) {
           try {
-            await assignAllNodesForReseller(res.id);
-            push({ title: t("adminResellers.assignedAllNodes"), desc: t("adminResellers.assignedAllNodesDesc"), type: "success" });
+            await createSelectedAllocationsForReseller(res.id);
+            push({ title: t("adminResellers.assignedSelectedNodes"), desc: t("adminResellers.assignedSelectedNodesDesc"), type: "success" });
           } catch {
-            push({ title: t("common.warn"), desc: t("adminResellers.assignAllNodesWarn"), type: "warning" });
+            push({ title: t("common.warn"), desc: t("adminResellers.selectedAllocationsWarn"), type: "warning" });
           }
         }
         resetForm();
@@ -569,6 +712,7 @@ async function assignAllNodesForReseller(resellerId: number) {
   React.useEffect(() => {
     loadCreditOptions();
     loadGlobalPolicy();
+    loadNodesForCreate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -586,7 +730,7 @@ async function assignAllNodesForReseller(resellerId: number) {
     setTrafficInput((userPolicy.allowed_traffic_gb || []).join(", "));
   }, [userPolicy.allowed_traffic_gb]);
   const selectClass =
-    "h-10 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
+    "h-10 w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_58%,hsl(var(--surface-input-3))_100%)] px-3 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]";
   const guideBoxClass =
     "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
   const metricCardClass =
@@ -609,6 +753,54 @@ async function assignAllNodesForReseller(resellerId: number) {
   }, [items]);
   const editingAllocations = editingAllocationSummary?.allocations || [];
   const editingActiveAllocationCount = editingAllocations.filter((a) => a.enabled && a.node_is_enabled).length;
+  const initialSelectedCount = nodes.reduce((sum, node) => sum + (initialNodeDrafts[node.id]?.selected ? 1 : 0), 0);
+
+  function renderInitialCredentialEditor(node: NodeOut, draft: InitialNodeDraft) {
+    const credential = draft.credential;
+    if (credential.mode === "shared") {
+      return (
+        <div className={guideBoxClass}>
+          {t("adminAllocations.sharedHint")}
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
+        <div className="grid gap-2 md:grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="space-y-1">
+            <div className="text-xs text-[hsl(var(--fg))]/65">{t("adminAllocations.authMethod")}</div>
+            <select className={selectClass} value={credential.authType} onChange={(e) => updateInitialNodeCredential(node.id, { authType: e.target.value as CredentialAuthType })}>
+              <option value="password">{t("adminAllocations.authPassword")}</option>
+              <option value="token">{t("adminAllocations.authToken")}</option>
+            </select>
+          </div>
+          {credential.authType === "password" ? (
+            <>
+              <div className="space-y-1">
+                <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.username")}</div>
+                <Input value={credential.username} onChange={(e) => updateInitialNodeCredential(node.id, { username: e.target.value })} autoComplete="off" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.password")}</div>
+                <Input value={credential.password} onChange={(e) => updateInitialNodeCredential(node.id, { password: e.target.value })} type="password" autoComplete="new-password" />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1 md:col-span-2">
+              <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.token")}</div>
+              <Input value={credential.token} onChange={(e) => updateInitialNodeCredential(node.id, { token: e.target.value })} type="password" autoComplete="off" />
+            </div>
+          )}
+        </div>
+        {isImportSupported(node.panel_type) ? (
+          <label className="mt-3 flex items-start gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs leading-5 text-[hsl(var(--fg))]/75">
+            <Switch checked={credential.autoImport} onCheckedChange={(v) => updateInitialNodeCredential(node.id, { autoImport: v })} />
+            <span>{t("adminAllocations.autoImportHint")}</span>
+          </label>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -685,17 +877,95 @@ async function assignAllNodesForReseller(resellerId: number) {
 	              </div>
 	            </div>
 
-{editingId == null && (
-  <div className="space-y-2">
-    <label className="text-sm flex items-center gap-2">
-      {t("adminResellers.assignAllNodes")} <HelpTip text={t("adminResellers.help.assignAllNodes")} />
-    </label>
-	    <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2">
-	      <Switch checked={assignAllNodes} onCheckedChange={setAssignAllNodes} />
-	      <span className="text-sm text-[hsl(var(--fg))]/75">{assignAllNodes ? t("common.yes") : t("common.no")}</span>
-	    </div>
-	  </div>
-)}
+            {editingId == null ? (
+              <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 md:col-span-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 text-start"
+                  onClick={() => setAdvancedOpen((v) => !v)}
+                >
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <KeyRound size={16} />
+                      {t("adminResellers.initialAllocations")}
+                    </span>
+                    <span className="mt-1 block text-xs leading-6 text-[hsl(var(--fg))]/70">
+                      {t("adminResellers.initialAllocationsHint")}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <Badge variant={initialSelectedCount ? "success" : "muted"}>
+                      {fmtNumber(initialSelectedCount)}
+                    </Badge>
+                    <ChevronDown size={16} className={`transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+                  </span>
+                </button>
+
+                {advancedOpen ? (
+                  <div className="space-y-3 border-t border-[hsl(var(--border))] pt-3">
+                    {!nodes.length ? (
+                      <div className={guideBoxClass}>{t("adminResellers.noNodes")}</div>
+                    ) : null}
+                    {nodes.map((node) => {
+                      const draft = initialNodeDrafts[node.id] || emptyInitialNodeDraft();
+                      return (
+                        <div key={node.id} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <label className="flex min-w-0 items-start gap-3">
+                              <Switch
+                                checked={draft.selected}
+                                onCheckedChange={(v) => updateInitialNodeDraft(node.id, { selected: v })}
+                                disabled={!node.is_enabled}
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium">{node.name}</span>
+                                <span className="mt-1 block text-xs text-[hsl(var(--fg))]/60">
+                                  {node.panel_type} · #{node.id}
+                                </span>
+                              </span>
+                            </label>
+                            <Badge variant={node.is_enabled ? "default" : "danger"}>
+                              {node.is_enabled ? t("adminAllocations.enabled") : t("common.disable")}
+                            </Badge>
+                          </div>
+
+                          {draft.selected ? (
+                            <div className="mt-3 space-y-3 border-t border-[hsl(var(--border))] pt-3">
+                              <div className="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)_220px] md:items-end">
+                                <label className="flex h-10 items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 text-xs">
+                                  <Switch checked={draft.defaultForReseller} onCheckedChange={(v) => updateInitialNodeDraft(node.id, { defaultForReseller: v })} />
+                                  {t("adminAllocations.default")}
+                                </label>
+                                <div className="space-y-1">
+                                  <div className="text-xs text-[hsl(var(--fg))]/65">{t("adminAllocations.priceOverride")}</div>
+                                  <Input
+                                    type="number"
+                                    value={draft.priceOverride}
+                                    onChange={(e) => updateInitialNodeDraft(node.id, { priceOverride: e.target.value === "" ? "" : Number(e.target.value) })}
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs text-[hsl(var(--fg))]/65">{t("adminAllocations.credentialsTitle")}</div>
+                                  <select
+                                    className={selectClass}
+                                    value={draft.credential.mode}
+                                    onChange={(e) => updateInitialNodeCredential(node.id, { mode: e.target.value as "shared" | "dedicated" })}
+                                  >
+                                    <option value="shared">{t("adminAllocations.credentialsShared")}</option>
+                                    <option value="dedicated">{t("adminAllocations.credentialsDedicated")}</option>
+                                  </select>
+                                </div>
+                              </div>
+                              {renderInitialCredentialEditor(node, draft)}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
 <div className="space-y-2 md:col-span-2">
               <label className="text-sm flex items-center gap-2">
