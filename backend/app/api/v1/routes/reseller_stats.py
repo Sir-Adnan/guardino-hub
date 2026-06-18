@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.api.deps import require_reseller
-from app.models.user import GuardinoUser
+from app.models.user import GuardinoUser, UserStatus
 from app.models.node_allocation import NodeAllocation
 from app.models.node import Node
 from app.models.order import Order, OrderStatus
@@ -24,6 +26,7 @@ from app.services.dashboard_metrics import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=ResellerStats)
@@ -108,16 +111,21 @@ async def get_reseller_stats(
             )
         )
     ).all()
-    metric_series_rows = (
-        await db.execute(
-            select(DashboardDailyMetric.day, DashboardDailyMetric.used_bytes_total)
-            .where(
-                DashboardDailyMetric.reseller_id == reseller.id,
-                DashboardDailyMetric.day >= series_since.date(),
+    try:
+        metric_series_rows = (
+            await db.execute(
+                select(DashboardDailyMetric.day, DashboardDailyMetric.used_bytes_total)
+                .where(
+                    DashboardDailyMetric.reseller_id == reseller.id,
+                    DashboardDailyMetric.day >= series_since.date(),
+                )
+                .order_by(DashboardDailyMetric.day)
             )
-            .order_by(DashboardDailyMetric.day)
-        )
-    ).all()
+        ).all()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        logger.warning("reseller stats metric series unavailable reseller_id=%s err=%s", reseller.id, str(exc)[:220])
+        metric_series_rows = []
     daily_used_gb = set_today_series_value(
         build_daily_snapshot_series(
             metric_series_rows,

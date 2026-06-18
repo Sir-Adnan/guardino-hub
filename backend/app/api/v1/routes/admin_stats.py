@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -24,6 +26,7 @@ from app.services.dashboard_metrics import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=AdminStats)
@@ -103,7 +106,16 @@ async def get_admin_stats(
     )
     if reseller_id is not None:
         metric_series_stmt = metric_series_stmt.where(DashboardDailyMetric.reseller_id == reseller_id)
-    metric_series_rows = (await db.execute(metric_series_stmt)).all()
+    try:
+        metric_series_rows = (await db.execute(metric_series_stmt)).all()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        logger.warning(
+            "admin stats metric series unavailable reseller_id=%s err=%s",
+            reseller_id,
+            str(exc)[:220],
+        )
+        metric_series_rows = []
     daily_used_gb = set_today_series_value(
         build_daily_snapshot_series(
             metric_series_rows,
