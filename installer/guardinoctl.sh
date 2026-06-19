@@ -177,6 +177,25 @@ env_set() {
   mv "${tmp}" "${file}"
 }
 
+env_set_if_missing() {
+  local key="$1"
+  local value="$2"
+  if [ -z "$(env_get "${key}" "")" ]; then
+    env_set "${key}" "${value}"
+  fi
+}
+
+ensure_runtime_env_defaults() {
+  env_set_if_missing "REDIS_URL" "redis://redis:6379/0"
+  env_set_if_missing "USAGE_SYNC_SECONDS" "60"
+  env_set_if_missing "EXPIRY_SYNC_SECONDS" "60"
+  env_set_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
+  env_set_if_missing "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE" "1000"
+  env_set_if_missing "USAGE_SYNC_REMOTE_LIST_MAX_PAGES" "200"
+  env_set_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
+  env_set_if_missing "NEXT_PUBLIC_API_BASE" "/api"
+}
+
 backup_path() {
   local file="$1"
   local ts
@@ -533,6 +552,7 @@ cmd_install() {
   fi
   chmod +x "${INSTALL_DIR}/installer/install.sh" "${INSTALL_DIR}/installer/update.sh" "${INSTALL_DIR}/installer/manage.sh" "${INSTALL_DIR}/installer/guardinoctl.sh"
   INSTALL_DIR="${INSTALL_DIR}" REPO_URL="${REPO_URL}" BRANCH="${BRANCH}" bash "${INSTALL_DIR}/installer/install.sh"
+  ensure_runtime_env_defaults
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes || true
 }
 
@@ -543,6 +563,7 @@ cmd_update() {
   echo "Guardino update will create a pre-migration DB backup unless SKIP_PRE_UPDATE_BACKUP=1 is set."
   echo "All pending Alembic migrations are applied with: alembic upgrade head"
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/update.sh"
+  ensure_runtime_env_defaults
   INSTALL_DIR="${INSTALL_DIR}" bash "${INSTALL_DIR}/installer/guardinoctl.sh" install-script --yes || true
 }
 
@@ -650,7 +671,7 @@ validate_env_file() {
   file="$(env_file)"
   local errors=0
   local key value
-  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
+  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE USAGE_SYNC_REMOTE_LIST_PAGE_SIZE USAGE_SYNC_REMOTE_LIST_MAX_PAGES EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
     value="$(env_get "${key}" "")"
     if [ -n "${value}" ] && ! [[ "${value}" =~ ^[0-9]+$ ]]; then
       fail "${key} must be a positive integer. Current value: ${value}"
@@ -710,6 +731,7 @@ cmd_edit_env() {
   if [ ! -f "$(env_file)" ] && [ -f "${INSTALL_DIR}/.env.example" ]; then
     cp "${INSTALL_DIR}/.env.example" "$(env_file)"
   fi
+  ensure_runtime_env_defaults
   cmd_edit_file "$(env_file)" env
 }
 
@@ -726,6 +748,7 @@ cmd_set_env() {
     cp "${INSTALL_DIR}/.env.example" "$(env_file)"
   fi
   backup_path "$(env_file)" >/dev/null
+  ensure_runtime_env_defaults
   env_set "${key}" "${value}"
   validate_env_file
   ok "${key} updated."

@@ -153,6 +153,8 @@ ensure_kv_if_missing "REDIS_URL" "redis://redis:6379/0"
 ensure_kv_if_missing "USAGE_SYNC_SECONDS" "60"
 ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "60"
 ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
+ensure_kv_if_missing "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE" "1000"
+ensure_kv_if_missing "USAGE_SYNC_REMOTE_LIST_MAX_PAGES" "200"
 ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
 ensure_kv_if_missing "NEXT_PUBLIC_API_BASE" "/api"
 
@@ -237,4 +239,6 @@ fi
 
 log "Update completed."
 echo "USAGE_SYNC_SECONDS=$(grep -E '^USAGE_SYNC_SECONDS=' .env | cut -d= -f2-)"
+echo "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE=$(grep -E '^USAGE_SYNC_REMOTE_LIST_PAGE_SIZE=' .env | cut -d= -f2-)"
+echo "USAGE_SYNC_REMOTE_LIST_MAX_PAGES=$(grep -E '^USAGE_SYNC_REMOTE_LIST_MAX_PAGES=' .env | cut -d= -f2-)"
 echo "EXPIRY_SYNC_SECONDS=$(grep -E '^EXPIRY_SYNC_SECONDS=' .env | cut -d= -f2-)"
