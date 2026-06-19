@@ -1,5 +1,8 @@
 import { cn } from "@/lib/cn";
 
+const BRAND_ASSET_VERSION = "2026-06-19-1";
+const brandAsset = (path: string) => `${path}?v=${BRAND_ASSET_VERSION}`;
+
 export function BrandMark({
   showText = false,
   subtitle,
@@ -21,7 +24,7 @@ export function BrandMark({
           markClassName
         )}
       >
-        <img src="/brand/guardino-mark.png" alt="Guardino" className="h-full w-full object-contain" />
+        <img src={brandAsset("/brand/guardino-mark.png")} alt="Guardino" className="h-full w-full object-contain" />
       </span>
       {showText ? (
         <span className={cn("min-w-0", textClassName)}>

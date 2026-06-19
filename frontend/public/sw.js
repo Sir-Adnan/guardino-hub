@@ -1,4 +1,4 @@
-const CACHE_NAME = "guardino-pwa-v3-scroll-fix";
+const CACHE_NAME = "guardino-pwa-v4-brand-refresh";
 const APP_SHELL = [
   "/manifest.webmanifest",
   "/favicon.ico",
@@ -24,6 +24,21 @@ async function networkFirst(request) {
     const cached = await caches.match(request);
     if (cached) return cached;
     throw new Error("Network request failed and no cache entry is available.");
+  }
+}
+
+async function freshAsset(request) {
+  try {
+    const response = await fetch(request, { cache: "reload" });
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw new Error("Asset request failed and no cache entry is available.");
   }
 }
 
@@ -90,15 +105,6 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/favicon-32x32.png" ||
     url.pathname === "/manifest.webmanifest"
   ) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => null);
-          return response;
-        });
-      })
-    );
+    event.respondWith(freshAsset(request));
   }
 });

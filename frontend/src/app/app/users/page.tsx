@@ -107,11 +107,11 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
 type OpResult = { ok: boolean; charged_amount: number; refunded_amount: number; new_balance: number; user_id: number; detail?: string };
 const AUTO_REFRESH_MS = 30_000;
 const DURATION_PRESETS = [
-  { key: "7d", label: "7 روز", days: 7 },
-  { key: "1m", label: "1 ماه", days: 31 },
-  { key: "3m", label: "3 ماه", days: 90 },
-  { key: "6m", label: "6 ماه", days: 180 },
-  { key: "1y", label: "1 سال", days: 365 },
+  { key: "7d", label: "7 days", days: 7 },
+  { key: "1m", label: "1 month", days: 31 },
+  { key: "3m", label: "3 months", days: 90 },
+  { key: "6m", label: "6 months", days: 180 },
+  { key: "1y", label: "1 year", days: 365 },
 ];
 const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
@@ -138,7 +138,7 @@ function isUsageLimited(u: UserOut): boolean {
   return totalBytes > 0 && Number(u.used_bytes || 0) >= totalBytes;
 }
 
-function userStatusInfo(u: UserOut) {
+function userStatusInfo(u: UserOut, lang: "fa" | "en") {
   const s = (u.status || "").toLowerCase();
   const createStatus = String(u.create_status || "").toLowerCase();
   const days = safeDaysLeft(u.expire_at);
@@ -149,8 +149,8 @@ function userStatusInfo(u: UserOut) {
     return {
       key: "on_hold" as const,
       v: "default" as const,
-      label: "در انتظار اتصال",
-      note: "هنوز اولین اتصال کاربر ثبت نشده است.",
+      label: lang === "fa" ? "در انتظار اتصال" : "On Hold",
+      note: lang === "fa" ? "هنوز اولین اتصال کاربر ثبت نشده است." : "The user's first connection has not been recorded yet.",
       Icon: Hourglass,
       badgeClass: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
       noteClass: "border-violet-400/35 bg-violet-500/10 text-violet-700 dark:text-violet-300",
@@ -161,8 +161,8 @@ function userStatusInfo(u: UserOut) {
     return {
       key: "expired" as const,
       v: "danger" as const,
-      label: "منقضی شده",
-      note: "زمان اشتراک این کاربر تمام شده است.",
+      label: lang === "fa" ? "منقضی شده" : "Expired",
+      note: lang === "fa" ? "زمان اشتراک این کاربر تمام شده است." : "This user's subscription time has ended.",
       Icon: Clock3,
       badgeClass: "border-rose-500/35 bg-rose-500/15 text-rose-700 dark:text-rose-300",
       noteClass: "border-rose-400/35 bg-rose-500/10 text-rose-700 dark:text-rose-300",
@@ -173,8 +173,8 @@ function userStatusInfo(u: UserOut) {
     return {
       key: "limited" as const,
       v: "warning" as const,
-      label: "اتمام حجم",
-      note: "حجم اشتراک به سقف تعیین‌شده رسیده است.",
+      label: lang === "fa" ? "اتمام حجم" : "Data Limit",
+      note: lang === "fa" ? "حجم اشتراک به سقف تعیین‌شده رسیده است." : "The subscription data quota has reached its limit.",
       Icon: AlertTriangle,
       badgeClass: "border-amber-500/35 bg-amber-500/15 text-amber-700 dark:text-amber-300",
       noteClass: "border-amber-400/35 bg-amber-500/10 text-amber-700 dark:text-amber-300",
@@ -185,8 +185,8 @@ function userStatusInfo(u: UserOut) {
     return {
       key: "disabled" as const,
       v: "muted" as const,
-      label: "غیرفعال",
-      note: "دسترسی این کاربر در گاردینو غیرفعال است.",
+      label: lang === "fa" ? "غیرفعال" : "Disabled",
+      note: lang === "fa" ? "دسترسی این کاربر در گاردینو غیرفعال است." : "This user's access is disabled in Guardino.",
       Icon: Ban,
       badgeClass: "",
       noteClass: "border-slate-400/25 bg-slate-500/10 text-[hsl(var(--fg))]/75",
@@ -197,8 +197,8 @@ function userStatusInfo(u: UserOut) {
     return {
       key: "active" as const,
       v: "success" as const,
-      label: "فعال",
-      note: "اشتراک فعال است.",
+      label: lang === "fa" ? "فعال" : "Active",
+      note: lang === "fa" ? "اشتراک فعال است." : "Subscription is active.",
       Icon: CheckCircle2,
       badgeClass: "",
       noteClass: "border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -208,8 +208,8 @@ function userStatusInfo(u: UserOut) {
   return {
     key: "unknown" as const,
     v: "default" as const,
-    label: u.status || "نامشخص",
-    note: "وضعیت کاربر نامشخص است.",
+    label: u.status || (lang === "fa" ? "نامشخص" : "Unknown"),
+    note: lang === "fa" ? "وضعیت کاربر نامشخص است." : "User status is unknown.",
     Icon: Sparkles,
     badgeClass: "",
     noteClass: "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 text-[hsl(var(--fg))]/75",
@@ -217,19 +217,19 @@ function userStatusInfo(u: UserOut) {
   };
 }
 
-function statusBadge(status: string, createStatus?: string | null) {
+function statusBadge(status: string, createStatus: string | null | undefined, lang: "fa" | "en") {
   const s = (status || "").toLowerCase();
   if (s === "active" && String(createStatus || "").toLowerCase() === "on_hold") {
     return {
       v: "default" as const,
-      label: "در انتظار اتصال",
+      label: lang === "fa" ? "در انتظار اتصال" : "On Hold",
       Icon: Sparkles,
       className: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
     };
   }
-  if (s === "active") return { v: "success" as const, label: "فعال", Icon: CheckCircle2, className: "" };
-  if (s === "disabled") return { v: "muted" as const, label: "غیرفعال", Icon: Ban, className: "" };
-  if (s === "expired") return { v: "danger" as const, label: "منقضی", Icon: Ban, className: "" };
+  if (s === "active") return { v: "success" as const, label: lang === "fa" ? "فعال" : "Active", Icon: CheckCircle2, className: "" };
+  if (s === "disabled") return { v: "muted" as const, label: lang === "fa" ? "غیرفعال" : "Disabled", Icon: Ban, className: "" };
+  if (s === "expired") return { v: "danger" as const, label: lang === "fa" ? "منقضی" : "Expired", Icon: Ban, className: "" };
   return { v: "default" as const, label: status || "—", Icon: Sparkles, className: "" };
 }
 
@@ -239,7 +239,7 @@ function computePriority(u: UserOut) {
   const pct = totalBytes > 0 ? clamp01((u.used_bytes || 0) / totalBytes) : 0;
   const percent = Math.round(pct * 100);
   const days = safeDaysLeft(u.expire_at);
-  const state = userStatusInfo(u);
+  const state = userStatusInfo(u, "fa");
 
   if (state.key === "expired" || state.key === "limited") return { level: "high" as const, percent, days };
   if (s === "expired" || (days !== null && days < 0)) return { level: "high" as const, percent, days };
@@ -248,10 +248,10 @@ function computePriority(u: UserOut) {
   return { level: "low" as const, percent, days };
 }
 
-function panelLabel(panelType?: string) {
+function panelLabel(panelType: string | undefined, lang: "fa" | "en") {
   const p = String(panelType || "").toLowerCase();
-  if (p === "wg_dashboard") return "وایرگارد";
-  return "لینک مستقیم";
+  if (p === "wg_dashboard") return lang === "fa" ? "وایرگارد" : "WireGuard";
+  return lang === "fa" ? "لینک مستقیم" : "Direct link";
 }
 
 function qrImageUrl(value: string, size: number = 220) {
@@ -259,22 +259,34 @@ function qrImageUrl(value: string, size: number = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=8&data=${encodeURIComponent(value)}`;
 }
 
-function fmtGig(value: number) {
+function fmtGig(value: number, lang: "fa" | "en" = "fa") {
   const n = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(n);
+  return new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 1 }).format(n);
 }
 
-function fmtTrafficBytes(bytes: number) {
+function fmtTrafficBytes(bytes: number, lang: "fa" | "en" = "fa") {
   const safe = Math.max(0, Number(bytes) || 0);
   if (safe > 0 && safe < 1024 * 1024 * 1024) {
     const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
-    return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(mb)} مگابایت`;
+    const unit = lang === "fa" ? "مگابایت" : "MB";
+    return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 0 }).format(mb)} ${unit}`;
   }
-  return `${fmtGig(safe / (1024 * 1024 * 1024))} گیگ`;
+  return `${fmtGig(safe / (1024 * 1024 * 1024), lang)} ${lang === "fa" ? "گیگ" : "GB"}`;
 }
 
-function usagePercentLabel(percent: number, usedBytes: number) {
-  return usedBytes > 0 && percent === 0 ? "<۱٪" : `${percent}٪`;
+function usagePercentLabel(percent: number, usedBytes: number, lang: "fa" | "en") {
+  if (usedBytes > 0 && percent === 0) return lang === "fa" ? "<۱٪" : "<1%";
+  return lang === "fa" ? `${percent}٪` : `${percent}%`;
+}
+
+function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
+  if (lang === "en") return p.label;
+  if (p.key === "7d") return "۷ روز";
+  if (p.key === "1m") return "۱ ماه";
+  if (p.key === "3m") return "۳ ماه";
+  if (p.key === "6m") return "۶ ماه";
+  if (p.key === "1y") return "۱ سال";
+  return `${fmtNumber(p.days)} روز`;
 }
 
 function progressTone(percent: number) {
@@ -286,9 +298,173 @@ function progressTone(percent: number) {
 export default function UsersPage() {
   const router = useRouter();
   const { me, refresh: refreshMe } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { push } = useToast();
   const locked = (me?.balance ?? 1) <= 0;
+
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            autoRefresh: "Auto refresh every 30 seconds",
+            disabled: "Disabled",
+            totalUsedTraffic: "Total user traffic",
+            soldTraffic: "Total sold traffic",
+            gb: "GB",
+            usage: "Usage",
+            used: "Used",
+            remaining: "Remaining",
+            onHold: "On Hold",
+            limited: "Data Limit",
+            singleView: "Single column",
+            twoColumnView: "Two columns",
+            copyQuickSub: "Quick copy subscription link",
+            nodeLinks: "Node links",
+            pickNodeLink: "Choose node link",
+            qrLinks: "QR links",
+            more: "More",
+            quickEdit: "Quick edit",
+            copyMaster: "Copy main subscription link",
+            copyAllLinks: "Copy all links",
+            noLinkToCopy: "No link available to copy",
+            loadingLinks: "Fetching links...",
+            linksFailed: "Fetching links failed",
+            retry: "Try again",
+            clickToFetchLinks: "Click to fetch links",
+            copySubFor: (name: string) => `Copy subscription link ${name}`,
+            linkMissingFor: (name: string) => `${name} - link unavailable`,
+            copiedLinkFor: (name: string) => `Link ${name} copied`,
+            copyAllUsable: "Copy all usable links",
+            allLinksCopied: "All links copied",
+            copyGuardinoSub: "Copy Guardino central sub",
+            guardinoSubDisabled: "Guardino central sub is disabled",
+            guardinoCopied: "Central sub copied",
+            refreshLinks: "Refresh links",
+            subCopied: "Subscription link copied",
+            centralSub: "Central subscription",
+            aggregatedLink: "Aggregated link",
+            sortLabels: {
+              priority: "Needs attention",
+              expiry: "Soonest expiry",
+              usage: "Highest usage",
+              usage_low: "Lowest usage",
+              volume_high: "Highest quota",
+              volume_low: "Lowest quota",
+              newest: "Newest",
+              oldest: "Oldest",
+              name: "Username",
+            } as Record<SortMode, string>,
+            quickEditTitle: (label?: string) => (label ? `Quick edit: ${label}` : "Quick edit"),
+            renewalOnlyTitle: "Free editing is locked.",
+            renewalOnlyHelp: "For this reseller, only package renewal with super-admin-approved packages is allowed.",
+            renewalPackage: "Package renewal",
+            extendTime: "Extend time",
+            addTraffic: "Add traffic",
+            decreaseTraffic: "Decrease traffic",
+            decreaseTime: "Decrease time",
+            renewalHelp: "Renewal policy is set by the super admin. The reseller only chooses package days and traffic.",
+            renewalDuration: "Renewal duration",
+            renewalTraffic: "Renewal traffic",
+            renewalDays: "Renewal duration (days)",
+            renewalGb: "Renewal traffic (GB)",
+            run: "Run",
+            days: "days",
+            currentExpire: "Current expiry",
+            selectedDate: "Selected date",
+            quickControl: "Quick controls",
+            resetUsage: "Reset usage",
+            rebuildLink: "Rebuild link",
+            goDetails: "Go to details",
+            qrHelp: "QR codes for the central link and each node link are shown here. Revoke invalidates the previous central link too.",
+            open: "Open",
+            downloadConf: "Download .conf",
+            noQrLink: "No link found for QR generation.",
+            linksHint: "Recommendation: give users the direct panel link. The main subscription link is better for multi-node users.",
+            noDirectLink: "No direct link is available",
+            copyDirectLinks: "Copy direct links",
+            unavailableLink: "Link is not available.",
+          }
+        : {
+            autoRefresh: "بروزرسانی خودکار هر ۳۰ ثانیه",
+            disabled: "غیرفعال",
+            totalUsedTraffic: "حجم مصرف کل کاربران",
+            soldTraffic: "مجموع حجم فروخته‌شده",
+            gb: "گیگ",
+            usage: "مصرف",
+            used: "مصرف",
+            remaining: "باقی‌مانده",
+            onHold: "در انتظار اتصال",
+            limited: "اتمام حجم",
+            singleView: "تک‌ستونه",
+            twoColumnView: "دو ستونه",
+            copyQuickSub: "کپی سریع لینک اشتراک",
+            nodeLinks: "نودها",
+            pickNodeLink: "انتخاب لینک نود",
+            qrLinks: "QR لینک‌ها",
+            more: "بیشتر",
+            quickEdit: "ویرایش سریع",
+            copyMaster: "کپی لینک اصلی اشتراک",
+            copyAllLinks: "کپی همه لینک‌ها",
+            noLinkToCopy: "لینکی برای کپی وجود ندارد",
+            loadingLinks: "در حال دریافت لینک‌ها...",
+            linksFailed: "دریافت لینک‌ها ناموفق بود",
+            retry: "تلاش دوباره",
+            clickToFetchLinks: "برای دریافت لینک‌ها کلیک کنید",
+            copySubFor: (name: string) => `کپی لینک ساب ${name}`,
+            linkMissingFor: (name: string) => `${name} - لینک موجود نیست`,
+            copiedLinkFor: (name: string) => `لینک ${name} کپی شد`,
+            copyAllUsable: "کپی همه لینک‌های قابل استفاده",
+            allLinksCopied: "همه لینک‌ها کپی شد",
+            copyGuardinoSub: "کپی ساب مرکزی Guardino",
+            guardinoSubDisabled: "ساب مرکزی Guardino غیرفعال است",
+            guardinoCopied: "ساب مرکزی کپی شد",
+            refreshLinks: "به‌روزرسانی لینک‌ها",
+            subCopied: "لینک اشتراک کپی شد",
+            centralSub: "اشتراک مرکزی",
+            aggregatedLink: "لینک تجمیعی",
+            sortLabels: {
+              priority: "نیازمند رسیدگی",
+              expiry: "نزدیک‌ترین انقضا",
+              usage: "بیشترین مصرف",
+              usage_low: "کمترین مصرف",
+              volume_high: "بیشترین حجم",
+              volume_low: "کمترین حجم",
+              newest: "جدیدترین",
+              oldest: "قدیمی‌ترین",
+              name: "نام کاربر",
+            } as Record<SortMode, string>,
+            quickEditTitle: (label?: string) => (label ? `ویرایش سریع: ${label}` : "ویرایش سریع"),
+            renewalOnlyTitle: "ویرایش آزاد بسته است.",
+            renewalOnlyHelp: "برای این رسیلر فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود.",
+            renewalPackage: "تمدید بسته‌ای",
+            extendTime: "افزایش زمان",
+            addTraffic: "افزایش حجم",
+            decreaseTraffic: "کاهش حجم",
+            decreaseTime: "کاهش زمان",
+            renewalHelp: "سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند.",
+            renewalDuration: "مدت تمدید",
+            renewalTraffic: "حجم تمدید",
+            renewalDays: "مدت تمدید (روز)",
+            renewalGb: "حجم تمدید (گیگ)",
+            run: "اجرا",
+            days: "روز",
+            currentExpire: "تاریخ پایان فعلی",
+            selectedDate: "تاریخ انتخابی",
+            quickControl: "کنترل سریع",
+            resetUsage: "ریست مصرف",
+            rebuildLink: "بازسازی لینک",
+            goDetails: "رفتن به جزئیات",
+            qrHelp: "QR کد لینک مرکزی و لینک هر نود نمایش داده می‌شود. با Revoke، لینک مرکزی قبلی هم باطل می‌شود.",
+            open: "باز کردن",
+            downloadConf: "دانلود .conf",
+            noQrLink: "لینکی برای ساخت QR یافت نشد.",
+            linksHint: "پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.",
+            noDirectLink: "لینک مستقیم موجود نیست",
+            copyDirectLinks: "کپی لینک‌های مستقیم",
+            unavailableLink: "لینک در دسترس نیست.",
+          },
+    [lang]
+  );
 
   const [q, setQ] = React.useState("");
   const [debouncedQ, setDebouncedQ] = React.useState("");
@@ -446,7 +622,7 @@ export default function UsersPage() {
 
     if (filter !== "all") {
       out = out.filter((u) => {
-        const state = userStatusInfo(u).key;
+        const state = userStatusInfo(u, lang).key;
         if (filter === "active") return state === "active";
         if (filter === "disabled") return state === "disabled";
         if (filter === "expired") return state === "expired";
@@ -473,7 +649,7 @@ export default function UsersPage() {
     }
 
     if (sortMode === "name") {
-      arr.sort((a, b) => (a.label || "").localeCompare(b.label || "", "fa"));
+      arr.sort((a, b) => (a.label || "").localeCompare(b.label || "", lang === "fa" ? "fa" : "en"));
       return arr;
     }
 
@@ -587,7 +763,7 @@ export default function UsersPage() {
 
   async function copyResolvedLink(value: string, label: string) {
     if (!value) {
-      push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+      push({ title: copy.noLinkToCopy, type: "warning" });
       return;
     }
     const ok = await copyText(value);
@@ -614,48 +790,48 @@ export default function UsersPage() {
     const state = quickLinks[u.id];
     const data = state?.data;
     if (state?.loading && !data) {
-      return [{ label: "در حال دریافت لینک‌ها...", icon: <Sparkles size={16} />, disabled: true, onClick: () => {} }];
+      return [{ label: copy.loadingLinks, icon: <Sparkles size={16} />, disabled: true, onClick: () => {} }];
     }
     if (state?.error && !data) {
       return [
-        { label: "دریافت لینک‌ها ناموفق بود", icon: <AlertTriangle size={16} />, disabled: true, onClick: () => {} },
-        { label: "تلاش دوباره", icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } },
+        { label: copy.linksFailed, icon: <AlertTriangle size={16} />, disabled: true, onClick: () => {} },
+        { label: copy.retry, icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } },
       ];
     }
     if (!data) {
-      return [{ label: "برای دریافت لینک‌ها کلیک کنید", icon: <Link2 size={16} />, onClick: () => { void ensureQuickLinks(u, true); } }];
+      return [{ label: copy.clickToFetchLinks, icon: <Link2 size={16} />, onClick: () => { void ensureQuickLinks(u, true); } }];
     }
 
     const directItems: MenuItem[] = (data.node_links || []).map((nl) => {
       const link = resolveNodeLink(nl);
       const name = nodeLinkName(nl);
       return {
-        label: link ? `کپی لینک ساب ${name}` : `${name} - لینک موجود نیست`,
+        label: link ? copy.copySubFor(name) : copy.linkMissingFor(name),
         icon: <Server size={16} />,
         disabled: !link,
-        onClick: () => copyResolvedLink(link, `لینک ${name} کپی شد`),
+        onClick: () => copyResolvedLink(link, copy.copiedLinkFor(name)),
       };
     });
     const copyableDirect = (data.node_links || []).map((nl) => resolveNodeLink(nl)).filter(Boolean);
     const allLinks = [...copyableDirect, showMasterSub ? data.master_link : null].filter(Boolean) as string[];
     const items: MenuItem[] = [
       {
-        label: "کپی همه لینک‌های قابل استفاده",
+        label: copy.copyAllUsable,
         icon: <ClipboardList size={16} />,
         disabled: allLinks.length === 0,
-        onClick: () => copyResolvedLink(allLinks.join("\n"), "همه لینک‌ها کپی شد"),
+        onClick: () => copyResolvedLink(allLinks.join("\n"), copy.allLinksCopied),
       },
       ...directItems,
     ];
     if (showMasterSub) {
       items.push({
-        label: data.master_link ? "کپی ساب مرکزی Guardino" : "ساب مرکزی Guardino غیرفعال است",
+        label: data.master_link ? copy.copyGuardinoSub : copy.guardinoSubDisabled,
         icon: <Link2 size={16} />,
         disabled: !data.master_link,
-        onClick: () => copyResolvedLink(data.master_link || "", "ساب مرکزی کپی شد"),
+        onClick: () => copyResolvedLink(data.master_link || "", copy.guardinoCopied),
       });
     }
-    items.push({ label: "به‌روزرسانی لینک‌ها", icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } });
+    items.push({ label: copy.refreshLinks, icon: <RotateCcw size={16} />, onClick: () => { void ensureQuickLinks(u, true); } });
     return items;
   }
 
@@ -663,7 +839,7 @@ export default function UsersPage() {
     try {
       const res = await ensureQuickLinks(u, false);
       if (!res) {
-        push({ title: "دریافت لینک‌ها ناموفق بود", type: "error" });
+        push({ title: copy.linksFailed, type: "error" });
         return;
       }
       const direct = (res.node_links || [])
@@ -672,11 +848,11 @@ export default function UsersPage() {
       const master = showMasterSub && res.master_link ? res.master_link : "";
       const target = direct[0] || (master ? { link: master, name: "Guardino" } : null);
       if (!target?.link) {
-        push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+        push({ title: copy.noLinkToCopy, type: "warning" });
         return;
       }
       const ok = await copyText(target.link);
-      if (ok) showCopyHint(ev || null, direct.length === 1 && !master ? "لینک اشتراک کپی شد" : `لینک ${target.name} کپی شد`);
+      if (ok) showCopyHint(ev || null, direct.length === 1 && !master ? copy.subCopied : copy.copiedLinkFor(target.name));
       else push({ title: t("common.failed"), type: "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -700,7 +876,7 @@ export default function UsersPage() {
     try {
       const res = await fetchUserLinks(u, true);
       if (!res.master_link) {
-        push({ title: "ساب مرکزی Guardino غیرفعال است", type: "warning" });
+        push({ title: copy.guardinoSubDisabled, type: "warning" });
         return;
       }
       const ok = await copyText(res.master_link);
@@ -717,11 +893,11 @@ export default function UsersPage() {
       const direct = extractDirectLinks(res);
       const lines = [...direct, showMasterSub ? res.master_link : null].filter(Boolean).join("\n");
       if (!lines) {
-        push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+        push({ title: copy.noLinkToCopy, type: "warning" });
         return;
       }
       const ok = await copyText(lines);
-      if (ok) showCopyHint(ev || null, "همه لینک‌ها کپی شد");
+      if (ok) showCopyHint(ev || null, copy.allLinksCopied);
       else push({ title: t("common.failed"), type: "error" });
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -747,8 +923,8 @@ export default function UsersPage() {
     if (showMasterSub && qrLinks.master_link) {
       out.push({
         key: "master",
-        title: "اشتراک مرکزی",
-        subtitle: "لینک تجمیعی",
+        title: copy.centralSub,
+        subtitle: copy.aggregatedLink,
         url: qrLinks.master_link,
         isWg: false,
       });
@@ -762,7 +938,7 @@ export default function UsersPage() {
       out.push({
         key: `node-${nl.node_id}`,
         title,
-        subtitle: `${panelLabel(nl.panel_type)} (#${nl.node_id})`,
+        subtitle: `${panelLabel(nl.panel_type, lang)} (#${nl.node_id})`,
         url: link,
         isWg,
       });
@@ -888,17 +1064,7 @@ export default function UsersPage() {
     );
   }
 
-  const sortLabels: Record<SortMode, string> = {
-    priority: "نیازمند رسیدگی",
-    expiry: "نزدیک‌ترین انقضا",
-    usage: "بیشترین مصرف",
-    usage_low: "کمترین مصرف",
-    volume_high: "بیشترین حجم",
-    volume_low: "کمترین حجم",
-    newest: "جدیدترین",
-    oldest: "قدیمی‌ترین",
-    name: "نام کاربر",
-  };
+  const sortLabels: Record<SortMode, string> = copy.sortLabels;
   const sortMenuItems: MenuItem[] = [
     { label: sortLabels.priority, icon: <Sparkles size={16} />, onClick: () => setSortMode("priority") },
     { label: sortLabels.expiry, icon: <Clock3 size={16} />, onClick: () => setSortMode("expiry") },
@@ -919,7 +1085,7 @@ export default function UsersPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-2xl font-bold tracking-tight">{t("users.title")}</div>
-              <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.subtitle")} • بروزرسانی خودکار هر ۳۰ ثانیه</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{t("users.subtitle")} • {copy.autoRefresh}</div>
             </div>
             <a
               href={locked ? undefined : "/app/users/new"}
@@ -954,24 +1120,24 @@ export default function UsersPage() {
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(251,113,133,0.06))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">غیرفعال</div>
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{copy.disabled}</div>
                 <Ban size={18} className="text-rose-600" />
               </div>
               <div className="mt-2 text-2xl font-bold">{fmtNumber(stats.disabled)}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(249,115,22,0.05))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">حجم مصرف کل کاربران</div>
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{copy.totalUsedTraffic}</div>
                 <Gauge size={18} className="text-amber-600" />
               </div>
-              <div className="mt-2 text-2xl font-bold">{fmtTrafficBytes(stats.usedGb * 1024 * 1024 * 1024)}</div>
+              <div className="mt-2 text-2xl font-bold">{fmtTrafficBytes(stats.usedGb * 1024 * 1024 * 1024, lang)}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,rgba(129,140,248,0.14),rgba(56,189,248,0.06))] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">مجموع حجم فروخته‌شده</div>
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/70">{copy.soldTraffic}</div>
                 <Layers size={18} className="text-indigo-600" />
               </div>
-              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.soldGb)} گیگ</div>
+              <div className="mt-2 text-2xl font-bold">{fmtGig(stats.soldGb, lang)} {copy.gb}</div>
             </div>
           </div>
 
@@ -988,8 +1154,8 @@ export default function UsersPage() {
             <div className="flex flex-wrap gap-2">
               <FilterButton value="all" label={t("users.filterAll")} />
               <FilterButton value="active" label={t("users.filterActive")} />
-              <FilterButton value="on_hold" label="در انتظار اتصال" />
-              <FilterButton value="limited" label="اتمام حجم" />
+              <FilterButton value="on_hold" label={copy.onHold} />
+              <FilterButton value="limited" label={copy.limited} />
               <FilterButton value="disabled" label={t("users.filterDisabled")} />
               <FilterButton value="expired" label={t("users.filterExpired")} />
             </div>
@@ -1005,10 +1171,10 @@ export default function UsersPage() {
                       ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
                       : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--surface-card-3))]")
                   }
-                  title="نمایش تک‌ستونه"
+                  title={copy.singleView}
                 >
                   <List size={15} />
-                  تک‌ستونه
+                  {copy.singleView}
                 </button>
                 <button
                   type="button"
@@ -1019,10 +1185,10 @@ export default function UsersPage() {
                       ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-fg))]"
                       : "text-[hsl(var(--fg))]/75 hover:bg-[hsl(var(--surface-card-3))]")
                   }
-                  title="نمایش دو ستونه"
+                  title={copy.twoColumnView}
                 >
                   <LayoutGrid size={15} />
-                  دو ستونه
+                  {copy.twoColumnView}
                 </button>
               </div>
               <Menu
@@ -1079,7 +1245,7 @@ export default function UsersPage() {
             const pr = computePriority(u);
             const expText = pr.days === null ? "—" : pr.days >= 0 ? t("users.expiresIn").replace("{days}", String(pr.days)) : t("users.expired");
 
-            const sb = userStatusInfo(u);
+            const sb = userStatusInfo(u, lang);
             const StatusIcon = sb.Icon;
             const isActive = (u.status || "").toLowerCase() === "active";
             const busy = busyId === u.id;
@@ -1127,9 +1293,9 @@ export default function UsersPage() {
 
                   <div className="rounded-xl border border-[hsl(var(--border))]/70 bg-[hsl(var(--surface-card-1))]/72 p-3 shadow-[inset_0_1px_0_hsl(var(--fg)/0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[hsl(var(--fg))]/82">
-                      <div className="font-bold">{usagePercentLabel(percent, usedBytes)} مصرف</div>
+                      <div className="font-bold">{usagePercentLabel(percent, usedBytes, lang)} {copy.usage}</div>
                       <div className="font-semibold">
-                        {fmtTrafficBytes(usedBytes)} / {fmtGig(u.total_gb)} گیگ
+                        {fmtTrafficBytes(usedBytes, lang)} / {fmtGig(u.total_gb, lang)} {copy.gb}
                       </div>
                     </div>
                     <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[hsl(var(--surface-card-3))] ring-1 ring-[hsl(var(--border))]/45">
@@ -1139,15 +1305,15 @@ export default function UsersPage() {
                       />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[hsl(var(--fg))]/70">
-                      <div>مصرف: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes)}</span></div>
-                      <div>باقی‌مانده: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb)} گیگ</span></div>
+                      <div>{copy.used}: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtTrafficBytes(usedBytes, lang)}</span></div>
+                      <div>{copy.remaining}: <span className="font-semibold text-[hsl(var(--fg))]/90">{fmtGig(remainingGb, lang)} {copy.gb}</span></div>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <UserActionButton
                       icon={<Layers size={20} />}
-                      label="لینک‌ها"
+                      label={t("users.links")}
                       title={t("users.links")}
                       disabled={busy}
                       onClick={(e) => {
@@ -1157,8 +1323,8 @@ export default function UsersPage() {
                     />
                     <UserActionButton
                       icon={<Copy size={20} />}
-                      label="کپی"
-                      title="کپی سریع لینک اشتراک"
+                      label={t("common.copy")}
+                      title={copy.copyQuickSub}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1171,8 +1337,8 @@ export default function UsersPage() {
                         trigger={
                           <UserActionButton
                             icon={<Link2 size={20} />}
-                            label="نودها"
-                            title="انتخاب لینک نود"
+                            label={copy.nodeLinks}
+                            title={copy.pickNodeLink}
                             disabled={busy}
                             onClick={() => ensureQuickLinks(u, false)}
                           />
@@ -1183,7 +1349,7 @@ export default function UsersPage() {
                     <UserActionButton
                       icon={<QrCode size={20} />}
                       label="QR"
-                      title="نمایش QR لینک‌ها"
+                      title={copy.qrLinks}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1195,7 +1361,7 @@ export default function UsersPage() {
                         trigger={
                           <UserActionButton
                             icon={<span className="text-xl font-black leading-none">...</span>}
-                            label="بیشتر"
+                            label={copy.more}
                             title={t("users.actions")}
                             disabled={busy}
                           />
@@ -1212,7 +1378,7 @@ export default function UsersPage() {
                             onClick: () => router.push(`/app/users/${u.id}`),
                           },
                           {
-                            label: "ویرایش سریع",
+                            label: copy.quickEdit,
                             icon: <SquarePen size={16} />,
                             onClick: () => openQuickEdit(u),
                           },
@@ -1280,8 +1446,8 @@ export default function UsersPage() {
                       variant="ghost"
                       className={iconButtonClass}
                       size="sm"
-                      title="کپی سریع لینک اشتراک"
-                      aria-label="کپی سریع لینک اشتراک"
+                      title={copy.copyQuickSub}
+                      aria-label={copy.copyQuickSub}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1298,8 +1464,8 @@ export default function UsersPage() {
                             variant="ghost"
                             className={iconButtonClass}
                             size="sm"
-                            title="کپی لینک اشتراک"
-                            aria-label="کپی لینک اشتراک"
+                            title={copy.copyQuickSub}
+                            aria-label={copy.copyQuickSub}
                             disabled={busy}
                             onClick={() => ensureQuickLinks(u, false)}
                           >
@@ -1313,8 +1479,8 @@ export default function UsersPage() {
                       variant="outline"
                       className={`hidden ${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/60 hover:bg-emerald-500/10`}
                       size="sm"
-                      title="کپی لینک اصلی اشتراک"
-                      aria-label="کپی لینک اصلی اشتراک"
+                      title={copy.copyMaster}
+                      aria-label={copy.copyMaster}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1327,8 +1493,8 @@ export default function UsersPage() {
                       variant="outline"
                       className={`hidden ${actionSize} rounded-lg border-[hsl(var(--border))]/90 p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/10`}
                       size="sm"
-                      title="کپی همه لینک‌ها"
-                      aria-label="کپی همه لینک‌ها"
+                      title={copy.copyAllLinks}
+                      aria-label={copy.copyAllLinks}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1341,8 +1507,8 @@ export default function UsersPage() {
                       variant="ghost"
                       className={iconButtonClass}
                       size="sm"
-                      title="QR لینک‌ها"
-                      aria-label="QR لینک‌ها"
+                      title={copy.qrLinks}
+                      aria-label={copy.qrLinks}
                       disabled={busy}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1405,23 +1571,23 @@ export default function UsersPage() {
                             onClick: () => router.push(`/app/users/${u.id}`),
                           },
                           {
-                            label: "ویرایش سریع",
+                            label: copy.quickEdit,
                             icon: <SquarePen size={16} />,
                             onClick: () => openQuickEdit(u),
                           },
                           {
-                            label: "کپی لینک اصلی اشتراک",
+                            label: copy.copyMaster,
                             icon: <Copy size={16} />,
                             disabled: !showMasterSub,
                             onClick: () => copyMaster(u),
                           },
                           {
-                            label: "کپی همه لینک‌ها",
+                            label: copy.copyAllLinks,
                             icon: <Copy size={16} />,
                             onClick: () => copyAllLinksForUser(u),
                           },
                           {
-                            label: "نمایش QR لینک‌ها",
+                            label: copy.qrLinks,
                             icon: <QrCode size={16} />,
                             onClick: () => openQr(u),
                           },
@@ -1505,31 +1671,31 @@ export default function UsersPage() {
       <Modal
         open={editOpen}
         onClose={() => setEditOpen(false)}
-        title={editUser ? `ویرایش سریع: ${editUser.label}` : "ویرایش سریع"}
+        title={copy.quickEditTitle(editUser?.label)}
       >
         {editUser ? (
           <div className="space-y-4 text-sm">
             {renewalOnly ? (
               <div className="flex max-w-full items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/10 p-3 text-xs text-[hsl(var(--fg))]/78">
-                <span className="font-medium">ویرایش آزاد بسته است.</span>
-                <HelpTip text="برای این رسیلر فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود." />
+                <span className="font-medium">{copy.renewalOnlyTitle}</span>
+                <HelpTip text={copy.renewalOnlyHelp} />
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <Button type="button" size="sm" variant={quickMode === "renewal" ? "primary" : "outline"} onClick={() => setQuickMode("renewal")}>
-                  تمدید بسته‌ای
+                  {copy.renewalPackage}
                 </Button>
                 <Button type="button" size="sm" variant={quickMode === "extend" ? "primary" : "outline"} onClick={() => setQuickMode("extend")}>
-                  افزایش زمان
+                  {copy.extendTime}
                 </Button>
                 <Button type="button" size="sm" variant={quickMode === "add" ? "primary" : "outline"} onClick={() => setQuickMode("add")}>
-                  افزایش حجم
+                  {copy.addTraffic}
                 </Button>
                 <Button type="button" size="sm" variant={quickMode === "dec" ? "primary" : "outline"} onClick={() => setQuickMode("dec")}>
-                  کاهش حجم
+                  {copy.decreaseTraffic}
                 </Button>
                 <Button type="button" size="sm" variant={quickMode === "time_dec" ? "primary" : "outline"} onClick={() => setQuickMode("time_dec")}>
-                  کاهش زمان
+                  {copy.decreaseTime}
                 </Button>
               </div>
             )}
@@ -1537,36 +1703,36 @@ export default function UsersPage() {
             {quickMode === "renewal" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="flex items-center gap-2">
-                  <div className="font-medium">تمدید بسته‌ای</div>
-                  <HelpTip text="سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند." />
+                  <div className="font-medium">{copy.renewalPackage}</div>
+                  <HelpTip text={copy.renewalHelp} />
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">مدت تمدید</div>
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">{copy.renewalDuration}</div>
                   <div className="flex flex-wrap gap-2">
                     {renewalDurationPresets.map((p) => (
                       <Button key={p.key} type="button" size="sm" variant={editRenewDays === p.days ? "primary" : "outline"} onClick={() => setEditRenewDays(p.days)}>
-                        {p.label}
+                        {durationPresetLabel(p, lang)}
                       </Button>
                     ))}
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">حجم تمدید</div>
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/75">{copy.renewalTraffic}</div>
                   <div className="flex flex-wrap gap-2">
                     {renewalTrafficPresets.map((g) => (
                       <Button key={g} type="button" size="sm" variant={editRenewGb === g ? "primary" : "outline"} onClick={() => setEditRenewGb(g)}>
-                        {g} گیگ
+                        {g} {copy.gb}
                       </Button>
                     ))}
                   </div>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
                   <label className="space-y-1">
-                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">مدت تمدید (روز)</span>
+                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">{copy.renewalDays}</span>
                     <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled={renewalOnly} onChange={(e) => setEditRenewDays(Math.max(1, Number(e.target.value) || 1))} />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">حجم تمدید (گیگ)</span>
+                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">{copy.renewalGb}</span>
                     <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled={renewalOnly} onChange={(e) => setEditRenewGb(Math.max(1, Number(e.target.value) || 1))} />
                   </label>
                   <Button
@@ -1581,7 +1747,7 @@ export default function UsersPage() {
                       if (ok) setEditOpen(false);
                     }}
                   >
-                    اجرا
+                    {copy.run}
                   </Button>
                 </div>
               </div>
@@ -1589,7 +1755,7 @@ export default function UsersPage() {
 
             {!renewalOnly && quickMode === "extend" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div className="font-medium">افزایش زمان (روز)</div>
+                <div className="font-medium">{copy.extendTime} ({copy.days})</div>
                 <div className="flex flex-wrap gap-2">
                   {[7, 31, 90, 180].map((d) => (
                     <Button key={d} type="button" size="sm" variant={editDays === d ? "primary" : "outline"} onClick={() => setEditDays(d)}>
@@ -1618,14 +1784,14 @@ export default function UsersPage() {
                       if (ok) setEditOpen(false);
                     }}
                   >
-                    اجرا
+                    {copy.run}
                   </Button>
                 </div>
                 <div className="text-xs text-[hsl(var(--fg))]/75">
-                  تاریخ پایان فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  {copy.currentExpire}: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
                   {editTargetDate ? (
                     <span className="mr-2">
-                      | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
+                      | {copy.selectedDate}: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
                     </span>
                   ) : null}
                 </div>
@@ -1634,7 +1800,7 @@ export default function UsersPage() {
 
             {!renewalOnly && quickMode === "add" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div className="font-medium">افزایش حجم (گیگ)</div>
+                <div className="font-medium">{copy.addTraffic} ({copy.gb})</div>
                 <div className="flex flex-wrap gap-2">
                   {[5, 10, 20, 50].map((g) => (
                     <Button key={g} type="button" size="sm" variant={editAddGb === g ? "primary" : "outline"} onClick={() => setEditAddGb(g)}>
@@ -1651,7 +1817,7 @@ export default function UsersPage() {
                       if (ok) setEditOpen(false);
                     }}
                   >
-                    اجرا
+                    {copy.run}
                   </Button>
                 </div>
               </div>
@@ -1659,7 +1825,7 @@ export default function UsersPage() {
 
             {!renewalOnly && quickMode === "dec" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div className="font-medium">کاهش حجم (ریفاند)</div>
+                <div className="font-medium">{copy.decreaseTraffic}</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 5, 10, 20].map((g) => (
                     <Button key={g} type="button" size="sm" variant={editDecGb === g ? "primary" : "outline"} onClick={() => setEditDecGb(g)}>
@@ -1680,7 +1846,7 @@ export default function UsersPage() {
                       if (ok) setEditOpen(false);
                     }}
                   >
-                    اجرا
+                    {copy.run}
                   </Button>
                 </div>
               </div>
@@ -1688,11 +1854,11 @@ export default function UsersPage() {
 
             {!renewalOnly && quickMode === "time_dec" ? (
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                <div className="font-medium">کاهش زمان (همراه ریفاند)</div>
+                <div className="font-medium">{copy.decreaseTime}</div>
                 <div className="flex flex-wrap gap-2">
                   {[1, 3, 7, 15, 31].map((d) => (
                     <Button key={d} type="button" size="sm" variant={editDecDays === d ? "primary" : "outline"} onClick={() => setEditDecDays(d)}>
-                      -{d} روز
+                      -{d} {copy.days}
                     </Button>
                   ))}
                 </div>
@@ -1718,14 +1884,14 @@ export default function UsersPage() {
                       if (ok) setEditOpen(false);
                     }}
                   >
-                    اجرا
+                    {copy.run}
                   </Button>
                 </div>
                 <div className="text-xs text-[hsl(var(--fg))]/75">
-                  تاریخ پایان فعلی: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
+                  {copy.currentExpire}: <span className="font-semibold">{formatJalaliDateTime(new Date(editUser.expire_at))}</span>
                   {editTargetDate ? (
                     <span className="mr-2">
-                      | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
+                      | {copy.selectedDate}: <span className="font-semibold">{formatJalaliDateTime(editTargetDate)}</span>
                     </span>
                   ) : null}
                 </div>
@@ -1733,7 +1899,7 @@ export default function UsersPage() {
             ) : null}
 
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.3)_100%)] p-3 space-y-2 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-              <div className="font-medium">کنترل سریع</div>
+              <div className="font-medium">{copy.quickControl}</div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -1745,7 +1911,7 @@ export default function UsersPage() {
                     ask("reset", editUser);
                   }}
                 >
-                  <Gauge size={15} /> ریست مصرف
+                  <Gauge size={15} /> {copy.resetUsage}
                 </Button>
                 <Button
                   type="button"
@@ -1757,7 +1923,7 @@ export default function UsersPage() {
                     ask("revoke", editUser);
                   }}
                 >
-                  <Unlink2 size={15} /> بازسازی لینک
+                  <Unlink2 size={15} /> {copy.rebuildLink}
                 </Button>
               </div>
             </div>
@@ -1765,7 +1931,7 @@ export default function UsersPage() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEditOpen(false)}>{t("common.cancel")}</Button>
               <Button variant="outline" className="gap-2" onClick={() => router.push(`/app/users/${editUser.id}`)}>
-                <SquarePen size={16} /> رفتن به جزئیات
+                <SquarePen size={16} /> {copy.goDetails}
               </Button>
             </div>
           </div>
@@ -1775,7 +1941,7 @@ export default function UsersPage() {
       <Modal
         open={qrOpen}
         onClose={() => setQrOpen(false)}
-        title={qrUser ? `QR لینک‌ها: ${qrUser.label}` : "QR لینک‌ها"}
+        title={qrUser ? `${copy.qrLinks}: ${qrUser.label}` : copy.qrLinks}
         className="max-w-4xl"
       >
         {qrErr ? <div className="text-sm text-red-500">{qrErr}</div> : null}
@@ -1784,7 +1950,7 @@ export default function UsersPage() {
         {qrLinks ? (
           <div className="space-y-4">
             <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
-              QR کد لینک مرکزی و لینک هر نود نمایش داده می‌شود. با Revoke، لینک مرکزی قبلی هم باطل می‌شود.
+              {copy.qrHelp}
             </div>
 
             {qrItems.length ? (
@@ -1820,7 +1986,7 @@ export default function UsersPage() {
                           window.open(item.url, "_blank", "noopener,noreferrer");
                         }}
                       >
-                        <ExternalLink size={14} /> باز کردن
+                        <ExternalLink size={14} /> {copy.open}
                       </Button>
                       {item.isWg ? (
                         <Button
@@ -1831,7 +1997,7 @@ export default function UsersPage() {
                             window.open(item.url, "_blank", "noopener,noreferrer");
                           }}
                         >
-                          <Download size={14} /> دانلود .conf
+                          <Download size={14} /> {copy.downloadConf}
                         </Button>
                       ) : null}
                     </div>
@@ -1839,7 +2005,7 @@ export default function UsersPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-[hsl(var(--fg))]/70">لینکی برای ساخت QR یافت نشد.</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{copy.noQrLink}</div>
             )}
           </div>
         ) : null}
@@ -1852,7 +2018,7 @@ export default function UsersPage() {
         {links ? (
           <div className="space-y-4 text-sm">
             <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
-              پیشنهاد: لینک مستقیم پنل را به کاربر بدهید. لینک اصلی اشتراک برای حالت چندنودی مناسب‌تر است.
+              {copy.linksHint}
             </div>
             {showMasterSub && links.master_link ? (
             <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]/72 p-3 sm:p-4">
@@ -1874,14 +2040,14 @@ export default function UsersPage() {
                   onClick={() => {
                     const directList = extractDirectLinks(links);
                     if (!directList.length) {
-                      push({ title: "لینک مستقیم موجود نیست", type: "warning" });
+                      push({ title: copy.noDirectLink, type: "warning" });
                       return;
                     }
                     const direct = directList.join("\n");
                     copyText(direct).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
                 >
-                  <Link2 size={15} /> کپی لینک‌های مستقیم
+                  <Link2 size={15} /> {copy.copyDirectLinks}
                 </Button>
                 <Button
                   variant="outline"
@@ -1892,7 +2058,7 @@ export default function UsersPage() {
                     copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                   }}
                 >
-                  <Copy size={15} /> کپی همه لینک‌ها
+                  <Copy size={15} /> {copy.copyAllLinks}
                 </Button>
               </div>
             </div>
@@ -1905,13 +2071,13 @@ export default function UsersPage() {
                 onClick={() => {
                   const directList = extractDirectLinks(links);
                   if (!directList.length) {
-                    push({ title: "لینک مستقیم موجود نیست", type: "warning" });
+                    push({ title: copy.noDirectLink, type: "warning" });
                     return;
                   }
                   copyText(directList.join("\n")).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                 }}
               >
-                <Link2 size={15} /> کپی لینک‌های مستقیم
+                <Link2 size={15} /> {copy.copyDirectLinks}
               </Button>
               <Button
                 variant="outline"
@@ -1920,13 +2086,13 @@ export default function UsersPage() {
                   const direct = extractDirectLinks(links);
                   const all = [...direct, showMasterSub ? links.master_link : null].filter(Boolean).join("\n");
                   if (!all) {
-                    push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+                    push({ title: copy.noLinkToCopy, type: "warning" });
                     return;
                   }
                   copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                 }}
               >
-                <Copy size={15} /> کپی همه لینک‌ها
+                <Copy size={15} /> {copy.copyAllLinks}
               </Button>
             </div>
 
@@ -1973,7 +2139,7 @@ export default function UsersPage() {
                                   window.open(full, "_blank", "noopener,noreferrer");
                                 }}
                               >
-                                <Download size={15} /> دانلود .conf
+                                <Download size={15} /> {copy.downloadConf}
                               </Button>
                             ) : null}
                           </div>

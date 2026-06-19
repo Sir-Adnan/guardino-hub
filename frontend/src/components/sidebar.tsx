@@ -50,15 +50,16 @@ export function Sidebar({
   const router = useRouter();
   const { lang, setLang, t } = useI18n();
   const [now, setNow] = React.useState(() => new Date());
-  const jalaliDateLabel = React.useMemo(
+  const dateLabel = React.useMemo(
     () =>
-      now.toLocaleDateString("fa-IR-u-ca-persian", {
+      now.toLocaleDateString(lang === "en" ? "en-US" : "fa-IR-u-ca-persian", {
         year: "numeric",
         month: "long",
         day: "numeric",
       }),
-    [now]
+    [lang, now]
   );
+  const dateTitle = lang === "en" ? "Date" : "تاریخ شمسی";
 
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -190,18 +191,18 @@ export function Sidebar({
             <div className="mb-3 hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,transparent_85%)] px-3 py-2 text-xs sm:block">
               <div className="mb-1 flex items-center gap-1.5 text-[hsl(var(--fg))]/70">
                 <CalendarDays size={13} />
-                تاریخ شمسی
+                {dateTitle}
               </div>
-              <div className="font-semibold">{jalaliDateLabel}</div>
+              <div className="font-semibold">{dateLabel}</div>
             </div>
             <div className="mb-2 flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.55)] px-2.5 py-1.5 text-[11px] sm:hidden">
               <CalendarDays size={13} className="shrink-0 text-[hsl(var(--fg))]/70" />
-              <span className="truncate font-medium">{jalaliDateLabel}</span>
+              <span className="truncate font-medium">{dateLabel}</span>
             </div>
           </>
         ) : (
           <div className="mb-2 flex justify-center">
-            <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.45)]" title={jalaliDateLabel}>
+            <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.45)]" title={dateLabel}>
               <CalendarDays size={14} />
             </div>
           </div>

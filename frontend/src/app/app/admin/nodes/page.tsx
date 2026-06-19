@@ -90,9 +90,9 @@ function panelBadgeVariant(panel: string): "muted" | "success" | "warning" {
   return "muted";
 }
 
-function fmtCheckedAt(ts: number): string {
+function fmtCheckedAt(ts: number, lang: "fa" | "en"): string {
   try {
-    return new Date(ts).toLocaleString();
+    return new Date(ts).toLocaleString(lang === "fa" ? "fa-IR" : "en-US");
   } catch {
     return "-";
   }
@@ -100,7 +100,7 @@ function fmtCheckedAt(ts: number): string {
 
 export default function AdminNodesPage() {
   const { push } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [nodes, setNodes] = React.useState<NodeOut[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -131,6 +131,86 @@ export default function AdminNodesPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<NodeOut | null>(null);
 
   const [tests, setTests] = React.useState<Record<number, TestState>>({});
+
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            registeredNodes: (count: number) => `${count} registered nodes`,
+            quickTitle: "Quick Node Control",
+            quickSubtitle: "Filter, monitor status, and manage node visibility in subscriptions",
+            totalNodes: "Total nodes",
+            enabled: "Enabled",
+            disabled: "Disabled",
+            visibleInSub: "Visible in sub",
+            wgHealthy: "WireGuard / healthy tests",
+            allPanels: "All panels",
+            allStatuses: "All statuses",
+            allModes: "All modes",
+            hiddenInSub: "Hidden in sub",
+            allTags: "All tags",
+            filterHint: "Filters apply to the current page data. Use pagination to move through the full list.",
+            formTitle: (id: number | null) => (id == null ? "Create new node" : `Edit node #${id}`),
+            formSubtitle: "Manage panel connection, subscription visibility, and tags. Connection data is stored as JSON.",
+            namePlaceholder: "e.g. Node-A",
+            template: "Template",
+            formatJson: "Format JSON",
+            enabledHint: "When disabled, Guardino will not create or manage users on this node.",
+            visibleHint: "When off, this node link is not shown in users' subscriptions.",
+            clearForm: "Clear form",
+            listTitle: "Node List",
+            listSubtitle: "Cards are responsive and optimized for both mobile and desktop.",
+            noTags: "No tags",
+            nodeStatus: "Node status",
+            off: "Off",
+            show: "Shown",
+            hidden: "Hidden",
+            lastTest: "Last connection test result",
+            nodeDeleted: "Node deleted",
+            deleteTitle: "Delete node from list",
+            deleteBody:
+              "This node will be removed from new Guardino lists and selections, while historical user and order records remain available for reports. Nothing is changed on the destination panel.",
+            required: (field: string) => `${field} is required`,
+          }
+        : {
+            registeredNodes: (count: number) => `${count} نود ثبت‌شده`,
+            quickTitle: "کنترل سریع نودها",
+            quickSubtitle: "فیلتر، وضعیت لحظه‌ای و مدیریت نمایش نودها در ساب",
+            totalNodes: "کل نودها",
+            enabled: "فعال",
+            disabled: "غیرفعال",
+            visibleInSub: "نمایش در ساب",
+            wgHealthy: "وایرگارد / تست سالم",
+            allPanels: "همه پنل‌ها",
+            allStatuses: "همه وضعیت‌ها",
+            allModes: "همه حالت‌ها",
+            hiddenInSub: "مخفی در ساب",
+            allTags: "همه تگ‌ها",
+            filterHint: "فیلترها روی داده‌های همین صفحه اعمال می‌شوند. برای کل لیست از صفحه‌بندی استفاده کنید.",
+            formTitle: (id: number | null) => (id == null ? "ایجاد نود جدید" : `ویرایش نود #${id}`),
+            formSubtitle: "اتصال پنل، سیاست نمایش در ساب و تگ‌ها را مدیریت کنید. اطلاعات اتصال به‌صورت JSON ذخیره می‌شود.",
+            namePlaceholder: "مثلاً Node-A",
+            template: "الگوی آماده",
+            formatJson: "فرمت JSON",
+            enabledHint: "در صورت غیرفعال بودن، روی این نود کاربری ساخته یا مدیریت نمی‌شود.",
+            visibleHint: "اگر خاموش باشد، لینک این نود در ساب کاربران نمایش داده نمی‌شود.",
+            clearForm: "پاکسازی فرم",
+            listTitle: "لیست نودها",
+            listSubtitle: "چیدمان کارت‌ها کاملا واکنش‌گراست و در موبایل/دسکتاپ بهینه نمایش داده می‌شود.",
+            noTags: "بدون تگ",
+            nodeStatus: "وضعیت نود",
+            off: "خاموش",
+            show: "نمایش",
+            hidden: "مخفی",
+            lastTest: "نتیجه آخرین تست اتصال",
+            nodeDeleted: "نود حذف شد",
+            deleteTitle: "حذف نود از لیست",
+            deleteBody:
+              "این نود از لیست‌ها و انتخاب‌های جدید گاردینو حذف می‌شود، اما رکوردهای تاریخی کاربران و سفارش‌ها برای گزارش‌گیری باقی می‌مانند. هیچ تغییری روی پنل مقصد اعمال نمی‌شود.",
+            required: (field: string) => `${field} الزامی است`,
+          },
+    [lang]
+  );
 
   function resetForm() {
     setEditingId(null);
@@ -199,11 +279,11 @@ export default function AdminNodesPage() {
 
   async function createOrSave() {
     if (!name.trim()) {
-      push({ title: t("common.error"), desc: `${t("adminNodes.name")} is required`, type: "error" });
+      push({ title: t("common.error"), desc: copy.required(t("adminNodes.name")), type: "error" });
       return;
     }
     if (!baseUrl.trim()) {
-      push({ title: t("common.error"), desc: `${t("adminNodes.baseUrl")} is required`, type: "error" });
+      push({ title: t("common.error"), desc: copy.required(t("adminNodes.baseUrl")), type: "error" });
       return;
     }
 
@@ -286,7 +366,7 @@ export default function AdminNodesPage() {
     setActionBusyId(id);
     try {
       await apiFetch<{ ok: boolean; is_deleted: boolean }>(`/api/v1/admin/nodes/${id}`, { method: "DELETE" });
-      push({ title: "نود حذف شد", desc: `node #${id}`, type: "success" });
+      push({ title: copy.nodeDeleted, desc: `node #${id}`, type: "success" });
       await load(page, pageSize);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -380,7 +460,7 @@ export default function AdminNodesPage() {
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            {total} نود ثبت‌شده
+            {copy.registeredNodes(total)}
           </div>
         </div>
       </section>
@@ -389,8 +469,8 @@ export default function AdminNodesPage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xl font-semibold">کنترل سریع نودها</div>
-              <div className="text-sm text-[hsl(var(--fg))]/70">فیلتر، وضعیت لحظه‌ای و مدیریت نمایش نودها در ساب</div>
+              <div className="text-xl font-semibold">{copy.quickTitle}</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{copy.quickSubtitle}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" className="gap-2" onClick={() => load(page, pageSize)} disabled={loading}>
@@ -408,28 +488,28 @@ export default function AdminNodesPage() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">کل نودها</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.totalNodes}</div>
                 <Layers size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{total}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">فعال</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.enabled}</div>
                 <Shield size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.enabledCount}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">نمایش در ساب</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.visibleInSub}</div>
                 <Globe size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">{stats.visibleCount}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
-                <div className="text-xs text-[hsl(var(--fg))]/70">وایرگارد / تست سالم</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.wgHealthy}</div>
                 <Activity size={16} className="opacity-60" />
               </div>
               <div className="mt-1 text-lg font-semibold">
@@ -449,7 +529,7 @@ export default function AdminNodesPage() {
               value={panelFilter}
               onChange={(e) => setPanelFilter(e.target.value)}
             >
-              <option value="all">همه پنل‌ها</option>
+              <option value="all">{copy.allPanels}</option>
               <option value="marzban">Marzban</option>
               <option value="pasarguard">Pasarguard</option>
               <option value="wg_dashboard">WireGuard</option>
@@ -460,9 +540,9 @@ export default function AdminNodesPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="enabled">فعال</option>
-              <option value="disabled">غیرفعال</option>
+              <option value="all">{copy.allStatuses}</option>
+              <option value="enabled">{copy.enabled}</option>
+              <option value="disabled">{copy.disabled}</option>
             </select>
 
             <select
@@ -470,9 +550,9 @@ export default function AdminNodesPage() {
               value={visibleFilter}
               onChange={(e) => setVisibleFilter(e.target.value)}
             >
-              <option value="all">همه حالت‌ها</option>
-              <option value="visible">نمایش در ساب</option>
-              <option value="hidden">مخفی در ساب</option>
+              <option value="all">{copy.allModes}</option>
+              <option value="visible">{copy.visibleInSub}</option>
+              <option value="hidden">{copy.hiddenInSub}</option>
             </select>
           </div>
 
@@ -482,7 +562,7 @@ export default function AdminNodesPage() {
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}
             >
-              <option value="">همه تگ‌ها</option>
+              <option value="">{copy.allTags}</option>
               {allTags.map((tg) => (
                 <option key={tg} value={tg}>
                   {tg}
@@ -490,7 +570,7 @@ export default function AdminNodesPage() {
               ))}
             </select>
             <div className="flex items-center rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-2)/0.12)_100%)] px-3 text-xs text-[hsl(var(--fg))]/70">
-              فیلترها روی داده‌های همین صفحه اعمال می‌شوند. برای کل لیست از صفحه‌بندی استفاده کنید.
+              {copy.filterHint}
             </div>
           </div>
         </CardContent>
@@ -500,10 +580,10 @@ export default function AdminNodesPage() {
         <CardHeader>
           <div className="flex items-center gap-2 text-lg font-semibold">
             <Wrench size={18} />
-            {editingId == null ? "ایجاد نود جدید" : `ویرایش نود #${editingId}`}
+            {copy.formTitle(editingId)}
           </div>
           <div className="text-sm text-[hsl(var(--fg))]/70">
-            اتصال پنل، سیاست نمایش در ساب و تگ‌ها را مدیریت کنید. اطلاعات اتصال به‌صورت JSON ذخیره می‌شود.
+            {copy.formSubtitle}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -512,7 +592,7 @@ export default function AdminNodesPage() {
               <label className="text-sm flex items-center gap-2">
                 {t("adminNodes.name")} <HelpTip text={t("adminNodes.help.name")} />
               </label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً Node-A" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={copy.namePlaceholder} />
             </div>
 
             <div className="space-y-2">
@@ -572,10 +652,10 @@ export default function AdminNodesPage() {
               />
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => setCreds(defaultCredsForPanel(panelType))}>
-                  الگوی آماده
+                  {copy.template}
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={prettifyCreds}>
-                  فرمت JSON
+                  {copy.formatJson}
                 </Button>
               </div>
             </div>
@@ -584,7 +664,7 @@ export default function AdminNodesPage() {
               <label className="text-sm">{t("adminNodes.enabled")}</label>
               <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
-                <div className="text-sm text-[hsl(var(--fg))]/80">در صورت غیرفعال بودن، روی این نود کاربری ساخته یا مدیریت نمی‌شود.</div>
+                <div className="text-sm text-[hsl(var(--fg))]/80">{copy.enabledHint}</div>
               </div>
             </div>
 
@@ -592,7 +672,7 @@ export default function AdminNodesPage() {
               <label className="text-sm">{t("adminNodes.visibleInSub")}</label>
               <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
                 <Switch checked={visibleInSub} onCheckedChange={setVisibleInSub} />
-                <div className="text-sm text-[hsl(var(--fg))]/80">اگر خاموش باشد، لینک این نود در ساب کاربران نمایش داده نمی‌شود.</div>
+                <div className="text-sm text-[hsl(var(--fg))]/80">{copy.visibleHint}</div>
               </div>
             </div>
           </div>
@@ -602,7 +682,7 @@ export default function AdminNodesPage() {
               {editingId == null ? t("adminNodes.create") : t("adminNodes.save")}
             </Button>
             <Button type="button" variant="outline" onClick={resetForm} disabled={formBusy}>
-              پاکسازی فرم
+              {copy.clearForm}
             </Button>
           </div>
         </CardContent>
@@ -616,8 +696,8 @@ export default function AdminNodesPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-lg font-semibold">لیست نودها</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">چیدمان کارت‌ها کاملا واکنش‌گراست و در موبایل/دسکتاپ بهینه نمایش داده می‌شود.</div>
+          <div className="text-lg font-semibold">{copy.listTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.listSubtitle}</div>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -645,29 +725,29 @@ export default function AdminNodesPage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-1">
                         <Badge variant={panelBadgeVariant(n.panel_type)}>{panelLabel(n.panel_type)}</Badge>
-                        <Badge variant={n.is_enabled ? "success" : "warning"}>{n.is_enabled ? "فعال" : "غیرفعال"}</Badge>
+                        <Badge variant={n.is_enabled ? "success" : "warning"}>{n.is_enabled ? copy.enabled : copy.disabled}</Badge>
                       </div>
                     </div>
 
                     <div className="break-all rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-page-glow-1)/0.14)_100%)] p-2 text-xs">{n.base_url}</div>
 
                     <div className="flex flex-wrap gap-1">
-                      {(n.tags || []).length ? (n.tags || []).map((tg) => <Badge key={tg} variant="muted">{tg}</Badge>) : <Badge variant="muted">بدون تگ</Badge>}
+                      {(n.tags || []).length ? (n.tags || []).map((tg) => <Badge key={tg} variant="muted">{tg}</Badge>) : <Badge variant="muted">{copy.noTags}</Badge>}
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-2">
                       <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
-                        <div className="text-[11px] text-[hsl(var(--fg))]/65">وضعیت نود</div>
+                        <div className="text-[11px] text-[hsl(var(--fg))]/65">{copy.nodeStatus}</div>
                         <div className="mt-1 flex items-center justify-between">
-                          <div className="text-xs">{n.is_enabled ? "فعال" : "خاموش"}</div>
+                          <div className="text-xs">{n.is_enabled ? copy.enabled : copy.off}</div>
                           <Switch checked={n.is_enabled} onCheckedChange={(v) => patchNode(n.id, { is_enabled: v })} disabled={busy} />
                         </div>
                       </div>
 
                       <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
-                        <div className="text-[11px] text-[hsl(var(--fg))]/65">نمایش در ساب</div>
+                        <div className="text-[11px] text-[hsl(var(--fg))]/65">{copy.visibleInSub}</div>
                         <div className="mt-1 flex items-center justify-between">
-                          <div className="text-xs">{n.is_visible_in_sub ? "نمایش" : "مخفی"}</div>
+                          <div className="text-xs">{n.is_visible_in_sub ? copy.show : copy.hidden}</div>
                           <Switch checked={n.is_visible_in_sub} onCheckedChange={(v) => patchNode(n.id, { is_visible_in_sub: v })} disabled={busy} />
                         </div>
                       </div>
@@ -706,10 +786,10 @@ export default function AdminNodesPage() {
                     {test ? (
                       <div className={`rounded-xl border px-2 py-2 text-xs ${test.ok ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-red-300 bg-red-50 text-red-800"}`}>
                         <div className="flex items-center gap-1 font-semibold">
-                          {test.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />} نتیجه آخرین تست اتصال
+                          {test.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />} {copy.lastTest}
                         </div>
                         <div className="mt-1 opacity-90">{test.detail || "-"}</div>
-                        <div className="mt-1 opacity-70">{fmtCheckedAt(test.checkedAt)}</div>
+                        <div className="mt-1 opacity-70">{fmtCheckedAt(test.checkedAt, lang)}</div>
                       </div>
                     ) : null}
                   </article>
@@ -754,8 +834,8 @@ export default function AdminNodesPage() {
       <ConfirmModal
         open={!!confirmDelete}
         onClose={() => (actionBusyId != null ? null : setConfirmDelete(null))}
-        title="حذف نود از لیست"
-        body="این نود از لیست‌ها و انتخاب‌های جدید گاردینو حذف می‌شود، اما رکوردهای تاریخی کاربران و سفارش‌ها برای گزارش‌گیری باقی می‌مانند. هیچ تغییری روی پنل مقصد اعمال نمی‌شود."
+        title={copy.deleteTitle}
+        body={copy.deleteBody}
         confirmText={t("common.delete")}
         cancelText={t("common.cancel")}
         danger

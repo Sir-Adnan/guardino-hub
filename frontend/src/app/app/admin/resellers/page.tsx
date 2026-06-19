@@ -305,29 +305,202 @@ function allocationSummaryVariant(a: ResellerAllocationSummaryItem): "default" |
   return "default";
 }
 
-function policySummary(policy: ResellerUserPolicy | null | undefined): string {
-  if (!policy) return "سیاست سراسری";
-  if (!policy.enabled) return "اختصاصی: بدون محدودیت ساخت";
-  const p = normalizePolicy(policy);
-  const daysMode = p.allow_custom_days ? "روز دستی: روشن" : "روز دستی: خاموش";
-  const trafficMode = p.allow_custom_traffic ? "حجم دستی: روشن" : `حجم‌ها: ${p.allowed_traffic_gb.join(", ")}`;
-  return `${daysMode} | ${trafficMode} | بازه روز: ${p.min_days}-${p.max_days}`;
+function durationPresetLabel(preset: string, lang: string): string {
+  const en = lang === "en";
+  if (preset === "7d") return en ? "7 days" : "۷ روز";
+  if (preset === "1m") return en ? "1 month" : "۱ ماه";
+  if (preset === "3m") return en ? "3 months" : "۳ ماه";
+  if (preset === "6m") return en ? "6 months" : "۶ ماه";
+  if (preset === "1y") return en ? "1 year" : "۱ سال";
+  return en ? "Unlimited" : "نامحدود";
 }
 
-function resellerDeleteWarningText(warning: string): string {
-  const table: Record<string, string> = {
-    "Reseller has non-zero balance.": "این رسیلر موجودی غیرصفر دارد.",
-    "Reseller has active users.": "این رسیلر کاربر فعال دارد.",
-    "Reseller has users in Guardino.": "برای این رسیلر کاربر در گاردینو ثبت شده است.",
-    "Reseller has financial history; it will be preserved.": "این رسیلر سابقه مالی دارد و این سابقه حفظ می‌شود.",
+function policySummary(policy: ResellerUserPolicy | null | undefined, lang: string): string {
+  const en = lang === "en";
+  if (!policy) return en ? "Global policy" : "سیاست سراسری";
+  if (!policy.enabled) return en ? "Custom: no creation limits" : "اختصاصی: بدون محدودیت ساخت";
+  const p = normalizePolicy(policy);
+  const daysMode = p.allow_custom_days ? (en ? "Manual days: on" : "روز دستی: روشن") : (en ? "Manual days: off" : "روز دستی: خاموش");
+  const trafficMode = p.allow_custom_traffic ? (en ? "Manual traffic: on" : "حجم دستی: روشن") : `${en ? "Traffic" : "حجم‌ها"}: ${p.allowed_traffic_gb.join(", ")}`;
+  return `${daysMode} | ${trafficMode} | ${en ? "Day range" : "بازه روز"}: ${p.min_days}-${p.max_days}`;
+}
+
+function resellerDeleteWarningText(warning: string, lang: string): string {
+  const table: Record<string, { fa: string; en: string }> = {
+    "Reseller has non-zero balance.": { fa: "این رسیلر موجودی غیرصفر دارد.", en: "This reseller has a non-zero balance." },
+    "Reseller has active users.": { fa: "این رسیلر کاربر فعال دارد.", en: "This reseller has active users." },
+    "Reseller has users in Guardino.": { fa: "برای این رسیلر کاربر در گاردینو ثبت شده است.", en: "This reseller has users registered in Guardino." },
+    "Reseller has financial history; it will be preserved.": { fa: "این رسیلر سابقه مالی دارد و این سابقه حفظ می‌شود.", en: "This reseller has financial history and it will be preserved." },
   };
-  return table[warning] || warning;
+  const translated = table[warning];
+  if (translated) return lang === "en" ? translated.en : translated.fa;
+  return warning;
 }
 
 export default function AdminResellersPage() {
   const { push } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const router = useRouter();
+  const isEn = lang === "en";
+  const copy = React.useMemo(
+    () =>
+      isEn
+        ? {
+            eyebrow: "Reseller Operations",
+            quickManage: "Quick reseller management",
+            pageResellers: "Resellers on this page",
+            active: "Active",
+            disabled: "Disabled",
+            pageBalance: "Total balance on page",
+            customPolicies: "Custom reseller policies",
+            customPoliciesHint: "When off, global super-admin settings apply. When on, this box overrides the global policies.",
+            custom: "Custom",
+            global: "Global",
+            noCustomPolicy: "No custom policy is saved for this reseller; delete/refund, reset usage, edit/renewal and creation limits are read from global settings.",
+            creditGuide: "Use Increase to add balance and Decrease to subtract it. Always enter a positive amount; Guardino applies the sign and prevents negative reseller balance.",
+            creditIncrease: "Increase",
+            creditDecrease: "Decrease",
+            applyDecrease: "Apply decrease",
+            deleteTitle: "Delete reseller",
+            deleteWarning: "Deleting a reseller only hides and disables the account in the admin panel. Financial history, orders and reports are preserved.",
+            balance: "Balance",
+            activeUsers: "Active users",
+            totalUsers: "Total users",
+            ledger: "Ledger",
+            deleteUserBehavior: "User behavior after deleting this reseller",
+            keepUsers: "Keep users assigned to this reseller in the database and do not change their status.",
+            disableUsers: "Disable this reseller's active users in Guardino.",
+            transferUsers: "Transfer non-deleted active and disabled users to another reseller.",
+            pickTransfer: "Select destination reseller",
+            transferTargetRequired: "Select a destination reseller to transfer users.",
+            balanceDecreased: "Balance decreased",
+            panelDefaultsApplied: "Based on panel defaults",
+            applyPanelDefaults: "Apply panel defaults",
+            userPolicyTitle: "User creation policy for this reseller",
+            userPolicyDesc: "When enabled, this reseller can use only the specified duration and traffic packages.",
+            policyGuide:
+              "This is the reseller's custom policy and it overrides the global policy. Duration and traffic limits are checked while creating users. If package-only renewal is enabled, editing stays limited to package renewals. In delete policy, 0 for usage means unlimited and 0.5 means about 500 MB. Users whose time or total traffic is exhausted cannot be deleted, and usage below 1 GB is not deducted from the wallet during user deletion.",
+            durationPackages: "Allowed duration packages",
+            trafficPackages: "Allowed traffic packages (GB)",
+            trafficPlaceholder: "Example: 20, 30, 50, 100",
+            dayControl: "Day and duration controls",
+            allowManualDays: "Allow manual days",
+            minDays: "Minimum days",
+            maxDays: "Maximum days",
+            extraSettings: "Additional settings",
+            allowManualTraffic: "Allow manual traffic",
+            allowUnlimitedPlan: "Allow unlimited plan",
+            noCreationLimit: "When disabled, no duration or traffic limit is applied.",
+            lifecycleTitle: "Delete, reset, edit and renewal policies",
+            lifecycleDesc: "This section is off by default. If the global panel settings are enabled, applying panel defaults or enabling this checkbox will copy those values into the form.",
+            enableLifecycle: "Enable delete, reset, edit and renewal policies",
+            enableLifecycleDesc: "When off, these permissions are not saved as enabled for this reseller. When on, each permission can be configured separately.",
+            lifecycleDisabledHint: "Delete/refund, reset usage, edit restrictions and custom renewal policy are saved as off for this reseller unless you apply global defaults or enable this section manually.",
+            allowDeleteRefund: "Allow user delete and refund",
+            allowDeleteRefundDesc: "When enabled, the reseller can delete a user and receive the refundable amount within the time and usage limits.",
+            refundWindowShort: "Delete/refund window (days)",
+            allowedDaysPlaceholder: "Allowed days",
+            usageLimitShort: "Allowed usage limit (GB)",
+            usageLimitPlaceholder: "Usage limit GB",
+            zeroUnlimited: "0 for window or usage limit means no limit for that part.",
+            allowResetUsage: "Allow usage reset",
+            allowResetUsageDesc: "When off, the reseller cannot reset a user's usage even if they can view the user or manage links.",
+            renewalOnly: "Edit only through package renewal",
+            renewalOnlyDesc: "When enabled, separate traffic/time increase or decrease is blocked and the reseller only renews by package.",
+            customRenewalPolicy: "Custom renewal policy",
+            customRenewalPolicyDesc: "When enabled, the time and traffic merge behavior is set for this reseller.",
+            resetTimeAndVolume: "Reset time and volume",
+            addTimeAndVolume: "Add time and volume to the next period",
+            resetTimeCarryVolume: "Reset time and carry previous remaining traffic",
+            resetVolumeCarryTime: "Reset traffic and carry previous remaining time",
+            resellerAllocations: "This reseller's allocations",
+            resellerAllocationsDesc: "Summary of nodes and connected panel status for this reseller. Full management is available from the allocations page.",
+            manageAllocations: "Manage allocations",
+            assignedNodes: "Assigned nodes",
+            activeAllocations: "Active allocations",
+            activePanels: "Active panels",
+            noAllocations: "No allocations",
+            tableUserPolicy: "User creation policy",
+          }
+        : {
+            eyebrow: "عملیات رسیلرها",
+            quickManage: "مدیریت سریع نماینده‌ها",
+            pageResellers: "نماینده‌های صفحه",
+            active: "فعال",
+            disabled: "غیرفعال",
+            pageBalance: "موجودی کل (صفحه)",
+            customPolicies: "سیاست‌های اختصاصی رسیلر",
+            customPoliciesHint: "خاموش باشد، تنظیمات سراسری سوپرادمین اعمال می‌شود. روشن باشد، تنظیمات همین باکس روی سیاست‌های کلی اولویت دارد.",
+            custom: "اختصاصی",
+            global: "سراسری",
+            noCustomPolicy: "برای این رسیلر تنظیم اختصاصی ذخیره نمی‌شود و سیاست حذف/ریفاند، ریست مصرف، ویرایش/تمدید و محدودیت ساخت از بخش تنظیمات سراسری سوپرادمین خوانده می‌شود.",
+            creditGuide: "برای افزایش موجودی حالت «افزایش» و برای کم کردن موجودی حالت «کاهش» را انتخاب کنید. مبلغ را همیشه مثبت وارد کنید؛ سیستم خودش علامت را اعمال می‌کند و اجازه منفی شدن موجودی رسیلر را نمی‌دهد.",
+            creditIncrease: "افزایش",
+            creditDecrease: "کاهش",
+            applyDecrease: "اعمال کاهش",
+            deleteTitle: "حذف رسیلر",
+            deleteWarning: "حذف رسیلر فقط حساب او را از پنل مدیریت مخفی و غیرفعال می‌کند؛ سابقه مالی، سفارش‌ها و گزارش‌ها حذف نمی‌شوند.",
+            balance: "موجودی",
+            activeUsers: "کاربران فعال",
+            totalUsers: "کل کاربران",
+            ledger: "دفترکل",
+            deleteUserBehavior: "رفتار کاربران این رسیلر بعد از حذف",
+            keepUsers: "کاربران در دیتابیس برای همین رسیلر باقی بمانند و وضعیتشان تغییر نکند.",
+            disableUsers: "کاربران فعال این رسیلر در گاردینو غیرفعال شوند.",
+            transferUsers: "کاربران فعال و غیرفعال حذف‌نشده به رسیلر دیگری منتقل شوند.",
+            pickTransfer: "انتخاب رسیلر مقصد",
+            transferTargetRequired: "برای انتقال کاربران، رسیلر مقصد را انتخاب کنید.",
+            balanceDecreased: "موجودی کم شد",
+            panelDefaultsApplied: "بر اساس تنظیمات پیش‌فرض پنل",
+            applyPanelDefaults: "اعمال تنظیمات پیش‌فرض پنل",
+            userPolicyTitle: "سیاست ساخت کاربر برای رسیلر",
+            userPolicyDesc: "با فعال‌سازی این بخش، رسیلر فقط از بسته‌های زمانی/حجمی مشخص‌شده می‌تواند استفاده کند.",
+            policyGuide:
+              "این بخش سیاست اختصاصی همین رسیلر است و روی سیاست سراسری اولویت دارد. محدودیت روز/حجم هنگام ساخت کنترل می‌شود و اگر گزینه «فقط تمدید بسته‌ای» روشن باشد، در ویرایش فقط تمدید طبق پکیج‌های آماده مجاز می‌ماند. در سیاست حذف، عدد 0 برای حد مصرف یعنی نامحدود؛ عدد 0.5 یعنی حدود 500 مگابایت. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد قابل حذف نیست، و در حذف کاربر، مصرف زیر 1 گیگ از کیف پول کم نمی‌شود.",
+            durationPackages: "بسته‌های زمانی مجاز",
+            trafficPackages: "حجم‌های مجاز (GB)",
+            trafficPlaceholder: "مثال: 20, 30, 50, 100",
+            dayControl: "کنترل روز و مدت‌زمان",
+            allowManualDays: "اجازه روز دستی",
+            minDays: "حداقل روز",
+            maxDays: "حداکثر روز",
+            extraSettings: "تنظیمات تکمیلی",
+            allowManualTraffic: "اجازه حجم دستی",
+            allowUnlimitedPlan: "اجازه پلن نامحدود",
+            noCreationLimit: "در حالت غیرفعال، محدودیتی برای روز/حجم اعمال نمی‌شود.",
+            lifecycleTitle: "سیاست‌های حذف، ریست، ویرایش و تمدید",
+            lifecycleDesc: "این بخش به صورت پیش‌فرض خاموش است. اگر در تنظیمات سراسری پنل فعال شده باشد، با روشن کردن سیاست اختصاصی یا این checkbox همان مقدارها روی فرم می‌نشیند.",
+            enableLifecycle: "فعال‌سازی سیاست‌های حذف، ریست، ویرایش و تمدید",
+            enableLifecycleDesc: "خاموش باشد، این مجوزها برای این رسیلر فعال ذخیره نمی‌شوند. روشن باشد، می‌توانی هر گزینه را جدا تنظیم کنی.",
+            lifecycleDisabledHint: "حذف/ریفاند، ریست مصرف، محدودیت ویرایش و سیاست تمدید اختصاصی برای این رسیلر خاموش ذخیره می‌شوند؛ مگر اینکه پیش‌فرض سراسری را اعمال یا این بخش را دستی روشن کنی.",
+            allowDeleteRefund: "اجازه حذف و ریفاند کاربر",
+            allowDeleteRefundDesc: "اگر روشن باشد رسیلر می‌تواند طبق مهلت و سقف مصرف، کاربر را حذف و مبلغ قابل برگشت را دریافت کند.",
+            refundWindowShort: "مهلت حذف/ریفاند (روز)",
+            allowedDaysPlaceholder: "روز مجاز",
+            usageLimitShort: "حد مصرف مجاز (GB)",
+            usageLimitPlaceholder: "حد مصرف GB",
+            zeroUnlimited: "عدد 0 برای مهلت یا حد مصرف یعنی بدون محدودیت آن بخش.",
+            allowResetUsage: "اجازه ریست مصرف",
+            allowResetUsageDesc: "اگر خاموش باشد رسیلر نمی‌تواند مصرف کاربر را صفر کند، حتی اگر کاربر را ببیند یا لینک‌ها را مدیریت کند.",
+            renewalOnly: "ویرایش فقط از مسیر تمدید بسته‌ای",
+            renewalOnlyDesc: "اگر روشن باشد افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود و رسیلر فقط تمدید پکیجی انجام می‌دهد.",
+            customRenewalPolicy: "سیاست تمدید اختصاصی",
+            customRenewalPolicyDesc: "اگر روشن باشد نحوه ترکیب زمان و حجم در تمدید برای همین رسیلر مشخص می‌شود.",
+            resetTimeAndVolume: "ریست زمان و حجم",
+            addTimeAndVolume: "اضافه شدن زمان و حجم به دوره بعد",
+            resetTimeCarryVolume: "ریست زمان و اضافه شدن حجم باقی‌مانده قبلی",
+            resetVolumeCarryTime: "ریست حجم و اضافه شدن زمان باقی‌مانده قبلی",
+            resellerAllocations: "تخصیص‌های این رسیلر",
+            resellerAllocationsDesc: "خلاصه نودها و وضعیت پنل‌های متصل به این رسیلر. مدیریت کامل از صفحه تخصیص‌ها انجام می‌شود.",
+            manageAllocations: "مدیریت تخصیص‌ها",
+            assignedNodes: "نودهای اختصاص‌داده‌شده",
+            activeAllocations: "تخصیص فعال",
+            activePanels: "پنل‌های فعال",
+            noAllocations: "بدون تخصیص",
+            tableUserPolicy: "سیاست ساخت کاربر",
+          },
+    [isEn]
+  );
 
   const [items, setItems] = React.useState<ResellerOut[]>([]);
   const [creditOptions, setCreditOptions] = React.useState<ResellerOut[]>([]);
@@ -721,7 +894,7 @@ export default function AdminResellersPage() {
   async function del(x: ResellerOut) {
     try {
       if (deleteUserAction === "transfer" && deleteTransferId === "") {
-        throw new Error("برای انتقال کاربران، رسیلر مقصد را انتخاب کنید.");
+        throw new Error(copy.transferTargetRequired);
       }
       await apiFetch<ResellerOut>(`/api/v1/admin/resellers/${x.id}`, {
         method: "DELETE",
@@ -748,7 +921,7 @@ export default function AdminResellersPage() {
         method: "POST",
         body: JSON.stringify({ amount: signedAmount, reason: creditMode === "debit" ? "manual_debit" : "manual_credit" }),
       });
-      push({ title: creditMode === "debit" ? "موجودی کم شد" : t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
+      push({ title: creditMode === "debit" ? copy.balanceDecreased : t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
       await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
@@ -865,33 +1038,33 @@ export default function AdminResellersPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <Users size={13} />
-              Reseller Operations
+              {copy.eyebrow}
             </div>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("adminResellers.title")}</h1>
             <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{t("adminResellers.subtitle")}</p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            مدیریت سریع نماینده‌ها
+            {copy.quickManage}
           </div>
         </div>
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={metricCardClass}>
-          <div className="text-xs text-[hsl(var(--fg))]/70">نماینده‌های صفحه</div>
+          <div className="text-xs text-[hsl(var(--fg))]/70">{copy.pageResellers}</div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.count)}</div>
         </div>
         <div className={metricCardClass}>
-          <div className="text-xs text-[hsl(var(--fg))]/70">فعال</div>
+          <div className="text-xs text-[hsl(var(--fg))]/70">{copy.active}</div>
           <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.active)}</div>
         </div>
         <div className={metricCardClass}>
-          <div className="text-xs text-[hsl(var(--fg))]/70">غیرفعال</div>
+          <div className="text-xs text-[hsl(var(--fg))]/70">{copy.disabled}</div>
           <div className="mt-1 text-lg font-semibold text-amber-600">{fmtNumber(stats.disabled)}</div>
         </div>
         <div className={metricCardClass}>
-          <div className="text-xs text-[hsl(var(--fg))]/70">موجودی کل (صفحه)</div>
+          <div className="text-xs text-[hsl(var(--fg))]/70">{copy.pageBalance}</div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.totalBalance)}</div>
         </div>
       </div>
@@ -1053,71 +1226,58 @@ export default function AdminResellersPage() {
 	            <div className="space-y-3 md:col-span-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">سیاست‌های اختصاصی رسیلر</div>
+                  <div className="text-sm font-medium">{copy.customPolicies}</div>
                   <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
-                    خاموش باشد، تنظیمات سراسری سوپرادمین اعمال می‌شود. روشن باشد، تنظیمات همین باکس روی سیاست‌های کلی اولویت دارد.
+                    {copy.customPoliciesHint}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2">
                   <Switch checked={useCustomPolicy} onCheckedChange={handleCustomPolicyToggle} />
-                  <span className="text-xs text-[hsl(var(--fg))]/75">{useCustomPolicy ? "اختصاصی" : "سراسری"}</span>
+                  <span className="text-xs text-[hsl(var(--fg))]/75">{useCustomPolicy ? copy.custom : copy.global}</span>
                 </div>
               </div>
               {!useCustomPolicy ? (
                 <div className={guideBoxClass}>
-                  برای این رسیلر تنظیم اختصاصی ذخیره نمی‌شود و سیاست حذف/ریفاند، ریست مصرف، ویرایش/تمدید و محدودیت ساخت از بخش تنظیمات سراسری سوپرادمین خوانده می‌شود.
+                  {copy.noCustomPolicy}
                 </div>
               ) : null}
               <div className={useCustomPolicy ? "space-y-3" : "hidden"}>
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-medium">سیاست‌های اختصاصی رسیلر</div>
-                  {policyDefaultApplied ? <Badge variant="success">بر اساس تنظیمات پیش‌فرض پنل</Badge> : null}
+                  <div className="text-sm font-medium">{copy.customPolicies}</div>
+                  {policyDefaultApplied ? <Badge variant="success">{copy.panelDefaultsApplied}</Badge> : null}
                 </div>
                 <Button type="button" size="sm" variant="outline" onClick={applyGlobalPolicyDefaults}>
-                  اعمال تنظیمات پیش‌فرض پنل
+                  {copy.applyPanelDefaults}
                 </Button>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium">سیاست ساخت کاربر برای رسیلر</div>
-                  <div className="text-xs text-[hsl(var(--fg))]/70">
-                    با فعال‌سازی این بخش، رسیلر فقط از بسته‌های زمانی/حجمی مشخص‌شده می‌تواند استفاده کند.
-                  </div>
+                  <div className="text-sm font-medium">{copy.userPolicyTitle}</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.userPolicyDesc}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={userPolicy.enabled}
                     onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, enabled: v }))}
                   />
-                  <span className="text-xs text-[hsl(var(--fg))]/75">{userPolicy.enabled ? "فعال" : "غیرفعال"}</span>
+                  <span className="text-xs text-[hsl(var(--fg))]/75">{userPolicy.enabled ? copy.active : copy.disabled}</span>
                 </div>
               </div>
 
               <div className={guideBoxClass}>
-                این بخش سیاست اختصاصی همین رسیلر است و روی سیاست سراسری اولویت دارد. محدودیت روز/حجم هنگام ساخت کنترل می‌شود و اگر گزینه «فقط تمدید بسته‌ای» روشن باشد، در ویرایش فقط تمدید طبق پکیج‌های آماده مجاز می‌ماند. در سیاست حذف، عدد 0 برای حد مصرف یعنی نامحدود؛ عدد 0.5 یعنی حدود 500 مگابایت. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد قابل حذف نیست، و در حذف کاربر، مصرف زیر 1 گیگ از کیف پول کم نمی‌شود.
+                {copy.policyGuide}
               </div>
 
               {userPolicy.enabled ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">بسته‌های زمانی مجاز</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.durationPackages}</div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {DURATION_PRESET_OPTIONS.map((preset) => {
                         const checked = (userPolicy.allowed_duration_presets || []).includes(preset);
                         const disabled = preset === "unlimited" && !userPolicy.allow_no_expire;
-                        const label =
-                          preset === "7d"
-                            ? "۷ روز"
-                            : preset === "1m"
-                              ? "۱ ماه"
-                              : preset === "3m"
-                                ? "۳ ماه"
-                                : preset === "6m"
-                                  ? "۶ ماه"
-                                  : preset === "1y"
-                                    ? "۱ سال"
-                                    : "نامحدود";
+                        const label = durationPresetLabel(preset, lang);
                         return (
 	                          <label key={preset} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
                             <input
@@ -1139,7 +1299,7 @@ export default function AdminResellersPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">حجم‌های مجاز (GB)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.trafficPackages}</div>
                     <div className="flex flex-wrap gap-2">
                       {TRAFFIC_PRESET_OPTIONS.map((g) => (
 	                        <label key={g} className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.35)]">
@@ -1160,7 +1320,7 @@ export default function AdminResellersPage() {
                     <Input
                       value={trafficInput}
                       onChange={(e) => setTrafficInput(e.target.value)}
-                      placeholder="مثال: 20, 30, 50, 100"
+                      placeholder={copy.trafficPlaceholder}
                       onBlur={() => {
                         const parsed = parseTrafficInput(trafficInput);
                         if (parsed.length) {
@@ -1171,9 +1331,9 @@ export default function AdminResellersPage() {
                   </div>
 
 	                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">کنترل روز و مدت‌زمان</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.dayControl}</div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs">اجازه روز دستی</span>
+                      <span className="text-xs">{copy.allowManualDays}</span>
                       <Switch
                         checked={userPolicy.allow_custom_days}
                         onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_custom_days: v }))}
@@ -1184,28 +1344,28 @@ export default function AdminResellersPage() {
                         type="number"
                         value={userPolicy.min_days}
                         onChange={(e) => updateUserPolicy((v) => ({ ...v, min_days: Number(e.target.value) || 1 }))}
-                        placeholder="حداقل روز"
+                        placeholder={copy.minDays}
                       />
                       <Input
                         type="number"
                         value={userPolicy.max_days}
                         onChange={(e) => updateUserPolicy((v) => ({ ...v, max_days: Number(e.target.value) || v.min_days || 1 }))}
-                        placeholder="حداکثر روز"
+                        placeholder={copy.maxDays}
                       />
                     </div>
                   </div>
 
 	                  <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">تنظیمات تکمیلی</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.extraSettings}</div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs">اجازه حجم دستی</span>
+                      <span className="text-xs">{copy.allowManualTraffic}</span>
                       <Switch
                         checked={userPolicy.allow_custom_traffic}
                         onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_custom_traffic: v }))}
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs">اجازه پلن نامحدود</span>
+                      <span className="text-xs">{copy.allowUnlimitedPlan}</span>
                       <Switch
                         checked={userPolicy.allow_no_expire}
                         onCheckedChange={(v) => updateUserPolicy((x) => ({ ...x, allow_no_expire: v }))}
@@ -1214,14 +1374,12 @@ export default function AdminResellersPage() {
                   </div>
                 </div>
               ) : (
-                <div className="text-xs text-[hsl(var(--fg))]/70">در حالت غیرفعال، محدودیتی برای روز/حجم اعمال نمی‌شود.</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.noCreationLimit}</div>
               )}
               <div className="space-y-3 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
                 <div>
-                  <div className="text-xs font-medium text-[hsl(var(--fg))]/80">سیاست‌های حذف، ریست، ویرایش و تمدید</div>
-                  <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">
-                    این بخش به صورت پیش‌فرض خاموش است. اگر در تنظیمات سراسری پنل فعال شده باشد، با روشن کردن سیاست اختصاصی یا این checkbox همان مقدارها روی فرم می‌نشیند.
-                  </div>
+                  <div className="text-xs font-medium text-[hsl(var(--fg))]/80">{copy.lifecycleTitle}</div>
+                  <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">{copy.lifecycleDesc}</div>
                 </div>
                 <label className="flex items-start gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] p-3">
                   <input
@@ -1231,15 +1389,13 @@ export default function AdminResellersPage() {
                     onChange={(e) => handleLifecyclePolicyToggle(e.target.checked)}
                   />
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium">فعال‌سازی سیاست‌های حذف، ریست، ویرایش و تمدید</span>
-                    <span className="mt-1 block text-xs leading-6 text-[hsl(var(--fg))]/65">
-                      خاموش باشد، این مجوزها برای این رسیلر فعال ذخیره نمی‌شوند. روشن باشد، می‌توانی هر گزینه را جدا تنظیم کنی.
-                    </span>
+                    <span className="block text-sm font-medium">{copy.enableLifecycle}</span>
+                    <span className="mt-1 block text-xs leading-6 text-[hsl(var(--fg))]/65">{copy.enableLifecycleDesc}</span>
                   </span>
                 </label>
                 {!lifecyclePolicyEnabled ? (
                   <div className={guideBoxClass}>
-                    حذف/ریفاند، ریست مصرف، محدودیت ویرایش و سیاست تمدید اختصاصی برای این رسیلر خاموش ذخیره می‌شوند؛ مگر اینکه پیش‌فرض سراسری را اعمال یا این بخش را دستی روشن کنی.
+                    {copy.lifecycleDisabledHint}
                   </div>
                 ) : (
                 <div className="grid gap-3 md:grid-cols-2">
@@ -1251,35 +1407,35 @@ export default function AdminResellersPage() {
                         checked={userPolicy.allow_user_delete}
                         onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, allow_user_delete: e.target.checked }))}
                       />
-                      <span>اجازه حذف و ریفاند کاربر</span>
+                      <span>{copy.allowDeleteRefund}</span>
                     </label>
-                    <div className={policyDescClass}>اگر روشن باشد رسیلر می‌تواند طبق مهلت و سقف مصرف، کاربر را حذف و مبلغ قابل برگشت را دریافت کند.</div>
+                    <div className={policyDescClass}>{copy.allowDeleteRefundDesc}</div>
                     <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="space-y-1">
-                        <div className="text-[11px] text-[hsl(var(--fg))]/60">مهلت حذف/ریفاند (روز)</div>
+                        <div className="text-[11px] text-[hsl(var(--fg))]/60">{copy.refundWindowShort}</div>
                         <Input
                           type="number"
                           min={0}
                           value={userPolicy.delete_refund_window_days}
                           onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
-                          placeholder="روز مجاز"
+                          placeholder={copy.allowedDaysPlaceholder}
                           disabled={!userPolicy.allow_user_delete}
                         />
                       </div>
                       <div className="space-y-1">
-                        <div className="text-[11px] text-[hsl(var(--fg))]/60">حد مصرف مجاز (GB)</div>
+                        <div className="text-[11px] text-[hsl(var(--fg))]/60">{copy.usageLimitShort}</div>
                         <Input
                           type="number"
                           min={0}
                           step="0.1"
                           value={userPolicy.delete_expired_used_gb_limit}
                           onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
-                          placeholder="حد مصرف GB"
+                          placeholder={copy.usageLimitPlaceholder}
                           disabled={!userPolicy.allow_user_delete}
                         />
                       </div>
                     </div>
-                    <div className={policyDescClass}>عدد 0 برای مهلت یا حد مصرف یعنی بدون محدودیت آن بخش.</div>
+                    <div className={policyDescClass}>{copy.zeroUnlimited}</div>
                   </div>
 
                   <div className={policyCheckCardClass}>
@@ -1290,9 +1446,9 @@ export default function AdminResellersPage() {
                         checked={userPolicy.allow_reset_usage}
                         onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, allow_reset_usage: e.target.checked }))}
                       />
-                      <span>اجازه ریست مصرف</span>
+                      <span>{copy.allowResetUsage}</span>
                     </label>
-                    <div className={policyDescClass}>اگر خاموش باشد رسیلر نمی‌تواند مصرف کاربر را صفر کند، حتی اگر کاربر را ببیند یا لینک‌ها را مدیریت کند.</div>
+                    <div className={policyDescClass}>{copy.allowResetUsageDesc}</div>
                   </div>
 
                   <div className={policyCheckCardClass}>
@@ -1303,9 +1459,9 @@ export default function AdminResellersPage() {
                         checked={userPolicy.restrict_edit_to_renewal_only}
                         onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, restrict_edit_to_renewal_only: e.target.checked }))}
                       />
-                      <span>ویرایش فقط از مسیر تمدید بسته‌ای</span>
+                      <span>{copy.renewalOnly}</span>
                     </label>
-                    <div className={policyDescClass}>اگر روشن باشد افزایش/کاهش حجم یا زمان جداگانه بسته می‌شود و رسیلر فقط تمدید پکیجی انجام می‌دهد.</div>
+                    <div className={policyDescClass}>{copy.renewalOnlyDesc}</div>
                   </div>
 
                   <div className={policyCheckCardClass}>
@@ -1325,19 +1481,19 @@ export default function AdminResellersPage() {
                           }))
                         }
                       />
-                      <span>سیاست تمدید اختصاصی</span>
+                      <span>{copy.customRenewalPolicy}</span>
                     </label>
-                    <div className={policyDescClass}>اگر روشن باشد نحوه ترکیب زمان و حجم در تمدید برای همین رسیلر مشخص می‌شود.</div>
+                    <div className={policyDescClass}>{copy.customRenewalPolicyDesc}</div>
                     <select
                       className={`${selectClass} mt-3 disabled:opacity-60`}
                       value={userPolicy.renewal_policy}
                       disabled={!customRenewalPolicyEnabled}
                       onChange={(e) => updateLifecyclePolicy((x) => ({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
                     >
-                      <option value="reset_time_and_volume">ریست زمان و حجم</option>
-                      <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
-                      <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
-                      <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
+                      <option value="reset_time_and_volume">{copy.resetTimeAndVolume}</option>
+                      <option value="add_time_and_volume">{copy.addTimeAndVolume}</option>
+                      <option value="reset_time_carry_volume">{copy.resetTimeCarryVolume}</option>
+                      <option value="reset_volume_carry_time">{copy.resetVolumeCarryTime}</option>
                     </select>
                   </div>
                 </div>
@@ -1350,10 +1506,8 @@ export default function AdminResellersPage() {
               <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 md:col-span-2">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium">تخصیص‌های این رسیلر</div>
-                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
-                      خلاصه نودها و وضعیت پنل‌های متصل به این رسیلر. مدیریت کامل از صفحه تخصیص‌ها انجام می‌شود.
-                    </div>
+                    <div className="text-sm font-medium">{copy.resellerAllocations}</div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">{copy.resellerAllocationsDesc}</div>
                   </div>
                   <Button
                     type="button"
@@ -1361,21 +1515,21 @@ export default function AdminResellersPage() {
                     variant="outline"
                     onClick={() => router.push(`/app/admin/allocations?resellerId=${editingId}`)}
                   >
-                    مدیریت تخصیص‌ها
+                    {copy.manageAllocations}
                   </Button>
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-3">
                   <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/60">نودهای اختصاص‌داده‌شده</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/60">{copy.assignedNodes}</div>
                     <div className="mt-1 text-sm font-semibold">{fmtNumber(editingAllocations.length)}</div>
                   </div>
                   <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/60">تخصیص فعال</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/60">{copy.activeAllocations}</div>
                     <div className="mt-1 text-sm font-semibold text-emerald-600">{fmtNumber(editingActiveAllocationCount)}</div>
                   </div>
                   <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/60">پنل‌های فعال</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/60">{copy.activePanels}</div>
                     <div className="mt-1 text-sm font-semibold">{fmtNumber(editingAllocationSummary?.active_panels_count ?? 0)}</div>
                   </div>
                 </div>
@@ -1387,7 +1541,7 @@ export default function AdminResellersPage() {
                     </Badge>
                   ))}
                   {editingAllocations.length > 8 ? <Badge variant="muted">+{fmtNumber(editingAllocations.length - 8)}</Badge> : null}
-                  {!editingAllocations.length ? <Badge variant="muted">بدون تخصیص</Badge> : null}
+                  {!editingAllocations.length ? <Badge variant="muted">{copy.noAllocations}</Badge> : null}
                 </div>
               </div>
             ) : null}
@@ -1414,7 +1568,7 @@ export default function AdminResellersPage() {
 	            </CardHeader>
             <CardContent className="grid gap-2 md:grid-cols-4">
   <div className={guideBoxClass + " md:col-span-4"}>
-    برای افزایش موجودی حالت «افزایش» و برای کم کردن موجودی حالت «کاهش» را انتخاب کنید. مبلغ را همیشه مثبت وارد کنید؛ سیستم خودش علامت را اعمال می‌کند و اجازه منفی شدن موجودی رسیلر را نمی‌دهد.
+    {copy.creditGuide}
   </div>
   <div className="md:col-span-2 grid gap-2 sm:grid-cols-2">
     <Input
@@ -1447,14 +1601,14 @@ export default function AdminResellersPage() {
   />
   <div className="grid gap-2 sm:grid-cols-2">
     <Button type="button" variant={creditMode === "credit" ? "primary" : "outline"} onClick={() => setCreditMode("credit")}>
-      افزایش
+      {copy.creditIncrease}
     </Button>
     <Button type="button" variant={creditMode === "debit" ? "primary" : "outline"} onClick={() => setCreditMode("debit")}>
-      کاهش
+      {copy.creditDecrease}
     </Button>
   </div>
   <Button type="button" variant="outline" onClick={credit}>
-    {creditMode === "debit" ? "اعمال کاهش" : t("adminResellers.credit")}
+    {creditMode === "debit" ? copy.applyDecrease : t("adminResellers.credit")}
   </Button>
 </CardContent>
           </Card>
@@ -1474,7 +1628,7 @@ export default function AdminResellersPage() {
                   <th className="text-[start] py-2">{t("adminResellers.pricePerGb")}</th>
                   <th className="text-[start] py-2">{t("adminResellers.bundlePerGb")}</th>
                   <th className="text-[start] py-2">{t("adminResellers.pricePerDay")}</th>
-                  <th className="text-[start] py-2">سیاست ساخت کاربر</th>
+                  <th className="text-[start] py-2">{copy.tableUserPolicy}</th>
                   <th className="text-[end] py-2">{t("common.actions")}</th>
                 </tr>
               </thead>
@@ -1502,8 +1656,8 @@ export default function AdminResellersPage() {
                     <td className="py-2">{fmtNumber(x.bundle_price_per_gb ?? 0)}</td>
                     <td className="py-2">{fmtNumber(x.price_per_day ?? 0)}</td>
                     <td className="py-2 max-w-[360px]">
-                      <div className="truncate text-xs text-[hsl(var(--fg))]/80" title={policySummary(x.user_policy)}>
-                        {policySummary(x.user_policy)}
+                      <div className="truncate text-xs text-[hsl(var(--fg))]/80" title={policySummary(x.user_policy, lang)}>
+                        {policySummary(x.user_policy, lang)}
                       </div>
                     </td>
                     <td className="py-2 text-[end]">
@@ -1589,30 +1743,30 @@ export default function AdminResellersPage() {
           setConfirmDelete(null);
           setDeletePreview(null);
         }}
-        title="حذف رسیلر"
+        title={copy.deleteTitle}
         className="!max-w-2xl"
       >
         {confirmDelete ? (
           <div className="space-y-4">
             <div className="rounded-xl border border-red-400/35 bg-red-500/10 p-3 text-sm leading-6 text-red-700 dark:text-red-300">
-              حذف رسیلر فقط حساب او را از پنل مدیریت مخفی و غیرفعال می‌کند؛ سابقه مالی، سفارش‌ها و گزارش‌ها حذف نمی‌شوند.
+              {copy.deleteWarning}
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className={metricCardClass}>
-                <div className="text-xs text-[hsl(var(--fg))]/60">موجودی</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.balance}</div>
                 <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.balance ?? confirmDelete.balance)}</div>
               </div>
               <div className={metricCardClass}>
-                <div className="text-xs text-[hsl(var(--fg))]/60">کاربران فعال</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.activeUsers}</div>
                 <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.users_active ?? 0)}</div>
               </div>
               <div className={metricCardClass}>
-                <div className="text-xs text-[hsl(var(--fg))]/60">کل کاربران</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.totalUsers}</div>
                 <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.users_total ?? 0)}</div>
               </div>
               <div className={metricCardClass}>
-                <div className="text-xs text-[hsl(var(--fg))]/60">دفترکل</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.ledger}</div>
                 <div className="mt-1 font-semibold">{fmtNumber(deletePreview?.ledger_entries ?? 0)}</div>
               </div>
             </div>
@@ -1620,30 +1774,30 @@ export default function AdminResellersPage() {
             {deletePreview?.warnings?.length ? (
               <div className="rounded-xl border border-amber-400/35 bg-amber-500/10 p-3 text-xs leading-6 text-amber-700 dark:text-amber-300">
                 {deletePreview.warnings.map((warning) => (
-                  <div key={warning}>- {resellerDeleteWarningText(warning)}</div>
+                  <div key={warning}>- {resellerDeleteWarningText(warning, lang)}</div>
                 ))}
               </div>
             ) : null}
 
             <div className="space-y-2">
-              <div className="text-sm font-medium">رفتار کاربران این رسیلر بعد از حذف</div>
+              <div className="text-sm font-medium">{copy.deleteUserBehavior}</div>
               <div className="grid gap-2">
                 <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
                   <input type="radio" className="mt-1" checked={deleteUserAction === "keep"} onChange={() => setDeleteUserAction("keep")} />
-                  <span>کاربران در دیتابیس برای همین رسیلر باقی بمانند و وضعیتشان تغییر نکند.</span>
+                  <span>{copy.keepUsers}</span>
                 </label>
                 <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
                   <input type="radio" className="mt-1" checked={deleteUserAction === "disable"} onChange={() => setDeleteUserAction("disable")} />
-                  <span>کاربران فعال این رسیلر در گاردینو غیرفعال شوند.</span>
+                  <span>{copy.disableUsers}</span>
                 </label>
                 <label className="flex items-start gap-2 rounded-xl border border-[hsl(var(--border))] p-3 text-sm">
                   <input type="radio" className="mt-1" checked={deleteUserAction === "transfer"} onChange={() => setDeleteUserAction("transfer")} />
-                  <span>کاربران فعال و غیرفعال حذف‌نشده به رسیلر دیگری منتقل شوند.</span>
+                  <span>{copy.transferUsers}</span>
                 </label>
               </div>
               {deleteUserAction === "transfer" ? (
                 <select className={selectClass} value={deleteTransferId} onChange={(e) => setDeleteTransferId(e.target.value === "" ? "" : Number(e.target.value))}>
-                  <option value="">انتخاب رسیلر مقصد</option>
+                  <option value="">{copy.pickTransfer}</option>
                   {creditOptions
                     .filter((r) => r.id !== confirmDelete.id && r.status !== "deleted")
                     .map((r) => (

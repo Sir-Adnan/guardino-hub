@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 async def get_reseller_stats(
     db: AsyncSession = Depends(get_db),
     reseller=Depends(require_reseller),
-    days: int = Query(14, ge=7, le=31),
+    days: int = Query(14, ge=1, le=3650),
 ):
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=30)

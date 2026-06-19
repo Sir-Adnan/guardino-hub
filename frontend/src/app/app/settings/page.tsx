@@ -14,6 +14,7 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
 import { copyText } from "@/lib/copy";
+import { useI18n } from "@/components/i18n-context";
 import { CalendarDays, Copy, KeyRound, Palette, Shield, ShieldCheck, Sparkles } from "lucide-react";
 
 type UserDefaults = {
@@ -107,13 +108,14 @@ const EMPTY_POLICY: ResellerUserPolicy = {
 const DURATION_PRESET_OPTIONS = ["7d", "1m", "3m", "6m", "1y", "unlimited"];
 const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
 
-function durationPresetLabel(preset: string): string {
-  if (preset === "7d") return "۷ روز";
-  if (preset === "1m") return "۱ ماه";
-  if (preset === "3m") return "۳ ماه";
-  if (preset === "6m") return "۶ ماه";
-  if (preset === "1y") return "۱ سال";
-  return "نامحدود";
+function durationPresetLabel(preset: string, lang: string): string {
+  const en = lang === "en";
+  if (preset === "7d") return en ? "7 days" : "۷ روز";
+  if (preset === "1m") return en ? "1 month" : "۱ ماه";
+  if (preset === "3m") return en ? "3 months" : "۳ ماه";
+  if (preset === "6m") return en ? "6 months" : "۶ ماه";
+  if (preset === "1y") return en ? "1 year" : "۱ سال";
+  return en ? "Unlimited" : "نامحدود";
 }
 
 function toggleString(list: string[], value: string, checked: boolean): string[] {
@@ -201,7 +203,310 @@ export default function SettingsPage() {
   const r = useRouter();
   const { push } = useToast();
   const { me } = useAuth();
+  const { lang } = useI18n();
+  const isEn = lang === "en";
   const [activeTab, setActiveTab] = React.useState<SettingsTabKey>("security");
+  const copy = React.useMemo(
+    () =>
+      isEn
+        ? {
+            toastLoadSettingsError: "Could not load settings",
+            toastLoad2faError: "Could not load two-factor status",
+            toastSettingsSaved: "Settings saved",
+            toastSettingsSaveError: "Could not save settings",
+            toastGlobalDefaultsSaved: "Global defaults saved",
+            toastGlobalDefaultsSaveError: "Could not save global defaults",
+            toastGlobalPolicySaved: "Global policy saved",
+            toastGlobalPolicySaveError: "Could not save global policy",
+            toastPasswordFields: "Complete all password fields",
+            toastPasswordMismatch: "New password confirmation does not match",
+            toastPasswordChanged: "Password changed successfully",
+            toastPasswordError: "Could not change password",
+            toastCurrentPasswordRequired: "Enter your current password",
+            toast2faSecretCreated: "Two-factor key created",
+            toast2faSecretCreatedDesc: "Add it to your authenticator app and confirm the 6-digit code.",
+            toast2faSetupError: "Could not start setup",
+            toast2faCodeRequired: "Enter current password and Authenticator code",
+            toast2faEnabled: "Two-factor authentication enabled",
+            toast2faEnabledDesc: "Store the recovery codes somewhere safe now.",
+            toast2faEnableError: "Activation failed",
+            toast2faDisableRequired: "Enter current password and two-factor code",
+            toast2faDisabled: "Two-factor authentication disabled",
+            toast2faDisableError: "Deactivation failed",
+            toastRecoveryCreated: "New recovery codes created",
+            toastRecoveryCreatedDesc: "Previous codes are no longer valid.",
+            toastRecoveryError: "Could not create recovery codes",
+            toastSecretCopied: "Secret copied",
+            toastUriCopied: "URI copied",
+            toastRecoveryCopied: "Recovery codes copied",
+            toastCopyFailed: "Copy failed",
+            heroEyebrow: "Security and Appearance",
+            heroTitle: "Panel Settings",
+            heroSubtitle: "Manage appearance, user creation defaults and account security",
+            tabSecurity: "Security",
+            tabSecurityDesc: "2FA and password",
+            tabAppearance: "Appearance",
+            tabAppearanceDesc: "Theme and accent",
+            tabDefaults: "Defaults",
+            tabDefaultsDesc: "User creation and nodes",
+            tabPolicy: "Policies",
+            tabPolicyDesc: "Reseller rules",
+            twoFactorTitle: "Account Two-Factor Authentication",
+            twoFactorHelp:
+              "Security guide: enter your current password first and generate a 2FA key. Add the secret to an Authenticator app and confirm the 6-digit code. After activation, the secret is encrypted in the database and recovery codes are stored only as hashes. Recovery codes are shown once; each code can be used one time.",
+            twoFactorSubtitle:
+              "Enable a TOTP security layer for super-admin and reseller logins. It works with Google Authenticator, Microsoft Authenticator, 1Password and Bitwarden.",
+            enabled: "Enabled",
+            disabled: "Disabled",
+            currentPasswordLabel: "Current account password",
+            currentPasswordPlaceholder: "Required for security changes",
+            authenticatorCodeLabel: "Authenticator code or backup code",
+            setupKeyTitle: "Authenticator setup key",
+            copySecret: "Copy secret",
+            copyUri: "Copy URI",
+            setupInstructions:
+              "In your Authenticator app, choose manual setup or enter setup key, name the account Guardino Hub / {account}, select time based mode, and enter the secret above. Then paste the generated 6-digit code and confirm activation.",
+            recoveryCodesTitle: "One-time recovery codes",
+            copyAll: "Copy all",
+            secureRelogin: "Secure logout and login again",
+            regenerateCodes: "Create new backup codes",
+            disable2fa: "Disable 2FA",
+            enable2fa: "Enable 2FA",
+            cancelSetup: "Cancel setup",
+            start2fa: "Create key and start setup",
+            clearFields: "Clear fields",
+            remainingCodes: "Recovery codes left",
+            activatedAt: "Activated",
+            lastUsedAt: "Last used",
+            settingsTitle: "Settings",
+            settingsSubtitle: "Appearance, defaults and account security",
+            displayMode: "Display mode",
+            light: "Light",
+            dark: "Dark",
+            system: "System",
+            accentColor: "Accent color",
+            colorPreset: "Color preset",
+            presetHint: "The theme preset changes cards, gradients and the panel background glow together.",
+            passwordTitle: "Change password",
+            passwordDesc: "For better security, choose a new password with at least 8 characters.",
+            currentPassword: "Current password",
+            newPassword: "New password",
+            confirmPassword: "Repeat new password",
+            saveNewPassword: "Save new password",
+            clear: "Clear",
+            userDefaultsTitle: "User creation defaults (your account)",
+            userDefaultsDesc: "These settings prepare the user creation form for you.",
+            loading: "Loading...",
+            pricingModel: "Default pricing model",
+            nodeMode: "Default node mode",
+            allNodes: "All nodes",
+            manual: "Manual selection",
+            group: "Group (Tag)",
+            masterSubTitle: "Guardino central subscription",
+            masterSubHint:
+              "When enabled, the Guardino combined subscription link is shown next to direct panel links. When disabled, only direct panel links are shown.",
+            manualNodes: "Default nodes (manual mode)",
+            searchNode: "Search nodes",
+            selectAll: "Select all",
+            defaultTag: "Default tag (group mode)",
+            choose: "Choose",
+            usernamePrefix: "Username prefix",
+            usernameSuffix: "Username suffix",
+            usernameHint: "The same value is used as the final username in Guardino and the destination panels.",
+            save: "Save",
+            reload: "Reload",
+            globalDefaultsTitle: "Global defaults for all resellers (admin)",
+            globalDefaultsDesc: "Resellers without custom settings use these values.",
+            globalMasterSubHint:
+              "This is the default for resellers without custom settings. Enabling it only shows the central link; direct links always remain separate.",
+            globalManualNodes: "Default nodes (global)",
+            globalDefaultTag: "Default tag (global)",
+            globalUsernameHint:
+              "Label and Username are unified; the same pattern is used for Guardino display and user creation in Pasarguard/Marzban.",
+            saveGlobal: "Save global",
+            creationPolicyTitle: "Global user creation policy for resellers",
+            creationPolicyHelp:
+              "Set approved duration and traffic packages here to make reseller creation faster. For example, enable only 50GB and 100GB so those values are preselected when applying panel defaults. This is the default creation rule for resellers without a custom policy; a reseller's custom policy always wins.",
+            creationPolicyDesc: "These values are applied as defaults when enabling a reseller's custom policy.",
+            creationPolicyEnabledTitle: "User creation policy enabled",
+            creationPolicyEnabledDesc: "When enabled, resellers create users only within this duration and traffic policy.",
+            durationPackages: "Allowed duration packages",
+            trafficPackages: "Allowed traffic packages (GB)",
+            trafficPlaceholder: "Example: 50, 100",
+            dayControl: "Day and duration controls",
+            allowManualDays: "Allow manual days",
+            minDays: "Minimum days",
+            maxDays: "Maximum days",
+            extraCreation: "Additional creation settings",
+            allowManualTraffic: "Allow manual traffic",
+            allowUnlimitedPlan: "Allow unlimited plan",
+            saveGlobalPolicy: "Save global policy",
+            lifecyclePolicyTitle: "Global delete, reset, edit and renewal policy",
+            lifecyclePolicyHelp:
+              "This policy applies to resellers without custom settings. Delete/refund window is the allowed days after user creation; 0 means no time limit. Maximum usage of 0 means unlimited; for example 0.5 means a user who has used more than about 500 MB cannot be deleted/refunded. Users whose time or total traffic is exhausted cannot be deleted either.",
+            lifecyclePolicyDesc: "This baseline is used for resellers without a custom policy.",
+            allowUserDelete: "Allow user delete and refund",
+            allowResetUsage: "Allow usage reset",
+            refundWindow: "Delete/refund window from creation (days, 0 means unlimited)",
+            maxDeleteUsage: "Maximum usage allowed for delete (GB)",
+            renewalOnly: "Only package renewal is allowed while editing",
+            packageRenewalPolicy: "Package renewal policy",
+            resetTimeAndVolume: "Reset time and volume",
+            addTimeAndVolume: "Add time and volume to the next period",
+            resetTimeCarryVolume: "Reset time and carry previous remaining traffic",
+            resetVolumeCarryTime: "Reset traffic and carry previous remaining time",
+            logout: "Log out",
+          }
+        : {
+            toastLoadSettingsError: "خطا در دریافت تنظیمات",
+            toastLoad2faError: "خطا در دریافت وضعیت دومرحله‌ای",
+            toastSettingsSaved: "تنظیمات ذخیره شد",
+            toastSettingsSaveError: "خطا در ذخیره تنظیمات",
+            toastGlobalDefaultsSaved: "پیش‌فرض سراسری ذخیره شد",
+            toastGlobalDefaultsSaveError: "خطا در ذخیره پیش‌فرض سراسری",
+            toastGlobalPolicySaved: "سیاست سراسری ذخیره شد",
+            toastGlobalPolicySaveError: "خطا در ذخیره سیاست سراسری",
+            toastPasswordFields: "همه فیلدهای رمز را کامل کنید",
+            toastPasswordMismatch: "تکرار رمز جدید با رمز جدید یکسان نیست",
+            toastPasswordChanged: "رمز عبور با موفقیت تغییر کرد",
+            toastPasswordError: "خطا در تغییر رمز",
+            toastCurrentPasswordRequired: "رمز فعلی را وارد کنید",
+            toast2faSecretCreated: "کلید دومرحله‌ای ساخته شد",
+            toast2faSecretCreatedDesc: "آن را در برنامه Authenticator وارد کنید و کد ۶ رقمی را تایید کنید.",
+            toast2faSetupError: "خطا در شروع راه‌اندازی",
+            toast2faCodeRequired: "رمز فعلی و کد Authenticator را وارد کنید",
+            toast2faEnabled: "تایید دومرحله‌ای فعال شد",
+            toast2faEnabledDesc: "کدهای بازیابی را همین حالا در جای امن نگه دارید.",
+            toast2faEnableError: "فعال‌سازی انجام نشد",
+            toast2faDisableRequired: "رمز فعلی و کد دومرحله‌ای را وارد کنید",
+            toast2faDisabled: "تایید دومرحله‌ای غیرفعال شد",
+            toast2faDisableError: "غیرفعال‌سازی انجام نشد",
+            toastRecoveryCreated: "کدهای بازیابی جدید ساخته شد",
+            toastRecoveryCreatedDesc: "کدهای قبلی دیگر معتبر نیستند.",
+            toastRecoveryError: "ساخت کدهای بازیابی انجام نشد",
+            toastSecretCopied: "Secret کپی شد",
+            toastUriCopied: "URI کپی شد",
+            toastRecoveryCopied: "کدهای بازیابی کپی شد",
+            toastCopyFailed: "کپی انجام نشد",
+            heroEyebrow: "امنیت و ظاهر",
+            heroTitle: "تنظیمات پنل",
+            heroSubtitle: "مدیریت ظاهر، پیش‌فرض‌های ساخت کاربر و امنیت حساب",
+            tabSecurity: "امنیت",
+            tabSecurityDesc: "2FA و رمز عبور",
+            tabAppearance: "ظاهر",
+            tabAppearanceDesc: "تم و رنگ پنل",
+            tabDefaults: "پیش‌فرض‌ها",
+            tabDefaultsDesc: "ساخت کاربر و نودها",
+            tabPolicy: "سیاست‌ها",
+            tabPolicyDesc: "قوانین رسیلرها",
+            twoFactorTitle: "تایید دومرحله‌ای حساب",
+            twoFactorHelp:
+              "راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.",
+            twoFactorSubtitle:
+              "برای ورود سوپرادمین و رسیلرها می‌توانید یک لایه امنیتی TOTP فعال کنید. این روش با Google Authenticator، Microsoft Authenticator، 1Password و Bitwarden سازگار است.",
+            enabled: "فعال",
+            disabled: "غیرفعال",
+            currentPasswordLabel: "رمز فعلی حساب",
+            currentPasswordPlaceholder: "برای تغییرات امنیتی لازم است",
+            authenticatorCodeLabel: "کد Authenticator یا backup code",
+            setupKeyTitle: "کلید راه‌اندازی Authenticator",
+            copySecret: "کپی secret",
+            copyUri: "کپی URI",
+            setupInstructions:
+              "در برنامه Authenticator گزینه manual setup یا enter setup key را بزنید؛ نام حساب را Guardino Hub / {account} بگذارید، نوع را Time based انتخاب کنید و secret بالا را وارد کنید. سپس کد ۶ رقمی تولیدشده را در فیلد کد وارد و فعال‌سازی را تایید کنید.",
+            recoveryCodesTitle: "کدهای بازیابی یک‌بارمصرف",
+            copyAll: "کپی همه",
+            secureRelogin: "خروج و ورود مجدد امن",
+            regenerateCodes: "ساخت backup code جدید",
+            disable2fa: "غیرفعال‌سازی 2FA",
+            enable2fa: "فعال‌سازی 2FA",
+            cancelSetup: "لغو راه‌اندازی",
+            start2fa: "ساخت کلید و شروع راه‌اندازی",
+            clearFields: "پاک کردن فیلدها",
+            remainingCodes: "کدهای بازیابی باقی‌مانده",
+            activatedAt: "فعال‌سازی",
+            lastUsedAt: "آخرین استفاده",
+            settingsTitle: "تنظیمات",
+            settingsSubtitle: "تنظیمات ظاهری، پیش‌فرض‌ها و امنیت حساب",
+            displayMode: "حالت نمایش",
+            light: "روشن",
+            dark: "تیره",
+            system: "سیستمی",
+            accentColor: "رنگ اصلی",
+            colorPreset: "پریست رنگی",
+            presetHint: "preset تم، گرادیانت باکس‌ها و نور پس‌زمینه کل پنل را یک‌جا تغییر می‌دهد.",
+            passwordTitle: "تغییر رمز عبور",
+            passwordDesc: "برای امنیت بیشتر، رمز جدید حداقل ۸ کاراکتر انتخاب کنید.",
+            currentPassword: "رمز فعلی",
+            newPassword: "رمز جدید",
+            confirmPassword: "تکرار رمز جدید",
+            saveNewPassword: "ذخیره رمز جدید",
+            clear: "پاک کردن",
+            userDefaultsTitle: "پیش‌فرض ساخت کاربر (حساب شما)",
+            userDefaultsDesc: "این تنظیمات فرم ساخت کاربر را برای شما آماده می‌کند.",
+            loading: "در حال بارگذاری...",
+            pricingModel: "مدل قیمت پیش‌فرض",
+            nodeMode: "حالت نود پیش‌فرض",
+            allNodes: "همه نودها",
+            manual: "انتخاب دستی",
+            group: "گروهی (Tag)",
+            masterSubTitle: "ساب مرکزی Guardino",
+            masterSubHint:
+              "اگر روشن باشد لینک تجمیعی Guardino کنار لینک‌های مستقیم کاربر نمایش داده می‌شود. اگر خاموش باشد فقط لینک‌های مستقیم پنل‌ها دیده می‌شوند.",
+            manualNodes: "انتخاب نودهای پیش‌فرض (حالت دستی)",
+            searchNode: "جستجوی نود",
+            selectAll: "انتخاب همه",
+            defaultTag: "Tag پیش‌فرض (فقط حالت گروهی)",
+            choose: "انتخاب کنید",
+            usernamePrefix: "پیشوند نام کاربری",
+            usernameSuffix: "پسوند نام کاربری",
+            usernameHint: "همین مقدار هم در گاردینو و هم در پنل‌های مقصد به عنوان نام کاربری نهایی استفاده می‌شود.",
+            save: "ذخیره",
+            reload: "بارگذاری مجدد",
+            globalDefaultsTitle: "پیش‌فرض سراسری برای همه رسیلرها (ادمین)",
+            globalDefaultsDesc: "رسیلرهایی که تنظیم اختصاصی ندارند از این مقادیر استفاده می‌کنند.",
+            globalMasterSubHint:
+              "مقدار پیش‌فرض برای رسیلرهایی است که تنظیم اختصاصی ندارند. روشن بودن این گزینه فقط نمایش لینک مرکزی را فعال می‌کند؛ لینک‌های مستقیم همیشه جداگانه باقی می‌مانند.",
+            globalManualNodes: "انتخاب نودهای پیش‌فرض (سراسری)",
+            globalDefaultTag: "Tag پیش‌فرض (سراسری)",
+            globalUsernameHint:
+              "بخش Label و Username یکی شده است؛ همین الگو برای نمایش گاردینو و ساخت کاربر در پاسارگارد/مرزبان استفاده می‌شود.",
+            saveGlobal: "ذخیره سراسری",
+            creationPolicyTitle: "سیاست سراسری ساخت کاربر برای رسیلرها",
+            creationPolicyHelp:
+              "اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند. این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند؛ سیاست اختصاصی هر رسیلر همیشه اولویت دارد.",
+            creationPolicyDesc: "این مقدارها هنگام فعال‌کردن سیاست اختصاصی رسیلر به عنوان پیش‌فرض روی فرم ساخت/ویرایش رسیلر اعمال می‌شوند.",
+            creationPolicyEnabledTitle: "فعال بودن سیاست ساخت کاربر",
+            creationPolicyEnabledDesc: "روشن باشد، رسیلر فقط طبق محدودیت‌های روز/حجم همین بخش کاربر می‌سازد.",
+            durationPackages: "بسته‌های زمانی مجاز",
+            trafficPackages: "حجم‌های مجاز (GB)",
+            trafficPlaceholder: "مثال: 50, 100",
+            dayControl: "کنترل روز و مدت‌زمان",
+            allowManualDays: "اجازه روز دستی",
+            minDays: "حداقل روز",
+            maxDays: "حداکثر روز",
+            extraCreation: "تنظیمات تکمیلی ساخت",
+            allowManualTraffic: "اجازه حجم دستی",
+            allowUnlimitedPlan: "اجازه پلن نامحدود",
+            saveGlobalPolicy: "ذخیره سیاست سراسری",
+            lifecyclePolicyTitle: "سیاست سراسری حذف، ریست، ویرایش و تمدید کاربران",
+            lifecyclePolicyHelp:
+              "این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست.",
+            lifecyclePolicyDesc: "این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.",
+            allowUserDelete: "اجازه حذف و ریفاند کاربر",
+            allowResetUsage: "اجازه ریست مصرف",
+            refundWindow: "مهلت حذف/ریفاند از زمان ساخت (روز، 0 یعنی نامحدود)",
+            maxDeleteUsage: "حداکثر مصرف مجاز برای حذف (GB)",
+            renewalOnly: "در ویرایش فقط تمدید بسته‌ای مجاز باشد",
+            packageRenewalPolicy: "سیاست تمدید بسته‌ای",
+            resetTimeAndVolume: "ریست زمان و حجم",
+            addTimeAndVolume: "اضافه شدن زمان و حجم به دوره بعد",
+            resetTimeCarryVolume: "ریست زمان و اضافه شدن حجم باقی‌مانده قبلی",
+            resetVolumeCarryTime: "ریست حجم و اضافه شدن زمان باقی‌مانده قبلی",
+            logout: "خروج از حساب",
+          },
+    [isEn]
+  );
 
   const [loadingDefaults, setLoadingDefaults] = React.useState(true);
   const [resellerDefaults, setResellerDefaults] = React.useState<UserDefaults>(EMPTY_DEFAULTS);
@@ -293,7 +598,7 @@ export default function SettingsPage() {
         setAdminNodes(resellerNodeItems);
       }
     } catch (e: any) {
-      push({ title: "خطا در دریافت تنظیمات", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastLoadSettingsError, desc: String(e?.message || e), type: "error" });
     } finally {
       setLoadingDefaults(false);
     }
@@ -304,7 +609,7 @@ export default function SettingsPage() {
       const status = await apiFetch<TwoFactorStatus>("/api/v1/auth/2fa/status");
       setTwoFactorStatus(status);
     } catch (e: any) {
-      push({ title: "خطا در دریافت وضعیت دومرحله‌ای", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastLoad2faError, desc: String(e?.message || e), type: "error" });
     }
   }
 
@@ -335,9 +640,9 @@ export default function SettingsPage() {
         body: JSON.stringify(payload),
       });
       setResellerDefaults(saved);
-      push({ title: "تنظیمات ذخیره شد", type: "success" });
+      push({ title: copy.toastSettingsSaved, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در ذخیره تنظیمات", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastSettingsSaveError, desc: String(e?.message || e), type: "error" });
     }
   }
 
@@ -354,9 +659,9 @@ export default function SettingsPage() {
         body: JSON.stringify(payload),
       });
       setGlobalDefaults(saved);
-      push({ title: "پیش‌فرض سراسری ذخیره شد", type: "success" });
+      push({ title: copy.toastGlobalDefaultsSaved, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در ذخیره پیش‌فرض سراسری", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastGlobalDefaultsSaveError, desc: String(e?.message || e), type: "error" });
     }
   }
 
@@ -369,19 +674,19 @@ export default function SettingsPage() {
       const normalized = normalizePolicy(saved);
       setGlobalPolicy(normalized);
       setGlobalTrafficInput(normalized.allowed_traffic_gb.join(", "));
-      push({ title: "سیاست سراسری ذخیره شد", type: "success" });
+      push({ title: copy.toastGlobalPolicySaved, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در ذخیره سیاست سراسری", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastGlobalPolicySaveError, desc: String(e?.message || e), type: "error" });
     }
   }
 
   async function changePassword() {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      push({ title: "همه فیلدهای رمز را کامل کنید", type: "warning" });
+      push({ title: copy.toastPasswordFields, type: "warning" });
       return;
     }
     if (newPassword !== confirmPassword) {
-      push({ title: "تکرار رمز جدید با رمز جدید یکسان نیست", type: "warning" });
+      push({ title: copy.toastPasswordMismatch, type: "warning" });
       return;
     }
     setPwdBusy(true);
@@ -393,9 +698,9 @@ export default function SettingsPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      push({ title: "رمز عبور با موفقیت تغییر کرد", type: "success" });
+      push({ title: copy.toastPasswordChanged, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در تغییر رمز", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastPasswordError, desc: String(e?.message || e), type: "error" });
     } finally {
       setPwdBusy(false);
     }
@@ -403,7 +708,7 @@ export default function SettingsPage() {
 
   async function startTwoFactorSetup() {
     if (!twoFactorPassword) {
-      push({ title: "رمز فعلی را وارد کنید", type: "warning" });
+      push({ title: copy.toastCurrentPasswordRequired, type: "warning" });
       return;
     }
     setTwoFactorBusy(true);
@@ -414,9 +719,9 @@ export default function SettingsPage() {
         body: JSON.stringify({ current_password: twoFactorPassword }),
       });
       setTwoFactorSetup(setup);
-      push({ title: "کلید دومرحله‌ای ساخته شد", desc: "آن را در برنامه Authenticator وارد کنید و کد ۶ رقمی را تایید کنید.", type: "success" });
+      push({ title: copy.toast2faSecretCreated, desc: copy.toast2faSecretCreatedDesc, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در شروع راه‌اندازی", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toast2faSetupError, desc: String(e?.message || e), type: "error" });
     } finally {
       setTwoFactorBusy(false);
     }
@@ -425,7 +730,7 @@ export default function SettingsPage() {
   async function enableTwoFactor() {
     if (!twoFactorSetup) return;
     if (!twoFactorPassword || !twoFactorCode.trim()) {
-      push({ title: "رمز فعلی و کد Authenticator را وارد کنید", type: "warning" });
+      push({ title: copy.toast2faCodeRequired, type: "warning" });
       return;
     }
     setTwoFactorBusy(true);
@@ -444,9 +749,9 @@ export default function SettingsPage() {
         last_used_at: new Date().toISOString(),
         recovery_codes_remaining: res.recovery_codes?.length || 0,
       });
-      push({ title: "تایید دومرحله‌ای فعال شد", desc: "کدهای بازیابی را همین حالا در جای امن نگه دارید.", type: "success" });
+      push({ title: copy.toast2faEnabled, desc: copy.toast2faEnabledDesc, type: "success" });
     } catch (e: any) {
-      push({ title: "فعال‌سازی انجام نشد", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toast2faEnableError, desc: String(e?.message || e), type: "error" });
     } finally {
       setTwoFactorBusy(false);
     }
@@ -454,7 +759,7 @@ export default function SettingsPage() {
 
   async function disableTwoFactor() {
     if (!twoFactorPassword || !twoFactorCode.trim()) {
-      push({ title: "رمز فعلی و کد دومرحله‌ای را وارد کنید", type: "warning" });
+      push({ title: copy.toast2faDisableRequired, type: "warning" });
       return;
     }
     setTwoFactorBusy(true);
@@ -468,9 +773,9 @@ export default function SettingsPage() {
       setTwoFactorCode("");
       setTwoFactorSetup(null);
       setRecoveryCodes([]);
-      push({ title: "تایید دومرحله‌ای غیرفعال شد", type: "success" });
+      push({ title: copy.toast2faDisabled, type: "success" });
     } catch (e: any) {
-      push({ title: "غیرفعال‌سازی انجام نشد", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toast2faDisableError, desc: String(e?.message || e), type: "error" });
     } finally {
       setTwoFactorBusy(false);
     }
@@ -478,7 +783,7 @@ export default function SettingsPage() {
 
   async function regenerateRecoveryCodes() {
     if (!twoFactorPassword || !twoFactorCode.trim()) {
-      push({ title: "رمز فعلی و کد دومرحله‌ای را وارد کنید", type: "warning" });
+      push({ title: copy.toast2faDisableRequired, type: "warning" });
       return;
     }
     setTwoFactorBusy(true);
@@ -495,22 +800,22 @@ export default function SettingsPage() {
         enabled: true,
         recovery_codes_remaining: res.recovery_codes?.length || 0,
       }));
-      push({ title: "کدهای بازیابی جدید ساخته شد", desc: "کدهای قبلی دیگر معتبر نیستند.", type: "success" });
+      push({ title: copy.toastRecoveryCreated, desc: copy.toastRecoveryCreatedDesc, type: "success" });
     } catch (e: any) {
-      push({ title: "ساخت کدهای بازیابی انجام نشد", desc: String(e?.message || e), type: "error" });
+      push({ title: copy.toastRecoveryError, desc: String(e?.message || e), type: "error" });
     } finally {
       setTwoFactorBusy(false);
     }
   }
 
-  const todayFa = React.useMemo(
+  const todayLabel = React.useMemo(
     () =>
-      new Date().toLocaleDateString("fa-IR-u-ca-persian", {
+      new Date().toLocaleDateString(isEn ? "en-US" : "fa-IR-u-ca-persian", {
         year: "numeric",
         month: "long",
         day: "numeric",
       }),
-    []
+    [isEn]
   );
   const selectClass =
     "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_55%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.32)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.30)]";
@@ -519,10 +824,10 @@ export default function SettingsPage() {
   const guideBoxClass =
     "max-w-full overflow-hidden break-words [overflow-wrap:anywhere] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75";
   const settingsTabs: Array<{ key: SettingsTabKey; label: string; desc: string; icon: React.ReactNode }> = [
-    { key: "security" as const, label: "امنیت", desc: "2FA و رمز عبور", icon: <ShieldCheck size={16} /> },
-    { key: "appearance" as const, label: "ظاهر", desc: "تم و رنگ پنل", icon: <Palette size={16} /> },
-    { key: "defaults" as const, label: "پیش‌فرض‌ها", desc: "ساخت کاربر و نودها", icon: <Sparkles size={16} /> },
-    { key: "policy" as const, label: "سیاست‌ها", desc: "قوانین رسیلرها", icon: <KeyRound size={16} /> },
+    { key: "security" as const, label: copy.tabSecurity, desc: copy.tabSecurityDesc, icon: <ShieldCheck size={16} /> },
+    { key: "appearance" as const, label: copy.tabAppearance, desc: copy.tabAppearanceDesc, icon: <Palette size={16} /> },
+    { key: "defaults" as const, label: copy.tabDefaults, desc: copy.tabDefaultsDesc, icon: <Sparkles size={16} /> },
+    { key: "policy" as const, label: copy.tabPolicy, desc: copy.tabPolicyDesc, icon: <KeyRound size={16} /> },
   ].filter((tab) => tab.key !== "policy" || me?.role === "admin");
 
   return (
@@ -532,14 +837,14 @@ export default function SettingsPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <Shield size={13} />
-              امنیت و ظاهر
+              {copy.heroEyebrow}
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">تنظیمات پنل</h1>
-            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">مدیریت ظاهر، پیش‌فرض‌های ساخت کاربر و امنیت حساب</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{copy.heroTitle}</h1>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{copy.heroSubtitle}</p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(135deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/75">
             <CalendarDays size={14} />
-            <span>{todayFa}</span>
+            <span>{todayLabel}</span>
           </div>
         </div>
       </section>
@@ -604,12 +909,10 @@ export default function SettingsPage() {
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold">
                 {twoFactorStatus?.enabled ? <ShieldCheck size={16} /> : <KeyRound size={16} />}
-                تایید دومرحله‌ای حساب
-                <HelpTip text="راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است." />
+                {copy.twoFactorTitle}
+                <HelpTip text={copy.twoFactorHelp} />
               </div>
-              <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">
-                برای ورود سوپرادمین و رسیلرها می‌توانید یک لایه امنیتی TOTP فعال کنید. این روش با Google Authenticator، Microsoft Authenticator، 1Password و Bitwarden سازگار است.
-              </div>
+              <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">{copy.twoFactorSubtitle}</div>
             </div>
             <div
               className={`rounded-full border px-3 py-1 text-xs ${
@@ -618,28 +921,26 @@ export default function SettingsPage() {
                   : "border-amber-400/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               }`}
             >
-              {twoFactorStatus?.enabled ? "فعال" : "غیرفعال"}
+              {twoFactorStatus?.enabled ? copy.enabled : copy.disabled}
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="hidden">
-            راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.
-          </div>
+          <div className="hidden">{copy.twoFactorHelp}</div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
-              <div className="text-xs text-[hsl(var(--fg))]/70">رمز فعلی حساب</div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{copy.currentPasswordLabel}</div>
               <Input
                 type="password"
                 value={twoFactorPassword}
                 onChange={(e) => setTwoFactorPassword(e.target.value)}
                 autoComplete="current-password"
-                placeholder="برای تغییرات امنیتی لازم است"
+                placeholder={copy.currentPasswordPlaceholder}
               />
             </div>
             <div className="space-y-2">
-              <div className="text-xs text-[hsl(var(--fg))]/70">کد Authenticator یا backup code</div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{copy.authenticatorCodeLabel}</div>
               <Input
                 value={twoFactorCode}
                 onChange={(e) => setTwoFactorCode(e.target.value)}
@@ -652,7 +953,7 @@ export default function SettingsPage() {
 
           {twoFactorSetup ? (
             <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-              <div className="text-sm font-medium">کلید راه‌اندازی Authenticator</div>
+              <div className="text-sm font-medium">{copy.setupKeyTitle}</div>
               <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                 <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 font-mono text-sm break-words [overflow-wrap:anywhere]">
                   {twoFactorSetup.secret}
@@ -662,11 +963,11 @@ export default function SettingsPage() {
                   variant="outline"
                   onClick={async () => {
                     const ok = await copyText(twoFactorSetup.secret);
-                    push({ title: ok ? "Secret کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                    push({ title: ok ? copy.toastSecretCopied : copy.toastCopyFailed, type: ok ? "success" : "error" });
                   }}
                 >
                   <Copy size={15} className="ms-1" />
-                  کپی secret
+                  {copy.copySecret}
                 </Button>
               </div>
               <div className="grid gap-3 md:grid-cols-[1fr_auto]">
@@ -678,22 +979,22 @@ export default function SettingsPage() {
                   variant="outline"
                   onClick={async () => {
                     const ok = await copyText(twoFactorSetup.otpauth_uri);
-                    push({ title: ok ? "URI کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                    push({ title: ok ? copy.toastUriCopied : copy.toastCopyFailed, type: ok ? "success" : "error" });
                   }}
                 >
                   <Copy size={15} className="ms-1" />
-                  کپی URI
+                  {copy.copyUri}
                 </Button>
               </div>
               <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">
-                در برنامه Authenticator گزینه manual setup یا enter setup key را بزنید؛ نام حساب را Guardino Hub / {me?.username || "account"} بگذارید، نوع را Time based انتخاب کنید و secret بالا را وارد کنید. سپس کد ۶ رقمی تولیدشده را در فیلد کد وارد و فعال‌سازی را تایید کنید.
+                {copy.setupInstructions.replace("{account}", me?.username || "account")}
               </div>
             </div>
           ) : null}
 
           {recoveryCodes.length ? (
             <div className="space-y-3 rounded-xl border border-amber-400/35 bg-amber-500/10 p-3">
-              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">کدهای بازیابی یک‌بارمصرف</div>
+              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">{copy.recoveryCodesTitle}</div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 {recoveryCodes.map((code) => (
                   <div key={code} className="rounded-lg border border-amber-400/30 bg-[hsl(var(--surface-card-1))] px-2 py-2 text-center font-mono text-xs">
@@ -707,14 +1008,14 @@ export default function SettingsPage() {
                   variant="outline"
                   onClick={async () => {
                     const ok = await copyText(recoveryCodes.join("\n"));
-                    push({ title: ok ? "کدهای بازیابی کپی شد" : "کپی انجام نشد", type: ok ? "success" : "error" });
+                    push({ title: ok ? copy.toastRecoveryCopied : copy.toastCopyFailed, type: ok ? "success" : "error" });
                   }}
                 >
                   <Copy size={15} className="ms-1" />
-                  کپی همه
+                  {copy.copyAll}
                 </Button>
                 <Button type="button" variant="outline" onClick={onLogout}>
-                  خروج و ورود مجدد امن
+                  {copy.secureRelogin}
                 </Button>
               </div>
             </div>
@@ -724,16 +1025,16 @@ export default function SettingsPage() {
             {twoFactorStatus?.enabled ? (
               <>
                 <Button type="button" onClick={regenerateRecoveryCodes} disabled={twoFactorBusy}>
-                  ساخت backup code جدید
+                  {copy.regenerateCodes}
                 </Button>
                 <Button type="button" variant="outline" onClick={disableTwoFactor} disabled={twoFactorBusy}>
-                  غیرفعال‌سازی 2FA
+                  {copy.disable2fa}
                 </Button>
               </>
             ) : twoFactorSetup ? (
               <>
                 <Button type="button" onClick={enableTwoFactor} disabled={twoFactorBusy}>
-                  فعال‌سازی 2FA
+                  {copy.enable2fa}
                 </Button>
                 <Button
                   type="button"
@@ -744,12 +1045,12 @@ export default function SettingsPage() {
                   }}
                   disabled={twoFactorBusy}
                 >
-                  لغو راه‌اندازی
+                  {copy.cancelSetup}
                 </Button>
               </>
             ) : (
               <Button type="button" onClick={startTwoFactorSetup} disabled={twoFactorBusy}>
-                ساخت کلید و شروع راه‌اندازی
+                {copy.start2fa}
               </Button>
             )}
             <Button
@@ -761,15 +1062,19 @@ export default function SettingsPage() {
               }}
               disabled={twoFactorBusy}
             >
-              پاک کردن فیلدها
+              {copy.clearFields}
             </Button>
           </div>
 
           {twoFactorStatus?.enabled ? (
             <div className="grid gap-2 text-xs text-[hsl(var(--fg))]/65 sm:grid-cols-3">
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3">کدهای بازیابی باقی‌مانده: {twoFactorStatus.recovery_codes_remaining}</div>
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3">فعال‌سازی: {twoFactorStatus.confirmed_at ? new Date(twoFactorStatus.confirmed_at).toLocaleString("fa-IR") : "-"}</div>
-              <div className="rounded-xl border border-[hsl(var(--border))] p-3">آخرین استفاده: {twoFactorStatus.last_used_at ? new Date(twoFactorStatus.last_used_at).toLocaleString("fa-IR") : "-"}</div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">{copy.remainingCodes}: {twoFactorStatus.recovery_codes_remaining}</div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">
+                {copy.activatedAt}: {twoFactorStatus.confirmed_at ? new Date(twoFactorStatus.confirmed_at).toLocaleString(isEn ? "en-US" : "fa-IR") : "-"}
+              </div>
+              <div className="rounded-xl border border-[hsl(var(--border))] p-3">
+                {copy.lastUsedAt}: {twoFactorStatus.last_used_at ? new Date(twoFactorStatus.last_used_at).toLocaleString(isEn ? "en-US" : "fa-IR") : "-"}
+              </div>
             </div>
           ) : null}
         </CardContent>
@@ -777,22 +1082,22 @@ export default function SettingsPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">تنظیمات</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">تنظیمات ظاهری، پیش‌فرض‌ها و امنیت حساب</div>
+          <div className="text-xl font-semibold">{copy.settingsTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.settingsSubtitle}</div>
         </CardHeader>
         <CardContent data-settings-tab={activeTab} className="settings-tab-content space-y-6">
           <div className={activeTab === "appearance" ? "grid gap-4 lg:grid-cols-3" : "hidden"}>
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-1)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-1)/0.75)]">
-              <div className="text-sm font-medium flex items-center gap-2"><Sparkles size={15} /> حالت نمایش</div>
+              <div className="text-sm font-medium flex items-center gap-2"><Sparkles size={15} /> {copy.displayMode}</div>
               <div className="flex flex-wrap gap-2">
-                <Button variant={theme === "light" ? "primary" : "outline"} onClick={() => setTheme("light")}>روشن</Button>
-                <Button variant={theme === "dark" ? "primary" : "outline"} onClick={() => setTheme("dark")}>تیره</Button>
-                <Button variant={theme === "system" ? "primary" : "outline"} onClick={() => setTheme("system")}>سیستمی</Button>
+                <Button variant={theme === "light" ? "primary" : "outline"} onClick={() => setTheme("light")}>{copy.light}</Button>
+                <Button variant={theme === "dark" ? "primary" : "outline"} onClick={() => setTheme("dark")}>{copy.dark}</Button>
+                <Button variant={theme === "system" ? "primary" : "outline"} onClick={() => setTheme("system")}>{copy.system}</Button>
               </div>
             </div>
 
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--accent)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--accent)/0.72)]">
-              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> رنگ اصلی</div>
+              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> {copy.accentColor}</div>
               <div className="flex flex-wrap gap-2">
                 {accentOptions.map((a) => (
                   <Button
@@ -810,7 +1115,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-2)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-2)/0.75)]">
-              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> پریست رنگی</div>
+              <div className="text-sm font-medium flex items-center gap-2"><Palette size={15} /> {copy.colorPreset}</div>
               <div className="flex flex-wrap gap-2">
                 {presetOptions.map((p) => (
                   <Button
@@ -825,23 +1130,21 @@ export default function SettingsPage() {
                   </Button>
                 ))}
               </div>
-              <div className="text-xs text-[hsl(var(--fg))]/70">
-                preset تم، گرادیانت باکس‌ها و نور پس‌زمینه کل پنل را یک‌جا تغییر می‌دهد.
-              </div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{copy.presetHint}</div>
             </div>
           </div>
 
           <Card className="overflow-hidden">
             <CardHeader>
-              <div className="text-sm font-semibold">تغییر رمز عبور</div>
-              <div className="text-xs text-[hsl(var(--fg))]/70">برای امنیت بیشتر، رمز جدید حداقل ۸ کاراکتر انتخاب کنید.</div>
+              <div className="text-sm font-semibold">{copy.passwordTitle}</div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{copy.passwordDesc}</div>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-3 bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]">
-              <Input type="password" placeholder="رمز فعلی" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-              <Input type="password" placeholder="رمز جدید" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-              <Input type="password" placeholder="تکرار رمز جدید" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              <Input type="password" placeholder={copy.currentPassword} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+              <Input type="password" placeholder={copy.newPassword} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <Input type="password" placeholder={copy.confirmPassword} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
               <div className="md:col-span-3 flex gap-2">
-                <Button type="button" onClick={changePassword} disabled={pwdBusy}>ذخیره رمز جدید</Button>
+                <Button type="button" onClick={changePassword} disabled={pwdBusy}>{copy.saveNewPassword}</Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -851,7 +1154,7 @@ export default function SettingsPage() {
                     setConfirmPassword("");
                   }}
                 >
-                  پاک کردن
+                  {copy.clear}
                 </Button>
               </div>
             </CardContent>
@@ -859,14 +1162,14 @@ export default function SettingsPage() {
 
           <Card className="overflow-hidden">
             <CardHeader>
-              <div className="text-sm font-semibold">پیش‌فرض ساخت کاربر (حساب شما)</div>
-              <div className="text-xs text-[hsl(var(--fg))]/70">این تنظیمات فرم ساخت کاربر را برای شما آماده می‌کند.</div>
+              <div className="text-sm font-semibold">{copy.userDefaultsTitle}</div>
+              <div className="text-xs text-[hsl(var(--fg))]/70">{copy.userDefaultsDesc}</div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {loadingDefaults ? <div className="text-xs text-[hsl(var(--fg))]/70">در حال بارگذاری...</div> : null}
+              {loadingDefaults ? <div className="text-xs text-[hsl(var(--fg))]/70">{copy.loading}</div> : null}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">مدل قیمت پیش‌فرض</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.pricingModel}</div>
                   <select
                     className={selectClass}
                     value={resellerDefaults.default_pricing_mode}
@@ -879,7 +1182,7 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">حالت نود پیش‌فرض</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.nodeMode}</div>
                   <select
                     className={selectClass}
                     value={resellerDefaults.default_node_mode}
@@ -887,17 +1190,17 @@ export default function SettingsPage() {
                       setResellerDefaults((v) => ({ ...v, default_node_mode: e.target.value as UserDefaults["default_node_mode"] }))
                     }
                   >
-                    <option value="all">همه نودها</option>
-                    <option value="manual">انتخاب دستی</option>
-                    <option value="group">گروهی (Tag)</option>
+                    <option value="all">{copy.allNodes}</option>
+                    <option value="manual">{copy.manual}</option>
+                    <option value="group">{copy.group}</option>
                   </select>
                 </div>
 
                 <div className="space-y-2 md:col-span-2 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs font-medium">ساب مرکزی Guardino</div>
-                      <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">اگر روشن باشد لینک تجمیعی Guardino کنار لینک‌های مستقیم کاربر نمایش داده می‌شود. اگر خاموش باشد فقط لینک‌های مستقیم پنل‌ها دیده می‌شوند.</div>
+                      <div className="text-xs font-medium">{copy.masterSubTitle}</div>
+                      <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">{copy.masterSubHint}</div>
                     </div>
                     <Switch
                       checked={!!resellerDefaults.show_guardino_master_sub}
@@ -908,11 +1211,11 @@ export default function SettingsPage() {
 
                 {resellerDefaults.default_node_mode === "manual" ? (
                   <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب نودهای پیش‌فرض (حالت دستی)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.manualNodes}</div>
                     <div className="flex flex-wrap gap-2">
-                      <Input placeholder="جستجوی نود" value={resellerNodeQ} onChange={(e) => setResellerNodeQ(e.target.value)} />
-                      <Button type="button" variant="outline" onClick={() => setResellerDefaults((v) => ({ ...v, default_node_ids: resellerNodes.map((n) => n.id) }))}>انتخاب همه</Button>
-                      <Button type="button" variant="outline" onClick={() => setResellerDefaults((v) => ({ ...v, default_node_ids: [] }))}>پاک کردن</Button>
+                      <Input placeholder={copy.searchNode} value={resellerNodeQ} onChange={(e) => setResellerNodeQ(e.target.value)} />
+                      <Button type="button" variant="outline" onClick={() => setResellerDefaults((v) => ({ ...v, default_node_ids: resellerNodes.map((n) => n.id) }))}>{copy.selectAll}</Button>
+                      <Button type="button" variant="outline" onClick={() => setResellerDefaults((v) => ({ ...v, default_node_ids: [] }))}>{copy.clear}</Button>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
                       {resellerFilteredNodes.map((n) => (
@@ -936,13 +1239,13 @@ export default function SettingsPage() {
 
                 {resellerDefaults.default_node_mode === "group" ? (
                   <div className="space-y-2 md:col-span-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">Tag پیش‌فرض (فقط حالت گروهی)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.defaultTag}</div>
                     <select
                       className={selectClass}
                       value={resellerDefaults.default_node_group || ""}
                       onChange={(e) => setResellerDefaults((v) => ({ ...v, default_node_group: e.target.value }))}
                     >
-                      <option value="">انتخاب کنید</option>
+                      <option value="">{copy.choose}</option>
                       {resellerTagOptions.map((t) => (
                         <option key={t} value={t}>{t}</option>
                       ))}
@@ -951,20 +1254,20 @@ export default function SettingsPage() {
                 ) : null}
 
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند نام کاربری</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.usernamePrefix}</div>
                   <Input value={resellerDefaults.label_prefix} onChange={(e) => setResellerDefaults((v) => ({ ...v, label_prefix: e.target.value }))} />
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs text-[hsl(var(--fg))]/70">پسوند نام کاربری</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.usernameSuffix}</div>
                   <Input value={resellerDefaults.label_suffix} onChange={(e) => setResellerDefaults((v) => ({ ...v, label_suffix: e.target.value }))} />
                 </div>
                 <div className="md:col-span-2 max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
-                  همین مقدار هم در گاردینو و هم در پنل‌های مقصد به عنوان نام کاربری نهایی استفاده می‌شود.
+                  {copy.usernameHint}
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button type="button" onClick={saveResellerDefaults}>ذخیره</Button>
-                <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                <Button type="button" onClick={saveResellerDefaults}>{copy.save}</Button>
+                <Button type="button" variant="outline" onClick={loadDefaults}>{copy.reload}</Button>
               </div>
             </CardContent>
           </Card>
@@ -973,13 +1276,13 @@ export default function SettingsPage() {
             <>
             <Card className="overflow-hidden">
               <CardHeader>
-                <div className="text-sm font-semibold">پیش‌فرض سراسری برای همه رسیلرها (ادمین)</div>
-                <div className="text-xs text-[hsl(var(--fg))]/70">رسیلرهایی که تنظیم اختصاصی ندارند از این مقادیر استفاده می‌کنند.</div>
+                <div className="text-sm font-semibold">{copy.globalDefaultsTitle}</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.globalDefaultsDesc}</div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">مدل قیمت پیش‌فرض</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.pricingModel}</div>
                     <select
                       className={selectClass}
                       value={globalDefaults.default_pricing_mode}
@@ -992,7 +1295,7 @@ export default function SettingsPage() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">حالت نود پیش‌فرض</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.nodeMode}</div>
                     <select
                       className={selectClass}
                       value={globalDefaults.default_node_mode}
@@ -1000,17 +1303,17 @@ export default function SettingsPage() {
                         setGlobalDefaults((v) => ({ ...v, default_node_mode: e.target.value as UserDefaults["default_node_mode"] }))
                       }
                     >
-                      <option value="all">همه نودها</option>
-                      <option value="manual">انتخاب دستی</option>
-                      <option value="group">گروهی (Tag)</option>
+                      <option value="all">{copy.allNodes}</option>
+                      <option value="manual">{copy.manual}</option>
+                      <option value="group">{copy.group}</option>
                     </select>
                   </div>
 
                   <div className="space-y-2 md:col-span-2 max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 break-words [overflow-wrap:anywhere]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-medium">ساب مرکزی Guardino</div>
-                        <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">مقدار پیش‌فرض برای رسیلرهایی است که تنظیم اختصاصی ندارند. روشن بودن این گزینه فقط نمایش لینک مرکزی را فعال می‌کند؛ لینک‌های مستقیم همیشه جداگانه باقی می‌مانند.</div>
+                        <div className="text-xs font-medium">{copy.masterSubTitle}</div>
+                        <div className="text-xs leading-6 text-[hsl(var(--fg))]/70">{copy.globalMasterSubHint}</div>
                       </div>
                       <Switch
                         checked={!!globalDefaults.show_guardino_master_sub}
@@ -1021,11 +1324,11 @@ export default function SettingsPage() {
 
                   {globalDefaults.default_node_mode === "manual" ? (
                     <div className="space-y-2 md:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">انتخاب نودهای پیش‌فرض (سراسری)</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{copy.globalManualNodes}</div>
                       <div className="flex flex-wrap gap-2">
-                        <Input placeholder="جستجوی نود" value={globalNodeQ} onChange={(e) => setGlobalNodeQ(e.target.value)} />
-                        <Button type="button" variant="outline" onClick={() => setGlobalDefaults((v) => ({ ...v, default_node_ids: adminNodes.map((n) => n.id) }))}>انتخاب همه</Button>
-                        <Button type="button" variant="outline" onClick={() => setGlobalDefaults((v) => ({ ...v, default_node_ids: [] }))}>پاک کردن</Button>
+                        <Input placeholder={copy.searchNode} value={globalNodeQ} onChange={(e) => setGlobalNodeQ(e.target.value)} />
+                        <Button type="button" variant="outline" onClick={() => setGlobalDefaults((v) => ({ ...v, default_node_ids: adminNodes.map((n) => n.id) }))}>{copy.selectAll}</Button>
+                        <Button type="button" variant="outline" onClick={() => setGlobalDefaults((v) => ({ ...v, default_node_ids: [] }))}>{copy.clear}</Button>
                       </div>
                       <div className="grid gap-2 md:grid-cols-2">
                         {globalFilteredNodes.map((n) => (
@@ -1049,13 +1352,13 @@ export default function SettingsPage() {
 
                   {globalDefaults.default_node_mode === "group" ? (
                     <div className="space-y-2 md:col-span-2">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">Tag پیش‌فرض (سراسری)</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{copy.globalDefaultTag}</div>
                       <select
                         className={selectClass}
                         value={globalDefaults.default_node_group || ""}
                         onChange={(e) => setGlobalDefaults((v) => ({ ...v, default_node_group: e.target.value }))}
                       >
-                        <option value="">انتخاب کنید</option>
+                        <option value="">{copy.choose}</option>
                         {globalTagOptions.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}
@@ -1064,20 +1367,20 @@ export default function SettingsPage() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پیشوند نام کاربری</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.usernamePrefix}</div>
                     <Input value={globalDefaults.label_prefix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, label_prefix: e.target.value }))} />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">پسوند نام کاربری</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.usernameSuffix}</div>
                     <Input value={globalDefaults.label_suffix} onChange={(e) => setGlobalDefaults((v) => ({ ...v, label_suffix: e.target.value }))} />
                   </div>
                   <div className="md:col-span-2 max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
-                    بخش Label و Username یکی شده است؛ همین الگو برای نمایش گاردینو و ساخت کاربر در پاسارگارد/مرزبان استفاده می‌شود.
+                    {copy.globalUsernameHint}
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button type="button" onClick={saveGlobalDefaults}>ذخیره سراسری</Button>
-                  <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                  <Button type="button" onClick={saveGlobalDefaults}>{copy.saveGlobal}</Button>
+                  <Button type="button" variant="outline" onClick={loadDefaults}>{copy.reload}</Button>
                 </div>
               </CardContent>
             </Card>
@@ -1085,32 +1388,26 @@ export default function SettingsPage() {
             <Card className="overflow-hidden">
               <CardHeader>
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <span>سیاست سراسری ساخت کاربر برای رسیلرها</span>
-                  <HelpTip text="اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند. این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند؛ سیاست اختصاصی هر رسیلر همیشه اولویت دارد." />
+                  <span>{copy.creationPolicyTitle}</span>
+                  <HelpTip text={copy.creationPolicyHelp} />
                 </div>
-                <div className="text-xs text-[hsl(var(--fg))]/70">
-                  این مقدارها هنگام فعال‌کردن سیاست اختصاصی رسیلر به عنوان پیش‌فرض روی فرم ساخت/ویرایش رسیلر اعمال می‌شوند.
-                </div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.creationPolicyDesc}</div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="hidden">
-                  اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند.
-                </div>
+                <div className="hidden">{copy.creationPolicyHelp}</div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
                   <div>
-                    <div className="text-sm font-medium">فعال بودن سیاست ساخت کاربر</div>
-                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">روشن باشد، رسیلر فقط طبق محدودیت‌های روز/حجم همین بخش کاربر می‌سازد.</div>
+                    <div className="text-sm font-medium">{copy.creationPolicyEnabledTitle}</div>
+                    <div className="text-xs leading-6 text-[hsl(var(--fg))]/65">{copy.creationPolicyEnabledDesc}</div>
                   </div>
                   <Switch checked={globalPolicy.enabled} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, enabled: v }))} />
                 </div>
-                <div className="hidden">
-                  این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند. اگر روشن باشد، رسیلرهای قدیمی بدون سیاست اختصاصی و رسیلرهای جدیدی که هنگام ساخت برایشان «سیاست‌های اختصاصی رسیلر» را ذخیره نمی‌کنی، از همین بسته‌های زمان/حجم و اجازه روز/حجم دستی پیروی می‌کنند. اگر برای یک رسیلر سیاست اختصاصی ذخیره شده باشد، تنظیمات همان رسیلر اولویت دارد و با تغییر این بخش خودکار overwrite نمی‌شود. برای رسیلرهایی که باید بدون محدودیت دستی کار کنند، یا این سیاست سراسری را خاموش نگه دار، یا برای همان رسیلر سیاست اختصاصی آزادتر ذخیره کن. سیاست‌های حذف، ریست، ویرایش و تمدید از کارت بعدی کنترل می‌شوند و مستقل از این تیک هستند.
-                </div>
+                <div className="hidden">{copy.creationPolicyHelp}</div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">بسته‌های زمانی مجاز</div>
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">{copy.durationPackages}</div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {DURATION_PRESET_OPTIONS.map((preset) => {
                         const disabled = preset === "unlimited" && !globalPolicy.allow_no_expire;
@@ -1129,7 +1426,7 @@ export default function SettingsPage() {
                                 )
                               }
                             />
-                            <span>{durationPresetLabel(preset)}</span>
+                            <span>{durationPresetLabel(preset, lang)}</span>
                           </label>
                         );
                       })}
@@ -1137,7 +1434,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">حجم‌های مجاز (GB)</div>
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">{copy.trafficPackages}</div>
                     <div className="flex flex-wrap gap-2">
                       {TRAFFIC_PRESET_OPTIONS.map((gb) => (
                         <label key={gb} className={`flex items-center gap-2 ${choiceCardClass}`}>
@@ -1168,14 +1465,14 @@ export default function SettingsPage() {
                           setGlobalTrafficInput((globalPolicy.allowed_traffic_gb || []).join(", "));
                         }
                       }}
-                      placeholder="مثال: 50, 100"
+                      placeholder={copy.trafficPlaceholder}
                     />
                   </div>
 
                   <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">کنترل روز و مدت‌زمان</div>
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">{copy.dayControl}</div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm">اجازه روز دستی</span>
+                      <span className="text-sm">{copy.allowManualDays}</span>
                       <Switch checked={globalPolicy.allow_custom_days} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_custom_days: v }))} />
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -1184,34 +1481,34 @@ export default function SettingsPage() {
                         min={1}
                         value={globalPolicy.min_days}
                         onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, min_days: Number(e.target.value) || 1 }))}
-                        placeholder="حداقل روز"
+                        placeholder={copy.minDays}
                       />
                       <Input
                         type="number"
                         min={1}
                         value={globalPolicy.max_days}
                         onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, max_days: Number(e.target.value) || x.min_days || 1 }))}
-                        placeholder="حداکثر روز"
+                        placeholder={copy.maxDays}
                       />
                     </div>
                   </div>
 
                   <div className="space-y-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">تنظیمات تکمیلی ساخت</div>
+                    <div className="text-xs font-medium text-[hsl(var(--fg))]/80">{copy.extraCreation}</div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm">اجازه حجم دستی</span>
+                      <span className="text-sm">{copy.allowManualTraffic}</span>
                       <Switch checked={globalPolicy.allow_custom_traffic} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_custom_traffic: v }))} />
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm">اجازه پلن نامحدود</span>
+                      <span className="text-sm">{copy.allowUnlimitedPlan}</span>
                       <Switch checked={globalPolicy.allow_no_expire} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_no_expire: v }))} />
                     </div>
                   </div>
                 </div>
 
                 <div className="flex gap-2">
-                  <Button type="button" onClick={saveGlobalPolicy}>ذخیره سیاست سراسری</Button>
-                  <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                  <Button type="button" onClick={saveGlobalPolicy}>{copy.saveGlobalPolicy}</Button>
+                  <Button type="button" variant="outline" onClick={loadDefaults}>{copy.reload}</Button>
                 </div>
               </CardContent>
             </Card>
@@ -1219,26 +1516,24 @@ export default function SettingsPage() {
             <Card className="overflow-hidden">
               <CardHeader>
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <span>سیاست سراسری حذف، ریست، ویرایش و تمدید کاربران</span>
-                  <HelpTip text="این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست." />
+                  <span>{copy.lifecyclePolicyTitle}</span>
+                  <HelpTip text={copy.lifecyclePolicyHelp} />
                 </div>
-                <div className="text-xs text-[hsl(var(--fg))]/70">این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.</div>
+                <div className="text-xs text-[hsl(var(--fg))]/70">{copy.lifecyclePolicyDesc}</div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="hidden">
-                  این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست.
-                </div>
+                <div className="hidden">{copy.lifecyclePolicyHelp}</div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <span className="text-sm">اجازه حذف و ریفاند کاربر</span>
+                    <span className="text-sm">{copy.allowUserDelete}</span>
                     <Switch checked={globalPolicy.allow_user_delete} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_user_delete: v }))} />
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                    <span className="text-sm">اجازه ریست مصرف</span>
+                    <span className="text-sm">{copy.allowResetUsage}</span>
                     <Switch checked={globalPolicy.allow_reset_usage} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, allow_reset_usage: v }))} />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">مهلت حذف/ریفاند از زمان ساخت (روز، 0 یعنی نامحدود)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.refundWindow}</div>
                     <Input
                       type="number"
                       min={0}
@@ -1247,7 +1542,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">حداکثر مصرف مجاز برای حذف (GB)</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.maxDeleteUsage}</div>
                     <Input
                       type="number"
                       min={0}
@@ -1257,26 +1552,26 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 md:col-span-2">
-                    <span className="text-sm">در ویرایش فقط تمدید بسته‌ای مجاز باشد</span>
+                    <span className="text-sm">{copy.renewalOnly}</span>
                     <Switch checked={globalPolicy.restrict_edit_to_renewal_only} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, restrict_edit_to_renewal_only: v }))} />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">سیاست تمدید بسته‌ای</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.packageRenewalPolicy}</div>
                     <select
                       className={selectClass}
                       value={globalPolicy.renewal_policy}
                       onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, renewal_policy: e.target.value as ResellerUserPolicy["renewal_policy"] }))}
                     >
-                      <option value="reset_time_and_volume">ریست زمان و حجم</option>
-                      <option value="add_time_and_volume">اضافه شدن زمان و حجم به دوره بعد</option>
-                      <option value="reset_time_carry_volume">ریست زمان و اضافه شدن حجم باقی‌مانده قبلی</option>
-                      <option value="reset_volume_carry_time">ریست حجم و اضافه شدن زمان باقی‌مانده قبلی</option>
+                      <option value="reset_time_and_volume">{copy.resetTimeAndVolume}</option>
+                      <option value="add_time_and_volume">{copy.addTimeAndVolume}</option>
+                      <option value="reset_time_carry_volume">{copy.resetTimeCarryVolume}</option>
+                      <option value="reset_volume_carry_time">{copy.resetVolumeCarryTime}</option>
                     </select>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button type="button" onClick={saveGlobalPolicy}>ذخیره سیاست سراسری</Button>
-                  <Button type="button" variant="outline" onClick={loadDefaults}>بارگذاری مجدد</Button>
+                  <Button type="button" onClick={saveGlobalPolicy}>{copy.saveGlobalPolicy}</Button>
+                  <Button type="button" variant="outline" onClick={loadDefaults}>{copy.reload}</Button>
                 </div>
               </CardContent>
             </Card>
@@ -1284,7 +1579,7 @@ export default function SettingsPage() {
           ) : null}
 
           <div className="settings-logout pt-2">
-            <Button variant="outline" onClick={onLogout}>خروج از حساب</Button>
+            <Button variant="outline" onClick={onLogout}>{copy.logout}</Button>
           </div>
         </CardContent>
       </Card>

@@ -124,9 +124,295 @@ type LedgerRow = {
 
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted";
 type TileTone = "blue" | "green" | "orange" | "rose" | "cyan" | "violet" | "slate";
+type ChartMetric = "both" | "sold" | "used";
 
 const REPORT_LIMIT = 200;
 const CHART_DAYS = 14;
+const CHART_RANGE_OPTIONS = [
+  { days: 1, fa: "۱ روز اخیر", en: "Last 24 hours" },
+  { days: 7, fa: "۷ روز اخیر", en: "Last 7 days" },
+  { days: 30, fa: "۱ ماه اخیر", en: "Last month" },
+  { days: 90, fa: "۳ ماه اخیر", en: "Last 3 months" },
+  { days: 180, fa: "۶ ماه اخیر", en: "Last 6 months" },
+  { days: 365, fa: "۱ سال اخیر", en: "Last year" },
+  { days: 3650, fa: "کلی", en: "All time" },
+] as const;
+
+function isEnglish(lang: string) {
+  return lang === "en";
+}
+
+function chartRangeLabel(days: number, lang: string) {
+  const option = CHART_RANGE_OPTIONS.find((item) => item.days === days) || CHART_RANGE_OPTIONS[1];
+  return isEnglish(lang) ? option.en : option.fa;
+}
+
+function accountRoleLabel(role: string | undefined, lang: string) {
+  const isAdmin = (role || "reseller") === "admin";
+  if (isEnglish(lang)) return isAdmin ? "Super admin" : "Reseller";
+  return isAdmin ? "سوپرادمین" : "رسیلر";
+}
+
+function compactSeries(data: Array<{ label: string; value: number }>, maxPoints = 60) {
+  if (data.length <= maxPoints) return data;
+  const chunkSize = Math.ceil(data.length / maxPoints);
+  const compacted: Array<{ label: string; value: number }> = [];
+  for (let index = 0; index < data.length; index += chunkSize) {
+    const chunk = data.slice(index, index + chunkSize);
+    const first = chunk[0];
+    const last = chunk[chunk.length - 1];
+    compacted.push({
+      label: first?.label === last?.label ? first?.label || "" : `${first?.label || ""} - ${last?.label || ""}`,
+      value: chunk.reduce((acc, point) => acc + Number(point.value || 0), 0),
+    });
+  }
+  return compacted;
+}
+
+function dashboardCopy(lang: string) {
+  if (isEnglish(lang)) {
+    return {
+      heroBadge: "Guardino Command Center",
+      adminTitle: "Super Admin Dashboard",
+      resellerTitle: "Reseller Dashboard",
+      adminSubtitle: "Track users, traffic, reseller health and panel usage from one clean view.",
+      resellerSubtitle: "Review your users, balance, traffic and assigned nodes faster.",
+      createUser: "Create user",
+      users: "Users",
+      nodes: "Nodes",
+      csv: "CSV export",
+      sold: "Sold volume",
+      used: "Used volume",
+      remaining: "Remaining capacity",
+      usage: "Usage",
+      lowBalance: "Low balance warning",
+      lowBalanceBody: (balance: string, gb?: string) => `Your balance is ${balance} Toman.${gb ? ` At the current price, about ${gb} GB is available.` : ""}`,
+      userOverviewTitleAdmin: "Panel user overview",
+      userOverviewTitleReseller: "My user overview",
+      userOverviewSubtitleAdmin: "Fast split of active, expired, limited, on-hold and disabled users.",
+      userOverviewSubtitleReseller: "User status for this account and the selected period.",
+      trafficTitle: "Usage and sold volume",
+      trafficSubtitle: "Compare recorded usage and sold volume for the selected account and period. The top cards still show the whole account total.",
+      updating: "Updating",
+      range: "Range",
+      account: "Account",
+      allAccounts: "All accounts",
+      myAccount: "My account",
+      metric: "Metric",
+      both: "Both",
+      soldMetric: "Sold volume",
+      usedMetric: "Recorded usage",
+      soldHint: "Completed order volume in the selected period",
+      usedHint: "Daily usage snapshots for the selected account",
+      totalSold: "Total sold volume",
+      totalUsed: "Total recorded usage",
+      totalRemaining: "Remaining capacity",
+      noData: "No data has been recorded for this range yet.",
+      recentDays: (count: string) => `Last ${count} days`,
+      gbUnit: "GB",
+      usageLabel: "Usage",
+      soldShort: "Sold",
+      usedShort: "Used",
+      remainingShort: "Remaining",
+      nodeDefault: "Default",
+      lastSync: "Last sync",
+      customPrice: "Custom price",
+      enabled: "Enabled",
+      off: "Off",
+      visibleInSub: "Visible in sub",
+      hidden: "Hidden",
+      noNodes: "No nodes to show.",
+      pendingOperations: "Pending operations",
+      ordersSample: (count: string) => `From the last ${count} fetched orders`,
+      failedOrRolledBack: "Failed / rolled back",
+      remoteErrorHint: "For remote panel errors, start from the orders report.",
+      noTime: "No time",
+      noIssues: "No pending or failed item was found in recent data.",
+      viewOrders: "View order reports",
+      manageUsers: "Manage users",
+      recentUsersEmpty: "No recent users to show.",
+      analysisTitle: "Sales and usage analysis",
+      analysisSubtitle: "Charts are built from order reports and the ledger.",
+      dailySales: "Daily sales",
+      selectedRangeOutput: "Output for the selected range from usage transactions",
+      orderVolume: "Order volume",
+      orderVolumeSubtitle: "Total GB purchased in recent orders",
+      capacityTitle: "Total capacity usage",
+      capacitySubtitle: "User usage ratio against sold volume.",
+      nodeHealthTitle: "Node health",
+      nodeHealthSubtitle: "Badges show enabled status, subscription visibility and last sync for each node.",
+      manageNodes: "Manage nodes",
+      operationsTitle: "Operations and errors",
+      operationsSubtitle: "For professional sales, pending/failed items should be visible quickly.",
+      needsReview: "Needs review",
+      stable: "Stable",
+      mySalesTitle: "My sales and usage",
+      mySalesSubtitle: "Charts are built from your account orders and ledger transactions.",
+      walletUsage: "Wallet usage",
+      selectedRange: "Selected range",
+      myCapacityTitle: "User capacity",
+      myCapacitySubtitle: "Your users' total usage against sold volume.",
+      assignedNodesTitle: "Assigned nodes",
+      assignedNodesSubtitle: "Node, panel and last sync status for your users.",
+      viewNodes: "View nodes",
+      recentUsersTitle: "Recent users",
+      recentUsersSubtitle: "Quick access to newly created users.",
+      allUsers: "All users",
+      recentOperationsTitle: "Recent operations",
+      recentOperationsSubtitle: "Pending or failed orders to prevent sales mistakes.",
+      userStatus: {
+        total: "Total users",
+        active: "Active users",
+        expired: "Expired",
+        limited: "Volume ended",
+        onHold: "On Hold",
+        disabled: "Disabled",
+        deleted: "Deleted / archived",
+      },
+      adminCards: {
+        resellers: "Resellers",
+        totalUsers: "Total users",
+        nodes: "Nodes",
+        orders: "Orders",
+        ledger30: "30-day ledger",
+        recentTurnover: "Recent turnover",
+        avgPrice: "Avg price/GB",
+        ledgerEntries: "Ledger entries",
+        notSet: "Not set",
+      },
+      resellerCards: {
+        balance: "Balance",
+        users: "Users",
+        allowedNodes: "Allowed nodes",
+        orders30: "30-day orders",
+        wallet30: "30-day wallet usage",
+        priceGb: "Price/GB",
+        bundleGb: "Bundle/GB",
+        priceDay: "Price/day",
+      },
+    };
+  }
+  return {
+    heroBadge: "Guardino Command Center",
+    adminTitle: "داشبورد سوپرادمین",
+    resellerTitle: "داشبورد رسیلر",
+    adminSubtitle: "فروش، مصرف، سلامت نودها و عملیات ناموفق را در یک نمای مرتب کنترل کنید.",
+    resellerSubtitle: "وضعیت فروش، مصرف کاربران، موجودی و نودهای اختصاص داده شده را سریع‌تر ببینید.",
+    createUser: "ساخت کاربر",
+    users: "کاربران",
+    nodes: "نودها",
+    csv: "خروجی CSV",
+    sold: "حجم فروخته شده",
+    used: "حجم مصرف شده",
+    remaining: "ظرفیت باقی مانده",
+    usage: "مصرف کل",
+    lowBalance: "هشدار موجودی پایین",
+    lowBalanceBody: (balance: string, gb?: string) => `موجودی شما ${balance} تومان است.${gb ? ` با قیمت فعلی تقریبا ${gb} گیگ قابل خرید است.` : ""}`,
+    userOverviewTitleAdmin: "نمای کاربران کل پنل",
+    userOverviewTitleReseller: "نمای کاربران من",
+    userOverviewSubtitleAdmin: "تفکیک سریع کاربران فعال، منقضی، حجمی، On Hold و غیرفعال.",
+    userOverviewSubtitleReseller: "وضعیت کاربران همین حساب و بازه انتخاب‌شده.",
+    trafficTitle: "مصرف و حجم زده‌شده",
+    trafficSubtitle: "مقایسه مصرف ثبت‌شده و حجم زده‌شده برای بازه و حساب انتخابی. اعداد کل بالای داشبورد همیشه کل حساب را نشان می‌دهند.",
+    updating: "در حال بروزرسانی",
+    range: "بازه",
+    account: "حساب",
+    allAccounts: "همه حساب‌ها",
+    myAccount: "حساب من",
+    metric: "نوع داده",
+    both: "هر دو",
+    soldMetric: "حجم زده‌شده",
+    usedMetric: "مصرف ثبت‌شده",
+    soldHint: "GB ثبت‌شده در سفارش‌های تکمیل‌شده همین بازه",
+    usedHint: "آخرین snapshot روزانه از مصرف کاربران برای همین حساب",
+    totalSold: "حجم کل ثبت‌شده",
+    totalUsed: "مصرف کل ثبت‌شده",
+    totalRemaining: "ظرفیت باقی‌مانده",
+    noData: "هنوز داده‌ای برای این بازه ثبت نشده است.",
+    recentDays: (count: string) => `${count} روز اخیر`,
+    gbUnit: "گیگ",
+    usageLabel: "مصرف",
+    soldShort: "فروخته شده",
+    usedShort: "مصرف شده",
+    remainingShort: "باقی مانده",
+    nodeDefault: "پیش فرض",
+    lastSync: "آخرین sync",
+    customPrice: "قیمت اختصاصی",
+    enabled: "فعال",
+    off: "خاموش",
+    visibleInSub: "نمایش در ساب",
+    hidden: "مخفی",
+    noNodes: "نودی برای نمایش وجود ندارد.",
+    pendingOperations: "عملیات در انتظار",
+    ordersSample: (count: string) => `از آخرین ${count} سفارش دریافت شده`,
+    failedOrRolledBack: "خطا / برگشتی",
+    remoteErrorHint: "برای خطاهای remote panel از گزارش سفارش‌ها شروع کن.",
+    noTime: "بدون زمان",
+    noIssues: "مورد pending یا failed در داده‌های اخیر دیده نشد.",
+    viewOrders: "مشاهده گزارش سفارش‌ها",
+    manageUsers: "مدیریت کاربران",
+    recentUsersEmpty: "کاربر جدیدی برای نمایش وجود ندارد.",
+    analysisTitle: "تحلیل فروش و مصرف",
+    analysisSubtitle: "نمودارها از گزارش سفارش‌ها و دفترکل موجود ساخته می‌شوند.",
+    dailySales: "فروش روزانه",
+    selectedRangeOutput: "خروجی بازه انتخاب‌شده از تراکنش‌های مصرف",
+    orderVolume: "حجم سفارش‌ها",
+    orderVolumeSubtitle: "مجموع GB خریداری شده در سفارش‌های اخیر",
+    capacityTitle: "مصرف کل ظرفیت",
+    capacitySubtitle: "نسبت مصرف کاربران به حجم فروخته شده.",
+    nodeHealthTitle: "سلامت نودها",
+    nodeHealthSubtitle: "Badgeها وضعیت فعال بودن، نمایش در ساب و آخرین sync هر نود را نشان می‌دهند.",
+    manageNodes: "مدیریت نودها",
+    operationsTitle: "عملیات و خطاها",
+    operationsSubtitle: "برای فروش حرفه‌ای، pending/failed باید سریع دیده شود.",
+    needsReview: "نیازمند بررسی",
+    stable: "پایدار",
+    mySalesTitle: "فروش و مصرف من",
+    mySalesSubtitle: "نمودارها از سفارش‌ها و تراکنش‌های حساب شما ساخته می‌شوند.",
+    walletUsage: "مصرف کیف پول",
+    selectedRange: "بازه انتخاب‌شده",
+    myCapacityTitle: "ظرفیت کاربران",
+    myCapacitySubtitle: "مصرف کل کاربران شما نسبت به حجم فروخته شده.",
+    assignedNodesTitle: "نودهای اختصاص داده شده",
+    assignedNodesSubtitle: "وضعیت نودها، پنل و آخرین sync مربوط به کاربران شما.",
+    viewNodes: "مشاهده نودها",
+    recentUsersTitle: "آخرین کاربران",
+    recentUsersSubtitle: "دسترسی سریع به کاربرهای تازه ساخته شده.",
+    allUsers: "همه کاربران",
+    recentOperationsTitle: "عملیات اخیر",
+    recentOperationsSubtitle: "سفارش‌های در انتظار یا ناموفق برای جلوگیری از خطای فروش.",
+    userStatus: {
+      total: "کل کاربران",
+      active: "کاربران فعال",
+      expired: "منقضی شده",
+      limited: "حجم تمام شده",
+      onHold: "On Hold",
+      disabled: "غیرفعال",
+      deleted: "حذف‌شده / آرشیو",
+    },
+    adminCards: {
+      resellers: "رسیلرها",
+      totalUsers: "کاربران کل",
+      nodes: "نودها",
+      orders: "سفارش‌ها",
+      ledger30: "فروش/مصرف ۳۰ روز",
+      recentTurnover: "گردش فروش اخیر",
+      avgPrice: "میانگین قیمت/GB",
+      ledgerEntries: "تراکنش‌های دفتر کل",
+      notSet: "ثبت نشده",
+    },
+    resellerCards: {
+      balance: "موجودی",
+      users: "کاربران",
+      allowedNodes: "نودهای مجاز",
+      orders30: "سفارش ۳۰ روز",
+      wallet30: "مصرف کیف پول ۳۰ روز",
+      priceGb: "قیمت/GB",
+      bundleGb: "باندل/GB",
+      priceDay: "قیمت/روز",
+    },
+  };
+}
 
 function bytesToGb(bytes: number) {
   return Number(bytes || 0) / (1024 * 1024 * 1024);
@@ -167,11 +453,11 @@ function normalizeNodes(raw: any): NodeLite[] {
   }));
 }
 
-function panelLabel(panel?: string) {
+function panelLabel(panel?: string, lang = "fa") {
   if (panel === "wg_dashboard") return "WireGuard";
   if (panel === "pasarguard") return "Pasarguard";
   if (panel === "marzban") return "Marzban";
-  return panel || "نامشخص";
+  return panel || (isEnglish(lang) ? "Unknown" : "نامشخص");
 }
 
 function panelVariant(panel?: string): BadgeVariant {
@@ -181,31 +467,33 @@ function panelVariant(panel?: string): BadgeVariant {
   return "muted";
 }
 
-function orderStatusMeta(status: string): { label: string; variant: BadgeVariant } {
+function orderStatusMeta(status: string, lang = "fa"): { label: string; variant: BadgeVariant } {
+  const en = isEnglish(lang);
   const s = (status || "").toLowerCase();
-  if (s === "completed") return { label: "تکمیل شده", variant: "success" };
-  if (s === "pending") return { label: "در انتظار", variant: "warning" };
-  if (s === "failed") return { label: "ناموفق", variant: "danger" };
-  if (s === "rolled_back") return { label: "برگشتی", variant: "muted" };
-  return { label: status || "نامشخص", variant: "muted" };
+  if (s === "completed") return { label: en ? "Completed" : "تکمیل شده", variant: "success" };
+  if (s === "pending") return { label: en ? "Pending" : "در انتظار", variant: "warning" };
+  if (s === "failed") return { label: en ? "Failed" : "ناموفق", variant: "danger" };
+  if (s === "rolled_back") return { label: en ? "Rolled back" : "برگشتی", variant: "muted" };
+  return { label: status || (en ? "Unknown" : "نامشخص"), variant: "muted" };
 }
 
-function orderTypeLabel(type: string) {
+function orderTypeLabel(type: string, lang = "fa") {
+  const en = isEnglish(lang);
   const t = (type || "").toLowerCase();
-  if (t === "create") return "ساخت کاربر";
-  if (t === "add_traffic") return "افزایش حجم";
-  if (t === "extend") return "تمدید";
-  if (t === "change_nodes") return "تغییر نود";
-  if (t === "refund") return "بازگشت وجه";
-  if (t === "delete") return "حذف کاربر";
-  return type || "نامشخص";
+  if (t === "create") return en ? "Create user" : "ساخت کاربر";
+  if (t === "add_traffic") return en ? "Add traffic" : "افزایش حجم";
+  if (t === "extend") return en ? "Renew / extend" : "تمدید";
+  if (t === "change_nodes") return en ? "Change nodes" : "تغییر نود";
+  if (t === "refund") return en ? "Refund" : "بازگشت وجه";
+  if (t === "delete") return en ? "Delete user" : "حذف کاربر";
+  return type || (en ? "Unknown" : "نامشخص");
 }
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function chartDays(days = CHART_DAYS) {
+function chartDays(days = CHART_DAYS, lang = "fa") {
   const today = new Date();
   return Array.from({ length: days }, (_, index) => {
     const d = new Date(today);
@@ -213,31 +501,31 @@ function chartDays(days = CHART_DAYS) {
     d.setDate(today.getDate() - (days - 1 - index));
     return {
       key: dateKey(d),
-      label: d.toLocaleDateString("fa-IR-u-ca-persian", { month: "short", day: "numeric" }),
+      label: d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" }),
     };
   });
 }
 
-function labelForDateKey(key: string) {
+function labelForDateKey(key: string, lang = "fa") {
   const [year, month, day] = key.split("-").map(Number);
   if (!year || !month || !day) return key;
   const d = new Date(year, month - 1, day);
-  return d.toLocaleDateString("fa-IR-u-ca-persian", { month: "short", day: "numeric" });
+  return d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" });
 }
 
-function normalizeApiSeries(points: DashboardSeriesPoint[] | undefined, fallback: Array<{ label: string; value: number }>, days = CHART_DAYS) {
+function normalizeApiSeries(points: DashboardSeriesPoint[] | undefined, fallback: Array<{ label: string; value: number }>, days = CHART_DAYS, lang = "fa") {
   if (!points?.length) return fallback;
-  const base = chartDays(days);
+  const base = chartDays(days, lang);
   const values = new Map(base.map((d) => [d.key, 0]));
   for (const point of points) {
     const key = String(point.date || "").slice(0, 10);
     if (values.has(key)) values.set(key, Number(point.value || 0));
   }
-  return base.map((d) => ({ ...d, label: labelForDateKey(d.key), value: values.get(d.key) || 0 }));
+  return base.map((d) => ({ ...d, label: labelForDateKey(d.key, lang), value: values.get(d.key) || 0 }));
 }
 
-function buildLedgerDebitSeries(items: LedgerRow[], days = CHART_DAYS) {
-  const base = chartDays(days);
+function buildLedgerDebitSeries(items: LedgerRow[], days = CHART_DAYS, lang = "fa") {
+  const base = chartDays(days, lang);
   const values = new Map(base.map((d) => [d.key, 0]));
   for (const item of items) {
     if (!item.occurred_at) continue;
@@ -251,8 +539,8 @@ function buildLedgerDebitSeries(items: LedgerRow[], days = CHART_DAYS) {
   return base.map((d) => ({ ...d, value: values.get(d.key) || 0 }));
 }
 
-function buildOrderGbSeries(items: OrderRow[], days = CHART_DAYS) {
-  const base = chartDays(days);
+function buildOrderGbSeries(items: OrderRow[], days = CHART_DAYS, lang = "fa") {
+  const base = chartDays(days, lang);
   const values = new Map(base.map((d) => [d.key, 0]));
   for (const item of items) {
     if (!item.created_at) continue;
@@ -265,8 +553,10 @@ function buildOrderGbSeries(items: OrderRow[], days = CHART_DAYS) {
   return base.map((d) => ({ ...d, value: values.get(d.key) || 0 }));
 }
 
-function formatSync(value?: string | null) {
-  if (!value) return "ثبت نشده";
+function formatSync(value: string | null | undefined, lang = "fa") {
+  if (!value) return isEnglish(lang) ? "Not set" : "ثبت نشده";
+  const d = new Date(value);
+  if (isEnglish(lang) && !Number.isNaN(d.getTime())) return d.toLocaleString("en-US");
   return formatJalaliDateTime(value);
 }
 
@@ -375,11 +665,13 @@ function MiniBars({
   valueLabel,
   tone = "blue",
   rangeLabel,
+  emptyLabel = "No data has been recorded for this range yet.",
 }: {
   data: Array<{ label: string; value: number }>;
   valueLabel: (value: number) => string;
   tone?: TileTone;
   rangeLabel?: string;
+  emptyLabel?: string;
 }) {
   const max = Math.max(1, ...data.map((d) => Number(d.value) || 0));
   const hasData = data.some((d) => Number(d.value) > 0);
@@ -427,21 +719,33 @@ function MiniBars({
           </div>
           {!hasData ? (
             <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.72)] px-3 py-2 text-center text-xs text-[hsl(var(--fg))]/58 [direction:rtl]">
-              هنوز داده‌ای برای این بازه ثبت نشده است.
+              {emptyLabel}
             </div>
           ) : null}
         </div>
       </div>
       <div className="mt-2 flex items-center justify-between text-[10px] text-[hsl(var(--fg))]/48">
         <span>{data[data.length - 1]?.label || ""}</span>
-        <span>{rangeLabel || `${fmtNumber(data.length)} روز اخیر`}</span>
+        <span>{rangeLabel || `Last ${fmtNumber(data.length)} days`}</span>
         <span>{data[0]?.label || ""}</span>
       </div>
     </div>
   );
 }
 
-function UsageGauge({ percent, usedGb, soldGb, remainingGb }: { percent: number; usedGb: number; soldGb: number; remainingGb: number }) {
+function UsageGauge({
+  percent,
+  usedGb,
+  soldGb,
+  remainingGb,
+  copy = dashboardCopy("fa"),
+}: {
+  percent: number;
+  usedGb: number;
+  soldGb: number;
+  remainingGb: number;
+  copy?: ReturnType<typeof dashboardCopy>;
+}) {
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (circumference * pct(percent)) / 100;
@@ -465,13 +769,13 @@ function UsageGauge({ percent, usedGb, soldGb, remainingGb }: { percent: number;
         </svg>
         <div className="pointer-events-none absolute text-center">
           <div className="text-2xl font-bold">{fmtNumber(pct(percent))}%</div>
-          <div className="text-[10px] text-[hsl(var(--fg))]/55">مصرف</div>
+          <div className="text-[10px] text-[hsl(var(--fg))]/55">{copy.usageLabel}</div>
         </div>
       </div>
       <div className="space-y-2">
-        <TrafficRow label="فروخته شده" value={`${fmtGig(soldGb)} گیگ`} color="bg-emerald-500" />
-        <TrafficRow label="مصرف شده" value={`${fmtGig(usedGb)} گیگ`} color="bg-blue-500" />
-        <TrafficRow label="باقی مانده" value={`${fmtGig(remainingGb)} گیگ`} color="bg-amber-500" />
+        <TrafficRow label={copy.soldShort} value={`${fmtGig(soldGb)} ${copy.gbUnit}`} color="bg-emerald-500" />
+        <TrafficRow label={copy.usedShort} value={`${fmtGig(usedGb)} ${copy.gbUnit}`} color="bg-blue-500" />
+        <TrafficRow label={copy.remainingShort} value={`${fmtGig(remainingGb)} ${copy.gbUnit}`} color="bg-amber-500" />
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-[hsl(var(--muted))]">
           <div className="h-full rounded-full bg-[linear-gradient(90deg,#2563eb,#06b6d4)]" style={{ width: `${pct(percent)}%` }} />
         </div>
@@ -500,6 +804,7 @@ function UserStatusOverview({
   limited,
   onHold,
   deleted,
+  copy,
 }: {
   total: number;
   active: number;
@@ -508,14 +813,16 @@ function UserStatusOverview({
   limited: number;
   onHold: number;
   deleted: number;
+  copy?: ReturnType<typeof dashboardCopy>["userStatus"];
 }) {
+  const labels = copy || dashboardCopy("fa").userStatus;
   const rows = [
-    { label: "کاربران فعال", value: active, color: "bg-emerald-500", Icon: CheckCircle2 },
-    { label: "منقضی شده", value: expired, color: "bg-orange-500", Icon: Clock3 },
-    { label: "حجم تمام شده", value: limited, color: "bg-red-500", Icon: AlertTriangle },
-    { label: "On Hold", value: onHold, color: "bg-violet-500", Icon: Clock3 },
-    { label: "غیرفعال", value: disabled, color: "bg-slate-500", Icon: ShieldAlert },
-    { label: "حذف‌شده / آرشیو", value: deleted, color: "bg-zinc-400", Icon: Database },
+    { label: labels.active, value: active, color: "bg-emerald-500", Icon: CheckCircle2 },
+    { label: labels.expired, value: expired, color: "bg-orange-500", Icon: Clock3 },
+    { label: labels.limited, value: limited, color: "bg-red-500", Icon: AlertTriangle },
+    { label: labels.onHold, value: onHold, color: "bg-violet-500", Icon: Clock3 },
+    { label: labels.disabled, value: disabled, color: "bg-slate-500", Icon: ShieldAlert },
+    { label: labels.deleted, value: deleted, color: "bg-zinc-400", Icon: Database },
   ];
 
   return (
@@ -524,7 +831,7 @@ function UserStatusOverview({
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <UsersRound size={18} className="text-[hsl(var(--fg))]/62" />
-            <span className="truncate text-sm font-semibold">کل کاربران</span>
+            <span className="truncate text-sm font-semibold">{labels.total}</span>
           </div>
           <span className="shrink-0 text-xl font-bold">{fmtNumber(total)}</span>
         </div>
@@ -555,7 +862,17 @@ function UserStatusOverview({
   );
 }
 
-function NodeHealthList({ nodes, showSync = true }: { nodes: NodeLite[]; showSync?: boolean }) {
+function NodeHealthList({
+  nodes,
+  showSync = true,
+  copy = dashboardCopy("fa"),
+  lang = "fa",
+}: {
+  nodes: NodeLite[];
+  showSync?: boolean;
+  copy?: ReturnType<typeof dashboardCopy>;
+  lang?: string;
+}) {
   const sorted = [...nodes].sort((a, b) => Number(b.is_enabled !== false) - Number(a.is_enabled !== false));
 
   return (
@@ -571,28 +888,38 @@ function NodeHealthList({ nodes, showSync = true }: { nodes: NodeLite[]; showSyn
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="truncate text-sm font-semibold">{node.name}</span>
-                <Badge variant={panelVariant(node.panel_type)}>{panelLabel(node.panel_type)}</Badge>
-                {node.default_for_reseller ? <Badge variant="success">پیش فرض</Badge> : null}
+                <Badge variant={panelVariant(node.panel_type)}>{panelLabel(node.panel_type, lang)}</Badge>
+                {node.default_for_reseller ? <Badge variant="success">{copy.nodeDefault}</Badge> : null}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[hsl(var(--fg))]/56">
                 <span>#{node.id}</span>
-                {showSync ? <span>آخرین sync: {formatSync(node.last_sync_at)}</span> : null}
-                {node.price_per_gb_override != null ? <span>قیمت اختصاصی: {fmtNumber(node.price_per_gb_override)}</span> : null}
+                {showSync ? <span>{copy.lastSync}: {formatSync(node.last_sync_at, lang)}</span> : null}
+                {node.price_per_gb_override != null ? <span>{copy.customPrice}: {fmtNumber(node.price_per_gb_override)}</span> : null}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-              <Badge variant={enabled ? "success" : "danger"}>{enabled ? "فعال" : "خاموش"}</Badge>
-              <Badge variant={visible ? "default" : "muted"}>{visible ? "نمایش در ساب" : "مخفی"}</Badge>
+              <Badge variant={enabled ? "success" : "danger"}>{enabled ? copy.enabled : copy.off}</Badge>
+              <Badge variant={visible ? "default" : "muted"}>{visible ? copy.visibleInSub : copy.hidden}</Badge>
             </div>
           </div>
         );
       })}
-      {nodes.length === 0 ? <div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/62">نودی برای نمایش وجود ندارد.</div> : null}
+      {nodes.length === 0 ? <div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/62">{copy.noNodes}</div> : null}
     </div>
   );
 }
 
-function OperationsPanel({ orders, isAdmin }: { orders: OrderRow[]; isAdmin: boolean }) {
+function OperationsPanel({
+  orders,
+  isAdmin,
+  copy = dashboardCopy("fa"),
+  lang = "fa",
+}: {
+  orders: OrderRow[];
+  isAdmin: boolean;
+  copy?: ReturnType<typeof dashboardCopy>;
+  lang?: string;
+}) {
   const pending = orders.filter((x) => (x.status || "").toLowerCase() === "pending");
   const failed = orders.filter((x) => {
     const s = (x.status || "").toLowerCase();
@@ -606,30 +933,30 @@ function OperationsPanel({ orders, isAdmin }: { orders: OrderRow[]; isAdmin: boo
         <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
             <Clock3 size={16} />
-            عملیات در انتظار
+            {copy.pendingOperations}
           </div>
           <div className="mt-2 text-2xl font-bold">{fmtNumber(pending.length)}</div>
-          <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">از آخرین {fmtNumber(orders.length)} سفارش دریافت شده</div>
+          <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">{copy.ordersSample(fmtNumber(orders.length))}</div>
         </div>
         <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
             <ShieldAlert size={16} />
-            خطا / برگشتی
+            {copy.failedOrRolledBack}
           </div>
           <div className="mt-2 text-2xl font-bold">{fmtNumber(failed.length)}</div>
-          <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">برای خطاهای remote panel از گزارش سفارش‌ها شروع کن.</div>
+          <div className="mt-1 text-xs text-[hsl(var(--fg))]/60">{copy.remoteErrorHint}</div>
         </div>
       </div>
 
       <div className="space-y-2">
         {issues.map((order) => {
-          const status = orderStatusMeta(order.status);
+          const status = orderStatusMeta(order.status, lang);
           return (
             <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.72)] px-3 py-2 text-sm">
               <div className="min-w-0">
-                <div className="font-medium">#{order.id} - {orderTypeLabel(order.type)}</div>
+                <div className="font-medium">#{order.id} - {orderTypeLabel(order.type, lang)}</div>
                 <div className="text-xs text-[hsl(var(--fg))]/58">
-                  {order.created_at ? formatJalaliDateTime(order.created_at) : "بدون زمان"} {isAdmin ? `- reseller #${order.reseller_id}` : ""}
+                  {order.created_at ? formatSync(order.created_at, lang) : copy.noTime} {isAdmin ? `- reseller #${order.reseller_id}` : ""}
                 </div>
               </div>
               <Badge variant={status.variant}>{status.label}</Badge>
@@ -639,14 +966,14 @@ function OperationsPanel({ orders, isAdmin }: { orders: OrderRow[]; isAdmin: boo
         {issues.length === 0 ? (
           <div className="flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 size={16} />
-            مورد pending یا failed در داده‌های اخیر دیده نشد.
+            {copy.noIssues}
           </div>
         ) : null}
       </div>
 
       <Link href={isAdmin ? "/app/admin/reports/orders" : "/app/users"}>
         <Button type="button" variant="outline" className="w-full gap-2">
-          {isAdmin ? "مشاهده گزارش سفارش‌ها" : "مدیریت کاربران"}
+          {isAdmin ? copy.viewOrders : copy.manageUsers}
           <ArrowUpRight size={15} />
         </Button>
       </Link>
@@ -654,7 +981,7 @@ function OperationsPanel({ orders, isAdmin }: { orders: OrderRow[]; isAdmin: boo
   );
 }
 
-function RecentUsersPanel({ users }: { users: UserLite[] }) {
+function RecentUsersPanel({ users, copy = dashboardCopy("fa") }: { users: UserLite[]; copy?: ReturnType<typeof dashboardCopy> }) {
   return (
     <div className="space-y-2">
       {users.map((u) => (
@@ -668,14 +995,14 @@ function RecentUsersPanel({ users }: { users: UserLite[] }) {
           </div>
         </Link>
       ))}
-      {users.length === 0 ? <div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/62">کاربر جدیدی برای نمایش وجود ندارد.</div> : null}
+      {users.length === 0 ? <div className="rounded-xl border border-dashed border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/62">{copy.recentUsersEmpty}</div> : null}
     </div>
   );
 }
 
 export default function Dashboard() {
   const { me } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [adminStats, setAdminStats] = React.useState<AdminStats | null>(null);
   const [resellerStats, setResellerStats] = React.useState<ResellerStats | null>(null);
@@ -684,6 +1011,7 @@ export default function Dashboard() {
   const [accountOptions, setAccountOptions] = React.useState<AccountOption[]>([]);
   const [chartRangeDays, setChartRangeDays] = React.useState(7);
   const [chartScope, setChartScope] = React.useState<string>("all");
+  const [chartMetric, setChartMetric] = React.useState<ChartMetric>("both");
   const [chartLoading, setChartLoading] = React.useState(false);
   const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [recentUsers, setRecentUsers] = React.useState<UserLite[]>([]);
@@ -844,21 +1172,24 @@ export default function Dashboard() {
   }, [ledger]);
 
   const salesSeries = React.useMemo(() => {
-    const fallback = buildLedgerDebitSeries(ledger);
+    const fallback = buildLedgerDebitSeries(ledger, chartRangeDays, lang);
     const points = me?.role === "admin" ? scopedAdminStats?.daily_sales : scopedResellerStats?.daily_sales;
-    return normalizeApiSeries(points, fallback, chartRangeDays);
-  }, [me?.role, scopedAdminStats?.daily_sales, scopedResellerStats?.daily_sales, ledger, chartRangeDays]);
+    return normalizeApiSeries(points, fallback, chartRangeDays, lang);
+  }, [me?.role, scopedAdminStats?.daily_sales, scopedResellerStats?.daily_sales, ledger, chartRangeDays, lang]);
 
   const trafficSeries = React.useMemo(() => {
-    const fallback = buildOrderGbSeries(orders);
+    const fallback = buildOrderGbSeries(orders, chartRangeDays, lang);
     const points = me?.role === "admin" ? scopedAdminStats?.daily_traffic_gb : scopedResellerStats?.daily_traffic_gb;
-    return normalizeApiSeries(points, fallback, chartRangeDays);
-  }, [me?.role, scopedAdminStats?.daily_traffic_gb, scopedResellerStats?.daily_traffic_gb, orders, chartRangeDays]);
+    return normalizeApiSeries(points, fallback, chartRangeDays, lang);
+  }, [me?.role, scopedAdminStats?.daily_traffic_gb, scopedResellerStats?.daily_traffic_gb, orders, chartRangeDays, lang]);
 
   const usedSeries = React.useMemo(() => {
     const points = me?.role === "admin" ? scopedAdminStats?.daily_used_gb : scopedResellerStats?.daily_used_gb;
-    return normalizeApiSeries(points, chartDays(chartRangeDays).map((d) => ({ ...d, value: 0 })), chartRangeDays);
-  }, [me?.role, scopedAdminStats?.daily_used_gb, scopedResellerStats?.daily_used_gb, chartRangeDays]);
+    return normalizeApiSeries(points, chartDays(chartRangeDays, lang).map((d) => ({ ...d, value: 0 })), chartRangeDays, lang);
+  }, [me?.role, scopedAdminStats?.daily_used_gb, scopedResellerStats?.daily_used_gb, chartRangeDays, lang]);
+
+  const visibleTrafficSeries = React.useMemo(() => compactSeries(trafficSeries, chartRangeDays > 90 ? 54 : 42), [trafficSeries, chartRangeDays]);
+  const visibleUsedSeries = React.useMemo(() => compactSeries(usedSeries, chartRangeDays > 90 ? 54 : 42), [usedSeries, chartRangeDays]);
 
   const userSummary = React.useMemo(() => {
     if (me?.role === "admin" && scopedAdminStats) {
@@ -933,7 +1264,7 @@ export default function Dashboard() {
         section: "nodes",
         label: node.name,
         value: node.is_enabled !== false ? "enabled" : "disabled",
-        meta: `${panelLabel(node.panel_type)} | sync=${node.last_sync_at || ""}`,
+        meta: `${panelLabel(node.panel_type, lang)} | sync=${node.last_sync_at || ""}`,
       })),
     ];
     downloadCsv(`guardino-dashboard-${me?.role || "user"}-${dateKey(new Date())}.csv`, rows);
@@ -942,10 +1273,17 @@ export default function Dashboard() {
   if (!me) return null;
 
   const isAdmin = me.role === "admin";
-  const title = isAdmin ? "داشبورد سوپرادمین" : "داشبورد رسیلر";
-  const subtitle = isAdmin
-    ? "فروش، مصرف، سلامت نودها و عملیات ناموفق را در یک نمای مرتب کنترل کنید."
-    : "وضعیت فروش، مصرف کاربران، موجودی و نودهای اختصاص داده شده را سریع‌تر ببینید.";
+  const d = dashboardCopy(lang);
+  const title = isAdmin ? d.adminTitle : d.resellerTitle;
+  const subtitle = isAdmin ? d.adminSubtitle : d.resellerSubtitle;
+  const selectedAccount = isAdmin && chartScope !== "all" ? accountOptions.find((account) => String(account.id) === String(chartScope)) : null;
+  const chartScopeLabel = isAdmin
+    ? selectedAccount
+      ? `${accountRoleLabel(selectedAccount.role, lang)} - ${selectedAccount.username}`
+      : d.allAccounts
+    : d.myAccount;
+  const chartRangeText = chartRangeLabel(chartRangeDays, lang);
+  const chartContextText = `${d.account}: ${chartScopeLabel} • ${d.range}: ${chartRangeText}`;
 
   return (
     <div className="space-y-4">
@@ -954,35 +1292,35 @@ export default function Dashboard() {
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.84)] px-3 py-1 text-xs text-[hsl(var(--fg))]/72">
               <Gauge size={13} />
-              Guardino Command Center
+              {d.heroBadge}
             </div>
             <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[hsl(var(--fg))]/68">{subtitle}</p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Link href="/app/users/new">
                 <Button className="gap-2">
-                  ساخت کاربر
+                  {d.createUser}
                   <ArrowUpRight size={15} />
                 </Button>
               </Link>
               <Link href="/app/users">
-                <Button variant="outline">کاربران</Button>
+                <Button variant="outline">{d.users}</Button>
               </Link>
               <Link href={isAdmin ? "/app/admin/nodes" : "/app/nodes"}>
-                <Button variant="outline">نودها</Button>
+                <Button variant="outline">{d.nodes}</Button>
               </Link>
               <Button type="button" variant="outline" className="gap-2" onClick={exportCsv} disabled={loading}>
                 <Download size={15} />
-                خروجی CSV
+                {d.csv}
               </Button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <KpiTile title="حجم فروخته شده" value={`${fmtGig(traffic.soldGb)} گیگ`} icon={<Boxes size={16} />} tone="green" />
-            <KpiTile title="حجم مصرف شده" value={`${fmtGig(traffic.usedGb)} گیگ`} icon={<Gauge size={16} />} tone="cyan" />
-            <KpiTile title="ظرفیت باقی مانده" value={`${fmtGig(traffic.remainingGb)} گیگ`} icon={<Database size={16} />} tone="orange" />
-            <KpiTile title="مصرف کل" value={`${fmtNumber(traffic.ratio)}%`} icon={<BarChart3 size={16} />} tone="violet" />
+            <KpiTile title={d.sold} value={`${fmtGig(traffic.soldGb)} GB`} icon={<Boxes size={16} />} tone="green" />
+            <KpiTile title={d.used} value={`${fmtGig(traffic.usedGb)} GB`} icon={<Gauge size={16} />} tone="cyan" />
+            <KpiTile title={d.remaining} value={`${fmtGig(traffic.remainingGb)} GB`} icon={<Database size={16} />} tone="orange" />
+            <KpiTile title={d.usage} value={`${fmtNumber(traffic.ratio)}%`} icon={<BarChart3 size={16} />} tone="violet" />
           </div>
         </div>
       </section>
@@ -1001,11 +1339,13 @@ export default function Dashboard() {
         <div className="rounded-xl border border-amber-400/45 bg-[linear-gradient(140deg,rgba(251,191,36,0.18),rgba(245,158,11,0.07))] px-4 py-3 text-sm text-amber-900 shadow-[0_12px_28px_-24px_rgba(245,158,11,0.8)] dark:text-amber-100">
           <div className="flex items-center gap-2 font-semibold">
             <AlertTriangle size={16} />
-            هشدار موجودی پایین
+            {d.lowBalance}
           </div>
           <div className="mt-1 text-xs leading-5">
-            موجودی شما {fmtNumber(lowBalanceWarn.balance)} تومان است.
-            {lowBalanceWarn.affordableGb != null ? ` با قیمت فعلی تقریبا ${fmtNumber(Math.max(0, Math.floor(lowBalanceWarn.affordableGb)))} گیگ قابل خرید است.` : ""}
+            {d.lowBalanceBody(
+              fmtNumber(lowBalanceWarn.balance),
+              lowBalanceWarn.affordableGb != null ? fmtNumber(Math.max(0, Math.floor(lowBalanceWarn.affordableGb))) : undefined
+            )}
           </div>
         </div>
       ) : null}
@@ -1013,8 +1353,8 @@ export default function Dashboard() {
       {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
         <div className="grid gap-4">
           <SectionPanel
-            title={isAdmin ? "نمای کاربران کل پنل" : "نمای کاربران من"}
-            subtitle={isAdmin ? "تفکیک سریع کاربران فعال، منقضی، حجمی، On Hold و غیرفعال." : "وضعیت کاربران همین حساب، جدا از آمار مدیریتی سوپرادمین."}
+            title={isAdmin ? d.userOverviewTitleAdmin : d.userOverviewTitleReseller}
+            subtitle={`${isAdmin ? d.userOverviewSubtitleAdmin : d.userOverviewSubtitleReseller} ${chartContextText}`}
             icon={<UsersRound size={18} />}
           >
             <UserStatusOverview
@@ -1025,136 +1365,171 @@ export default function Dashboard() {
               limited={userSummary.limited}
               onHold={userSummary.onHold}
               deleted={userSummary.deleted}
+              copy={d.userStatus}
             />
           </SectionPanel>
 
-          {false ? (
           <SectionPanel
-            title="مصرف و حجم زده‌شده"
-            subtitle="مقایسه مصرف ثبت‌شده و حجم زده‌شده برای بازه و حساب انتخابی. اعداد کل بالای داشبورد همیشه کل سیستم را نشان می‌دهند."
+            title={d.trafficTitle}
+            subtitle={`${d.trafficSubtitle} ${chartContextText}`}
             icon={<BarChart3 size={18} />}
-            action={<Badge variant={chartLoading ? "warning" : "default"}>{chartLoading ? "در حال بروزرسانی" : `${fmtNumber(scopedTraffic.ratio)}% مصرف`}</Badge>}
+            action={<Badge variant={chartLoading ? "warning" : "default"}>{chartLoading ? d.updating : `${fmtNumber(scopedTraffic.ratio)}%`}</Badge>}
           >
             <div className="space-y-4">
               <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="space-y-1">
-                  <span className="text-xs text-[hsl(var(--fg))]/65">بازه نمودار</span>
+                  <span className="text-xs text-[hsl(var(--fg))]/65">{d.range}</span>
                   <select
                     className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
                     value={chartRangeDays}
                     onChange={(e) => setChartRangeDays(Number(e.target.value))}
                   >
-                    <option value={7}>۷ روز اخیر</option>
-                    <option value={30}>۱ ماه اخیر</option>
+                    {CHART_RANGE_OPTIONS.map((option) => (
+                      <option key={option.days} value={option.days}>
+                        {isEnglish(lang) ? option.en : option.fa}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {isAdmin ? (
                   <label className="space-y-1">
-                    <span className="text-xs text-[hsl(var(--fg))]/65">حساب</span>
+                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
                     <select
                       className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
                       value={chartScope}
                       onChange={(e) => setChartScope(e.target.value)}
                     >
-                      <option value="all">همه حساب‌ها</option>
+                      <option value="all">{d.allAccounts}</option>
                       {accountOptions.map((account) => (
                         <option key={account.id} value={account.id}>
-                          {(account.role || "reseller") === "admin" ? "سوپرادمین" : "رسیلر"} - {account.username}
+                          {accountRoleLabel(account.role, lang)} - {account.username}
                         </option>
                       ))}
                     </select>
                   </label>
-                ) : null}
+                ) : (
+                  <div className="space-y-1">
+                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.76)] px-3 py-2 text-sm">{d.myAccount}</div>
+                  </div>
+                )}
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-xs text-[hsl(var(--fg))]/65">{d.metric}</div>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["both", d.both],
+                    ["sold", d.soldMetric],
+                    ["used", d.usedMetric],
+                  ] as Array<[ChartMetric, string]>).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setChartMetric(value)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        chartMetric === value
+                          ? "border-[hsl(var(--accent))] bg-[hsl(var(--accent))] text-white shadow-[0_10px_24px_-18px_hsl(var(--accent))]"
+                          : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.76)] text-[hsl(var(--fg))]/72 hover:border-[hsl(var(--accent)/0.45)]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`grid gap-4 ${chartMetric === "both" ? "lg:grid-cols-2" : ""}`}>
+                {chartMetric !== "used" ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">حجم زده‌شده</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">GB ثبت‌شده در سفارش‌های تکمیل‌شده همین بازه</div>
+                      <div className="text-sm font-semibold">{d.soldMetric}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.soldHint}</div>
                     </div>
                     <Badge variant="default">{fmtGig(trafficSeries.reduce((acc, p) => acc + Number(p.value || 0), 0))} GB</Badge>
                   </div>
-                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={visibleTrafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
+                ) : null}
+                {chartMetric !== "sold" ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">مصرف ثبت‌شده</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">آخرین snapshot روزانه از مصرف کاربران برای همین حساب</div>
+                      <div className="text-sm font-semibold">{d.usedMetric}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.usedHint}</div>
                     </div>
                     <Badge variant="success">{fmtGig(scopedTraffic.usedGb)} GB</Badge>
                   </div>
-                  <MiniBars data={usedSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="green" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={visibleUsedSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="green" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
+                ) : null}
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
-                <TrafficRow label="حجم کل ثبت‌شده" value={`${fmtGig(scopedTraffic.soldGb)} گیگ`} color="bg-emerald-500" />
-                <TrafficRow label="مصرف کل ثبت‌شده" value={`${fmtGig(scopedTraffic.usedGb)} گیگ`} color="bg-blue-500" />
-                <TrafficRow label="ظرفیت باقی‌مانده" value={`${fmtGig(scopedTraffic.remainingGb)} گیگ`} color="bg-amber-500" />
+                <TrafficRow label={d.totalSold} value={`${fmtGig(scopedTraffic.soldGb)} GB`} color="bg-emerald-500" />
+                <TrafficRow label={d.totalUsed} value={`${fmtGig(scopedTraffic.usedGb)} GB`} color="bg-blue-500" />
+                <TrafficRow label={d.totalRemaining} value={`${fmtGig(scopedTraffic.remainingGb)} GB`} color="bg-amber-500" />
               </div>
             </div>
           </SectionPanel>
-          ) : null}
         </div>
       ) : null}
 
       {!loading && isAdmin && adminStats ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile title="رسیلرها" value={fmtNumber(adminStats.resellers_total)} hint={`${fmtNumber(nodeStats.panels)} نوع پنل فعال در سیستم`} icon={<UsersRound size={16} />} tone="blue" />
-            <KpiTile title="کاربران کل" value={fmtNumber(adminStats.users_total)} hint={`${fmtNumber(orderStats.gb)} GB در سفارش‌های اخیر`} icon={<UsersRound size={16} />} tone="cyan" />
-            <KpiTile title="نودها" value={fmtNumber(adminStats.nodes_total)} hint={`${fmtNumber(nodeStats.enabled)} فعال، ${fmtNumber(nodeStats.visible)} قابل نمایش، ${fmtNumber(nodeStats.stale)} بدون sync`} icon={<Network size={16} />} tone="green" />
-            <KpiTile title="سفارش‌ها" value={fmtNumber(adminStats.orders_total)} hint={`${fmtNumber(orderStats.pending)} pending، ${fmtNumber(orderStats.failed)} failed در داده اخیر`} icon={<ShoppingCart size={16} />} tone="orange" />
+            <KpiTile title={d.adminCards.resellers} value={fmtNumber(adminStats.resellers_total)} hint={`${fmtNumber(nodeStats.panels)} ${isEnglish(lang) ? "active panel types" : "نوع پنل فعال در سیستم"}`} icon={<UsersRound size={16} />} tone="blue" />
+            <KpiTile title={d.adminCards.totalUsers} value={fmtNumber(adminStats.users_total)} hint={`${fmtNumber(orderStats.gb)} GB ${isEnglish(lang) ? "in recent orders" : "در سفارش‌های اخیر"}`} icon={<UsersRound size={16} />} tone="cyan" />
+            <KpiTile title={d.adminCards.nodes} value={fmtNumber(adminStats.nodes_total)} hint={isEnglish(lang) ? `${fmtNumber(nodeStats.enabled)} enabled, ${fmtNumber(nodeStats.visible)} visible, ${fmtNumber(nodeStats.stale)} without sync` : `${fmtNumber(nodeStats.enabled)} فعال، ${fmtNumber(nodeStats.visible)} قابل نمایش، ${fmtNumber(nodeStats.stale)} بدون sync`} icon={<Network size={16} />} tone="green" />
+            <KpiTile title={d.adminCards.orders} value={fmtNumber(adminStats.orders_total)} hint={`${fmtNumber(orderStats.pending)} pending، ${fmtNumber(orderStats.failed)} failed`} icon={<ShoppingCart size={16} />} tone="orange" />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile title="فروش/مصرف ۳۰ روز" value={fmtNumber(adminStats.ledger_net_30d)} hint="+ شارژ، - مصرف از دفترکل" icon={<TrendingUp size={16} />} tone="green" />
-            <KpiTile title="گردش فروش اخیر" value={fmtNumber(ledgerStats.debit)} hint={`آخرین ${fmtNumber(ledger.length)} تراکنش، برآورد سفارش: ${fmtNumber(orderStats.estimatedRevenue)}`} icon={<Coins size={16} />} tone="violet" />
-            <KpiTile title="میانگین قیمت/GB" value={adminStats.price_per_gb_avg == null ? "ثبت نشده" : fmtNumber(adminStats.price_per_gb_avg)} icon={<Wallet size={16} />} tone="orange" />
-            <KpiTile title="تراکنش‌های دفتر کل" value={fmtNumber(adminStats.ledger_entries_total)} hint={`شارژ اخیر: ${fmtNumber(ledgerStats.credit)}`} icon={<Database size={16} />} tone="blue" />
+            <KpiTile title={d.adminCards.ledger30} value={fmtNumber(adminStats.ledger_net_30d)} hint={isEnglish(lang) ? "+ credit, - usage from ledger" : "+ شارژ، - مصرف از دفترکل"} icon={<TrendingUp size={16} />} tone="green" />
+            <KpiTile title={d.adminCards.recentTurnover} value={fmtNumber(ledgerStats.debit)} hint={isEnglish(lang) ? `Last ${fmtNumber(ledger.length)} transactions, order estimate: ${fmtNumber(orderStats.estimatedRevenue)}` : `آخرین ${fmtNumber(ledger.length)} تراکنش، برآورد سفارش: ${fmtNumber(orderStats.estimatedRevenue)}`} icon={<Coins size={16} />} tone="violet" />
+            <KpiTile title={d.adminCards.avgPrice} value={adminStats.price_per_gb_avg == null ? d.adminCards.notSet : fmtNumber(adminStats.price_per_gb_avg)} icon={<Wallet size={16} />} tone="orange" />
+            <KpiTile title={d.adminCards.ledgerEntries} value={fmtNumber(adminStats.ledger_entries_total)} hint={isEnglish(lang) ? `Recent credit: ${fmtNumber(ledgerStats.credit)}` : `شارژ اخیر: ${fmtNumber(ledgerStats.credit)}`} icon={<Database size={16} />} tone="blue" />
           </div>
 
-          <div className="grid gap-4">
-            <SectionPanel title="تحلیل فروش و مصرف" subtitle="نمودارها از گزارش سفارش‌ها و دفترکل موجود ساخته می‌شوند." icon={<BarChart3 size={18} />}>
+          <div className="hidden">
+            <SectionPanel title={d.analysisTitle} subtitle={d.analysisSubtitle} icon={<BarChart3 size={18} />}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">فروش روزانه</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">خروجی بازه انتخاب‌شده از تراکنش‌های مصرف</div>
+                      <div className="text-sm font-semibold">{d.dailySales}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.selectedRangeOutput}</div>
                     </div>
                     <Badge variant="success">{fmtNumber(ledgerStats.debit)}</Badge>
                   </div>
-                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="green" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="green" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">حجم سفارش‌ها</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">مجموع GB خریداری شده در سفارش‌های اخیر</div>
+                      <div className="text-sm font-semibold">{d.orderVolume}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.orderVolumeSubtitle}</div>
                     </div>
                     <Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>
                   </div>
-                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
               </div>
             </SectionPanel>
 
-            <SectionPanel className="hidden" title="مصرف کل ظرفیت" subtitle="نسبت مصرف کاربران به حجم فروخته شده." icon={<Gauge size={18} />}>
-              <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} />
+            <SectionPanel className="hidden" title={d.capacityTitle} subtitle={d.capacitySubtitle} icon={<Gauge size={18} />}>
+              <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} copy={d} />
             </SectionPanel>
           </div>
 
           <div className="hidden">
-            <SectionPanel title="سلامت نودها" subtitle="Badgeها وضعیت فعال بودن، نمایش در ساب و آخرین sync هر نود را نشان می‌دهند." icon={<Server size={18} />} action={<Link href="/app/admin/nodes"><Button type="button" variant="outline" size="sm">مدیریت نودها</Button></Link>}>
-              <NodeHealthList nodes={nodes} />
+            <SectionPanel title={d.nodeHealthTitle} subtitle={d.nodeHealthSubtitle} icon={<Server size={18} />} action={<Link href="/app/admin/nodes"><Button type="button" variant="outline" size="sm">{d.manageNodes}</Button></Link>}>
+              <NodeHealthList nodes={nodes} copy={d} lang={lang} />
             </SectionPanel>
 
-            <SectionPanel title="عملیات و خطاها" subtitle="برای فروش حرفه‌ای، pending/failed باید سریع دیده شود." icon={<Activity size={18} />} action={<Badge variant={orderStats.failed ? "danger" : "success"}>{orderStats.failed ? "نیازمند بررسی" : "پایدار"}</Badge>}>
-              <OperationsPanel orders={orders} isAdmin />
+            <SectionPanel title={d.operationsTitle} subtitle={d.operationsSubtitle} icon={<Activity size={18} />} action={<Badge variant={orderStats.failed ? "danger" : "success"}>{orderStats.failed ? d.needsReview : d.stable}</Badge>}>
+              <OperationsPanel orders={orders} isAdmin copy={d} lang={lang} />
             </SectionPanel>
           </div>
         </>
@@ -1163,62 +1538,62 @@ export default function Dashboard() {
       {!loading && !isAdmin && resellerStats ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile title="موجودی" value={fmtNumber(resellerStats.balance)} hint={`وضعیت حساب: ${resellerStats.status}`} icon={<Wallet size={16} />} tone="green" />
-            <KpiTile title="کاربران" value={fmtNumber(resellerStats.users_total)} hint={`فعال: ${fmtNumber(resellerStats.users_active)}، غیرفعال: ${fmtNumber(resellerStats.users_disabled)}`} icon={<UsersRound size={16} />} tone="blue" />
-            <KpiTile title="نودهای مجاز" value={fmtNumber(resellerStats.nodes_allowed)} hint={`${fmtNumber(nodeStats.visible)} قابل نمایش، ${fmtNumber(nodeStats.stale)} بدون sync`} icon={<Network size={16} />} tone="cyan" />
-            <KpiTile title="سفارش ۳۰ روز" value={fmtNumber(resellerStats.orders_30d)} hint={`کل سفارش‌ها: ${fmtNumber(resellerStats.orders_total)}`} icon={<ShoppingCart size={16} />} tone="orange" />
+            <KpiTile title={d.resellerCards.balance} value={fmtNumber(resellerStats.balance)} hint={isEnglish(lang) ? `Account status: ${resellerStats.status}` : `وضعیت حساب: ${resellerStats.status}`} icon={<Wallet size={16} />} tone="green" />
+            <KpiTile title={d.resellerCards.users} value={fmtNumber(resellerStats.users_total)} hint={isEnglish(lang) ? `Active: ${fmtNumber(resellerStats.users_active)}, disabled: ${fmtNumber(resellerStats.users_disabled)}` : `فعال: ${fmtNumber(resellerStats.users_active)}، غیرفعال: ${fmtNumber(resellerStats.users_disabled)}`} icon={<UsersRound size={16} />} tone="blue" />
+            <KpiTile title={d.resellerCards.allowedNodes} value={fmtNumber(resellerStats.nodes_allowed)} hint={isEnglish(lang) ? `${fmtNumber(nodeStats.visible)} visible, ${fmtNumber(nodeStats.stale)} without sync` : `${fmtNumber(nodeStats.visible)} قابل نمایش، ${fmtNumber(nodeStats.stale)} بدون sync`} icon={<Network size={16} />} tone="cyan" />
+            <KpiTile title={d.resellerCards.orders30} value={fmtNumber(resellerStats.orders_30d)} hint={isEnglish(lang) ? `Total orders: ${fmtNumber(resellerStats.orders_total)}` : `کل سفارش‌ها: ${fmtNumber(resellerStats.orders_total)}`} icon={<ShoppingCart size={16} />} tone="orange" />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiTile title="مصرف کیف پول ۳۰ روز" value={fmtNumber(resellerStats.spent_30d)} hint={`گردش اخیر: ${fmtNumber(ledgerStats.debit)}، برآورد سفارش: ${fmtNumber(orderStats.estimatedRevenue)}`} icon={<TrendingUp size={16} />} tone="rose" />
-            <KpiTile title="قیمت/GB" value={fmtNumber(resellerStats.price_per_gb)} hint="مدل Per-Node" icon={<Coins size={16} />} tone="cyan" />
-            <KpiTile title="باندل/GB" value={fmtNumber(resellerStats.bundle_price_per_gb)} hint="مدل Bundle" icon={<Boxes size={16} />} tone="violet" />
-            <KpiTile title="قیمت/روز" value={fmtNumber(resellerStats.price_per_day)} hint="تمدید زمانی" icon={<Coins size={16} />} tone="orange" />
+            <KpiTile title={d.resellerCards.wallet30} value={fmtNumber(resellerStats.spent_30d)} hint={isEnglish(lang) ? `Recent turnover: ${fmtNumber(ledgerStats.debit)}, order estimate: ${fmtNumber(orderStats.estimatedRevenue)}` : `گردش اخیر: ${fmtNumber(ledgerStats.debit)}، برآورد سفارش: ${fmtNumber(orderStats.estimatedRevenue)}`} icon={<TrendingUp size={16} />} tone="rose" />
+            <KpiTile title={d.resellerCards.priceGb} value={fmtNumber(resellerStats.price_per_gb)} hint="Per-Node" icon={<Coins size={16} />} tone="cyan" />
+            <KpiTile title={d.resellerCards.bundleGb} value={fmtNumber(resellerStats.bundle_price_per_gb)} hint="Bundle" icon={<Boxes size={16} />} tone="violet" />
+            <KpiTile title={d.resellerCards.priceDay} value={fmtNumber(resellerStats.price_per_day)} hint={isEnglish(lang) ? "Time renewal" : "تمدید زمانی"} icon={<Coins size={16} />} tone="orange" />
           </div>
 
-          <div className="grid gap-4">
-            <SectionPanel title="فروش و مصرف من" subtitle="نمودارها از سفارش‌ها و تراکنش‌های حساب شما ساخته می‌شوند." icon={<BarChart3 size={18} />}>
+          <div className="hidden">
+            <SectionPanel title={d.mySalesTitle} subtitle={d.mySalesSubtitle} icon={<BarChart3 size={18} />}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">مصرف کیف پول</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">بازه انتخاب‌شده</div>
+                      <div className="text-sm font-semibold">{d.walletUsage}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.selectedRange}</div>
                     </div>
                     <Badge variant="danger">{fmtNumber(ledgerStats.debit)}</Badge>
                   </div>
-                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="rose" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={salesSeries} valueLabel={(v) => fmtNumber(v)} tone="rose" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold">حجم سفارش‌ها</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">GB خریداری شده در سفارش‌های اخیر</div>
+                      <div className="text-sm font-semibold">{d.orderVolume}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.orderVolumeSubtitle}</div>
                     </div>
                     <Badge variant="default">{fmtGig(orderStats.gb)} GB</Badge>
                   </div>
-                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={`${fmtNumber(chartRangeDays)} روز اخیر`} />
+                  <MiniBars data={trafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={chartRangeText} emptyLabel={d.noData} />
                 </div>
               </div>
             </SectionPanel>
 
-            <SectionPanel className="hidden" title="ظرفیت کاربران" subtitle="مصرف کل کاربران شما نسبت به حجم فروخته شده." icon={<Gauge size={18} />}>
-              <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} />
+            <SectionPanel className="hidden" title={d.myCapacityTitle} subtitle={d.myCapacitySubtitle} icon={<Gauge size={18} />}>
+              <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} copy={d} />
             </SectionPanel>
           </div>
 
           <div className="hidden">
-            <SectionPanel title="نودهای اختصاص داده شده" subtitle="وضعیت نودها، پنل و آخرین sync مربوط به کاربران شما." icon={<Server size={18} />} action={<Link href="/app/nodes"><Button type="button" variant="outline" size="sm">مشاهده نودها</Button></Link>}>
-              <NodeHealthList nodes={nodes} />
+            <SectionPanel title={d.assignedNodesTitle} subtitle={d.assignedNodesSubtitle} icon={<Server size={18} />} action={<Link href="/app/nodes"><Button type="button" variant="outline" size="sm">{d.viewNodes}</Button></Link>}>
+              <NodeHealthList nodes={nodes} copy={d} lang={lang} />
             </SectionPanel>
 
-            <SectionPanel title="آخرین کاربران" subtitle="دسترسی سریع به کاربرهای تازه ساخته شده." icon={<UsersRound size={18} />} action={<Link href="/app/users"><Button type="button" variant="outline" size="sm">همه کاربران</Button></Link>}>
-              <RecentUsersPanel users={recentUsers} />
+            <SectionPanel title={d.recentUsersTitle} subtitle={d.recentUsersSubtitle} icon={<UsersRound size={18} />} action={<Link href="/app/users"><Button type="button" variant="outline" size="sm">{d.allUsers}</Button></Link>}>
+              <RecentUsersPanel users={recentUsers} copy={d} />
             </SectionPanel>
           </div>
 
-          <SectionPanel className="hidden" title="عملیات اخیر" subtitle="سفارش‌های در انتظار یا ناموفق برای جلوگیری از خطای فروش." icon={<Activity size={18} />}>
-            <OperationsPanel orders={orders} isAdmin={false} />
+          <SectionPanel className="hidden" title={d.recentOperationsTitle} subtitle={d.recentOperationsSubtitle} icon={<Activity size={18} />}>
+            <OperationsPanel orders={orders} isAdmin={false} copy={d} lang={lang} />
           </SectionPanel>
         </>
       ) : null}

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 async def get_admin_stats(
     db: AsyncSession = Depends(get_db),
     admin=Depends(require_admin),
-    days: int = Query(14, ge=7, le=31),
+    days: int = Query(14, ge=1, le=3650),
     reseller_id: int | None = Query(default=None, ge=1),
 ):
     now = datetime.now(timezone.utc)

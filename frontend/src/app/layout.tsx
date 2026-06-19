@@ -5,6 +5,9 @@ import { ToastProvider } from "@/components/ui/toast";
 import { I18nProvider } from "@/components/i18n-context";
 import { PwaRegister } from "@/components/pwa-register";
 
+const BRAND_ASSET_VERSION = "2026-06-19-1";
+const brandAsset = (path: string) => `${path}?v=${BRAND_ASSET_VERSION}`;
+
 export const metadata: Metadata = {
   applicationName: "Guardino Hub",
   title: {
@@ -12,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s | Guardino Hub",
   },
   description: "پنل مرکزی فروش، مدیریت رسیلرها و اشتراک‌های VPN",
-  manifest: "/manifest.webmanifest",
+  manifest: brandAsset("/manifest.webmanifest"),
   appleWebApp: {
     capable: true,
     title: "Guardino",
@@ -23,14 +26,14 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: brandAsset("/favicon.ico"), sizes: "any" },
+      { url: brandAsset("/favicon-32x32.png"), sizes: "32x32", type: "image/png" },
+      { url: brandAsset("/favicon-16x16.png"), sizes: "16x16", type: "image/png" },
+      { url: brandAsset("/icons/icon-192.png"), sizes: "192x192", type: "image/png" },
+      { url: brandAsset("/icons/icon-512.png"), sizes: "512x512", type: "image/png" },
     ],
-    shortcut: [{ url: "/favicon.ico" }],
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: [{ url: brandAsset("/favicon.ico") }],
+    apple: [{ url: brandAsset("/icons/apple-touch-icon.png"), sizes: "180x180", type: "image/png" }],
   },
 };
 

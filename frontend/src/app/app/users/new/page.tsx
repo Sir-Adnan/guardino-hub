@@ -86,12 +86,12 @@ type ResellerUserPolicy = {
 };
 
 const durationPresets = [
-  { key: "7d", label: "۷ روز", days: 7 },
-  { key: "1m", label: "۱ ماه", days: 31 },
-  { key: "3m", label: "۳ ماه", days: 90 },
-  { key: "6m", label: "۶ ماه", days: 180 },
-  { key: "1y", label: "۱ سال", days: 365 },
-  { key: "unlimited", label: "نامحدود", days: 0 },
+  { key: "7d", label: "7 days", days: 7 },
+  { key: "1m", label: "1 month", days: 31 },
+  { key: "3m", label: "3 months", days: 90 },
+  { key: "6m", label: "6 months", days: 180 },
+  { key: "1y", label: "1 year", days: 365 },
+  { key: "unlimited", label: "Unlimited", days: 0 },
 ];
 
 const trafficPresets = [20, 30, 50, 70, 100, 150, 200];
@@ -169,12 +169,163 @@ function qrImageUrl(value: string, size: number = 240) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=8&data=${encodeURIComponent(value)}`;
 }
 
+function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
+  if (lang === "en") return p.label;
+  if (p.key === "7d") return "۷ روز";
+  if (p.key === "1m") return "۱ ماه";
+  if (p.key === "3m") return "۳ ماه";
+  if (p.key === "6m") return "۶ ماه";
+  if (p.key === "1y") return "۱ سال";
+  if (p.key === "unlimited") return "نامحدود";
+  return `${fmtNumber(p.days)} روز`;
+}
+
 export default function NewUserPage() {
   const r = useRouter();
   const { push } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { me, refresh: refreshMe } = useAuth();
   const locked = (me?.balance ?? 1) <= 0;
+
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            nodeSelectionApplied: "Node selection applied",
+            nodeSelectionAppliedDesc: (count: number) => `${count} nodes from the Nodes page were applied.`,
+            usernameRequired: "Enter a username or use the random button.",
+            quoteReady: "Quote is ready",
+            quoteFailed: "Quote calculation failed",
+            bulkStopped: "Bulk creation stopped",
+            progressSummary: (done: number, success: number, failed: number) => `Done: ${done} • Success: ${success} • Failed: ${failed}`,
+            created: "User created",
+            bulkCreated: "Users created",
+            bulkPartial: "Bulk creation completed with partial errors",
+            createFailed: "User creation failed",
+            guardinoSubDisabled: "Guardino central sub is disabled",
+            pageTitle: "Create New User",
+            pricingModel: "Pricing model",
+            nodeSelection: "Node selection",
+            all: "All",
+            manual: "Manual",
+            group: "Group",
+            traffic: "Traffic",
+            duration: "Duration",
+            gb: "GB",
+            days: "days",
+            unlimited: "Unlimited",
+            userInfoTitle: "User Details",
+            userInfoSubtitle: "Base information, plan, nodes, and quote",
+            defaultsApplied: (pricing: string, mode: string) => `Defaults applied: pricing ${pricing} • node mode ${mode}`,
+            policyActive: (days: boolean, traffic: boolean) => `Reseller policy active: custom days ${days ? "on" : "off"} • custom traffic ${traffic ? "on" : "off"}`,
+            userName: "Username",
+            userNameHelp: "Used for display inside Guardino and for generating the user on Marzban/Pasarguard panels.",
+            usernamePlaceholder: "e.g. customer-01",
+            finalNamePattern: "Final name pattern",
+            userTrafficGb: "User traffic (GB)",
+            locked: "Locked",
+            trafficPolicyLocked: "Only allowed traffic packages can be selected for this account.",
+            trafficPolicyOpen: "You can enter traffic manually or choose a preset package.",
+            durationDays: "Duration (days)",
+            targetExpire: "Selected expiry",
+            equivalent: "Equivalent",
+            daysPolicyLocked: "Custom days are disabled for this account; only allowed duration packages can be used.",
+            allowedDaysRange: (min: number, max: number, noExpire: boolean) => `Allowed day range: ${min} to ${max}${noExpire ? " • unlimited allowed" : ""}`,
+            daysPolicyOpen: "You can enter days manually or choose a preset package.",
+            advanced: "Advanced Settings",
+            allNodesSelected: "All allowed nodes are selected.",
+            nodeSelected: (count: number) => `${count} nodes selected.`,
+            noNodeSelected: "No node selected.",
+            stopCreate: "Stop creation",
+            creatingUsers: "Creating users...",
+            createProgress: (success: number, failed: number, current: string) => `Success: ${success} • Failed: ${failed}${current ? ` • Last item: ${current}` : ""}`,
+            quoteTitle: "Quote",
+            toman: "toman",
+            timeCost: "Time cost",
+            perNodeDetails: "Per-node details (when per_node is used):",
+            resultTitle: (bulk: boolean) => (bulk ? "Bulk Creation Result" : "User Creation Result"),
+            resultSummary: (s: CreateSummary) =>
+              `Total: ${s.total} • Done: ${s.done} • Success: ${s.success} • Failed: ${s.failed}${s.cancelled ? " • Status: stopped by user" : ""}`,
+            resultHint: "Recommendation: for daily use, copy each panel's direct link. The Guardino aggregated link is better for multi-node users.",
+            copyAllDirect: "Copy all direct links",
+            copyAllGuardino: "Copy all Guardino links",
+            userDetails: "User details",
+            directSubs: "Direct panel subscriptions (recommended)",
+            noDirectSaved: "No direct link has been recorded.",
+            guardinoSub: "Guardino aggregated subscription",
+            errors: "Errors",
+            openHoldTitle: "Create user in On Hold mode",
+            openHoldHelp: "Applies to Marzban and Pasarguard. If off, the user is created as Active on the destination panel.",
+          }
+        : {
+            nodeSelectionApplied: "انتخاب نود اعمال شد",
+            nodeSelectionAppliedDesc: (count: number) => `${count} نود از صفحه نودها اعمال شد.`,
+            usernameRequired: "نام کاربری را وارد کنید یا از دکمه رندوم استفاده کنید.",
+            quoteReady: "پیش‌فاکتور آماده شد",
+            quoteFailed: "خطا در محاسبه قیمت",
+            bulkStopped: "ساخت گروهی متوقف شد",
+            progressSummary: (done: number, success: number, failed: number) => `انجام‌شده: ${done} • موفق: ${success} • ناموفق: ${failed}`,
+            created: "کاربر ساخته شد",
+            bulkCreated: "کاربران ساخته شدند",
+            bulkPartial: "ساخت گروهی با خطاهای جزئی انجام شد",
+            createFailed: "خطا در ساخت کاربر",
+            guardinoSubDisabled: "ساب مرکزی Guardino غیرفعال است",
+            pageTitle: "ساخت کاربر جدید",
+            pricingModel: "مدل قیمت",
+            nodeSelection: "انتخاب نود",
+            all: "همه",
+            manual: "دستی",
+            group: "گروهی",
+            traffic: "حجم",
+            duration: "مدت",
+            gb: "گیگ",
+            days: "روز",
+            unlimited: "نامحدود",
+            userInfoTitle: "مشخصات کاربر",
+            userInfoSubtitle: "اطلاعات پایه، پلن، نودها و پیش‌فاکتور",
+            defaultsApplied: (pricing: string, mode: string) => `پیش‌فرض‌ها اعمال شد: مدل قیمت ${pricing} • حالت نود ${mode}`,
+            policyActive: (days: boolean, traffic: boolean) => `سیاست رسیلر فعال است: روز دستی ${days ? "روشن" : "خاموش"} • حجم دستی ${traffic ? "روشن" : "خاموش"}`,
+            userName: "نام کاربر",
+            userNameHelp: "هم برای نمایش داخل گاردینو استفاده می‌شود و هم نام کاربر پنل‌های مرزبان/پاسارگارد از همین مقدار ساخته می‌شود.",
+            usernamePlaceholder: "مثلاً customer-01",
+            finalNamePattern: "الگوی نام نهایی",
+            userTrafficGb: "حجم کاربر (گیگ)",
+            locked: "محدود شده",
+            trafficPolicyLocked: "طبق سیاست حساب، فقط حجم‌های مجاز قابل انتخاب هستند.",
+            trafficPolicyOpen: "می‌توانید حجم را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید.",
+            durationDays: "مدت زمان (روز)",
+            targetExpire: "تاریخ پایان انتخابی",
+            equivalent: "معادل",
+            daysPolicyLocked: "روز دستی برای این حساب غیرفعال است و فقط پکیج‌های زمانی مجاز قابل استفاده هستند.",
+            allowedDaysRange: (min: number, max: number, noExpire: boolean) => `بازه روز مجاز: ${min} تا ${max}${noExpire ? " • نامحدود مجاز" : ""}`,
+            daysPolicyOpen: "می‌توانید روز را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید.",
+            advanced: "تنظیمات پیشرفته",
+            allNodesSelected: "همه نودهای مجاز انتخاب شده‌اند.",
+            nodeSelected: (count: number) => `${count} نود انتخاب شده است.`,
+            noNodeSelected: "هیچ نودی انتخاب نشده است.",
+            stopCreate: "توقف ساخت",
+            creatingUsers: "در حال ساخت کاربران...",
+            createProgress: (success: number, failed: number, current: string) => `موفق: ${success} • ناموفق: ${failed}${current ? ` • آخرین مورد: ${current}` : ""}`,
+            quoteTitle: "پیش‌فاکتور",
+            toman: "تومان",
+            timeCost: "هزینه زمان",
+            perNodeDetails: "جزئیات per-node (اگر per_node باشد):",
+            resultTitle: (bulk: boolean) => (bulk ? "نتیجه ساخت گروهی" : "نتیجه ساخت کاربر"),
+            resultSummary: (s: CreateSummary) =>
+              `کل: ${s.total} • انجام‌شده: ${s.done} • موفق: ${s.success} • ناموفق: ${s.failed}${s.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}`,
+            resultHint: "پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.",
+            copyAllDirect: "کپی همه لینک‌های مستقیم",
+            copyAllGuardino: "کپی همه لینک‌های Guardino",
+            userDetails: "جزئیات کاربر",
+            directSubs: "اشتراک‌های مستقیم پنل (پیشنهادی)",
+            noDirectSaved: "لینک مستقیمی ثبت نشده است.",
+            guardinoSub: "اشتراک تجمیعی Guardino",
+            errors: "خطاها",
+            openHoldTitle: "ساخت کاربر در حالت On Hold",
+            openHoldHelp: "برای مرزبان و پاسارگارد اعمال می‌شود. اگر خاموش باشد، کاربر در پنل مقصد Active ساخته می‌شود.",
+          },
+    [lang]
+  );
 
   const [label, setLabel] = React.useState("");
   const [createStatus, setCreateStatus] = React.useState<"active" | "on_hold">("active");
@@ -359,11 +510,11 @@ export default function NewUserPage() {
     if (mode !== "group") setNodeGroup("");
 
     push({
-      title: "انتخاب نود اعمال شد",
-      desc: `${allowedIds.length} نود از صفحه نودها اعمال شد.`,
+      title: copy.nodeSelectionApplied,
+      desc: copy.nodeSelectionAppliedDesc(allowedIds.length),
       type: "success",
     });
-  }, [nodes, defaultsLoaded, push]);
+  }, [copy, nodes, defaultsLoaded, push]);
 
   React.useEffect(() => {
     if (!nodes?.length || !defaultsLoaded) return;
@@ -471,7 +622,7 @@ export default function NewUserPage() {
   function buildLabel(index: number, count: number) {
     const base = label.trim();
     if (!base) {
-      throw new Error("نام کاربری را وارد کنید یا از دکمه رندوم استفاده کنید.");
+      throw new Error(copy.usernameRequired);
     }
     const indexed = count > 1 ? `${base}-${index}` : base;
     return `${defaults.label_prefix || ""}${indexed}${defaults.label_suffix || ""}`;
@@ -496,7 +647,7 @@ export default function NewUserPage() {
 
   function validateBeforeSubmit() {
     if (!label.trim()) {
-      throw new Error("نام کاربری را وارد کنید یا از دکمه رندوم استفاده کنید.");
+      throw new Error(copy.usernameRequired);
     }
     if (nodeMode === "manual" && selectedNodeIds.length === 0) {
       throw new Error(t("newUser.nodeSelectRequired"));
@@ -550,9 +701,9 @@ export default function NewUserPage() {
       const payload = buildPayload(labelValue);
       const res = await apiFetch<QuoteResp>("/api/v1/reseller/user-ops/quote", { method: "POST", body: JSON.stringify(payload) });
       setQuote(res);
-      push({ title: "پیش‌فاکتور آماده شد", type: "success" });
+      push({ title: copy.quoteReady, type: "success" });
     } catch (e: any) {
-      push({ title: "خطا در محاسبه قیمت", desc: String(e.message || e), type: "error" });
+      push({ title: copy.quoteFailed, desc: String(e.message || e), type: "error" });
     } finally {
       setLoading(false);
     }
@@ -627,16 +778,16 @@ export default function NewUserPage() {
 
       if (summary.cancelled) {
         push({
-          title: "ساخت گروهی متوقف شد",
-          desc: `انجام‌شده: ${summary.done} • موفق: ${summary.success} • ناموفق: ${summary.failed}`,
+          title: copy.bulkStopped,
+          desc: copy.progressSummary(summary.done, summary.success, summary.failed),
           type: "warning",
         });
       } else if (created.length === 1 && summary.failed === 0) {
-        push({ title: "کاربر ساخته شد", desc: `ID: ${created[0].user_id}`, type: "success" });
+        push({ title: copy.created, desc: `ID: ${created[0].user_id}`, type: "success" });
       } else {
         push({
-          title: summary.failed ? "ساخت گروهی با خطاهای جزئی انجام شد" : "کاربران ساخته شدند",
-          desc: `موفق: ${summary.success} • ناموفق: ${summary.failed}`,
+          title: summary.failed ? copy.bulkPartial : copy.bulkCreated,
+          desc: copy.progressSummary(summary.done, summary.success, summary.failed),
           type: summary.failed ? "warning" : "success",
         });
       }
@@ -645,7 +796,7 @@ export default function NewUserPage() {
         setResultLinks(created);
         setResultOpen(true);
       }
-      push({ title: "خطا در ساخت کاربر", desc: String(e.message || e), type: "error" });
+      push({ title: copy.createFailed, desc: String(e.message || e), type: "error" });
     } finally {
       activeRequestRef.current = null;
       setCreating(false);
@@ -666,7 +817,7 @@ export default function NewUserPage() {
   function copyAllMaster() {
     const all = resultLinks.map((x) => x.master_link).filter(Boolean).join("\n");
     if (!all) {
-      push({ title: "ساب مرکزی Guardino غیرفعال است", type: "warning" });
+      push({ title: copy.guardinoSubDisabled, type: "warning" });
       return;
     }
     copyText(all).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
@@ -712,7 +863,7 @@ export default function NewUserPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <UserPlus2 size={13} />
-              ساخت کاربر جدید
+              {copy.pageTitle}
             </div>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("newUser.title")}</h1>
             <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{t("newUser.subtitle")}</p>
@@ -720,20 +871,20 @@ export default function NewUserPage() {
 
           <div className="grid min-w-[220px] grid-cols-2 gap-2 text-xs sm:min-w-[320px]">
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(59,130,246,0.14),rgba(14,165,233,0.08))] px-3 py-2">
-              <div className="text-[hsl(var(--fg))]/70">مدل قیمت</div>
+              <div className="text-[hsl(var(--fg))]/70">{copy.pricingModel}</div>
               <div className="mt-1 font-semibold">{pricingMode === "bundle" ? "Bundle" : "Per Node"}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(16,185,129,0.14),rgba(5,150,105,0.08))] px-3 py-2">
-              <div className="text-[hsl(var(--fg))]/70">انتخاب نود</div>
-              <div className="mt-1 font-semibold">{nodeMode === "all" ? "همه" : nodeMode === "manual" ? "دستی" : "گروهی"}</div>
+              <div className="text-[hsl(var(--fg))]/70">{copy.nodeSelection}</div>
+              <div className="mt-1 font-semibold">{nodeMode === "all" ? copy.all : nodeMode === "manual" ? copy.manual : copy.group}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(249,115,22,0.14),rgba(245,158,11,0.08))] px-3 py-2">
-              <div className="text-[hsl(var(--fg))]/70">حجم</div>
-              <div className="mt-1 font-semibold">{fmtNumber(totalGb)} گیگ</div>
+              <div className="text-[hsl(var(--fg))]/70">{copy.traffic}</div>
+              <div className="mt-1 font-semibold">{fmtNumber(totalGb)} {copy.gb}</div>
             </div>
             <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,rgba(139,92,246,0.14),rgba(99,102,241,0.08))] px-3 py-2">
-              <div className="text-[hsl(var(--fg))]/70">مدت</div>
-              <div className="mt-1 font-semibold">{days === 0 ? "نامحدود" : `${fmtNumber(days)} روز`}</div>
+              <div className="text-[hsl(var(--fg))]/70">{copy.duration}</div>
+              <div className="mt-1 font-semibold">{days === 0 ? copy.unlimited : `${fmtNumber(days)} ${copy.days}`}</div>
             </div>
           </div>
         </div>
@@ -741,20 +892,19 @@ export default function NewUserPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-lg font-semibold">مشخصات کاربر</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">اطلاعات پایه، پلن، نودها و پیش‌فاکتور</div>
+          <div className="text-lg font-semibold">{copy.userInfoTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.userInfoSubtitle}</div>
           {defaultsLoaded ? (
             <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(125deg,hsl(var(--accent)/0.12)_0%,hsl(var(--surface-card-1))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70 break-words [overflow-wrap:anywhere]">
               <div className="flex flex-wrap items-center gap-2">
                 <Sparkles size={14} />
                 <span>
-                  پیش‌فرض‌ها اعمال شد: مدل قیمت <span className="font-medium">{pricingMode === "bundle" ? "Bundle" : "Per Node"}</span> • حالت نود <span className="font-medium">{nodeMode}</span>
+                  {copy.defaultsApplied(pricingMode === "bundle" ? "Bundle" : "Per Node", nodeMode)}
                 </span>
               </div>
               {userPolicy.enabled ? (
                 <div className="mt-1 text-[11px] text-[hsl(var(--fg))]/65">
-                  سیاست رسیلر فعال است: روز دستی <span className="font-medium">{userPolicy.allow_custom_days ? "روشن" : "خاموش"}</span> • حجم دستی{" "}
-                  <span className="font-medium">{userPolicy.allow_custom_traffic ? "روشن" : "خاموش"}</span>
+                  {copy.policyActive(userPolicy.allow_custom_days, userPolicy.allow_custom_traffic)}
                 </div>
               ) : null}
             </div>
@@ -765,7 +915,7 @@ export default function NewUserPage() {
           <div className="grid gap-4">
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_26px_-20px_hsl(var(--accent)/0.5)]">
               <label className="text-sm flex items-center gap-2">
-                نام کاربر <HelpTip text="هم برای نمایش داخل گاردینو استفاده می‌شود و هم نام کاربر پنل‌های مرزبان/پاسارگارد از همین مقدار ساخته می‌شود." />
+                {copy.userName} <HelpTip text={copy.userNameHelp} />
               </label>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-1.5 py-1">
@@ -778,7 +928,7 @@ export default function NewUserPage() {
                     className="min-w-0 flex-1 border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="مثلاً customer-01"
+                    placeholder={copy.usernamePlaceholder}
                   />
                   {defaults.label_suffix ? (
                     <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-[hsl(var(--accent)/0.18)] bg-[hsl(var(--accent)/0.10)] px-2.5 py-1.5 text-[11px] font-semibold text-[hsl(var(--accent))]">
@@ -790,7 +940,7 @@ export default function NewUserPage() {
               </div>
               {(defaults.label_prefix || defaults.label_suffix) ? (
                 <div className="max-w-full overflow-hidden break-words text-xs leading-6 text-[hsl(var(--fg))]/60 [overflow-wrap:anywhere]">
-                  الگوی نام نهایی: <span dir="ltr">{defaults.label_prefix || ""}[username]{defaults.label_suffix || ""}</span>
+                  {copy.finalNamePattern}: <span dir="ltr">{defaults.label_prefix || ""}[username]{defaults.label_suffix || ""}</span>
                 </div>
               ) : null}
             </div>
@@ -807,11 +957,11 @@ export default function NewUserPage() {
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <Gauge size={15} />
-                  حجم کاربر (گیگ)
+                  {copy.userTrafficGb}
                 </label>
                 {customTrafficLocked ? (
                   <Badge variant="warning" className="gap-1">
-                    <Lock size={12} /> محدود شده
+                    <Lock size={12} /> {copy.locked}
                   </Badge>
                 ) : null}
               </div>
@@ -827,15 +977,15 @@ export default function NewUserPage() {
                 <div className="flex flex-wrap gap-2">
                   {effectiveTrafficPresets.map((gb) => (
                     <Button key={gb} type="button" variant={totalGb === gb ? "primary" : "outline"} size="sm" onClick={() => setTotalGb(gb)}>
-                      {gb} گیگ
+                      {gb} {copy.gb}
                     </Button>
                   ))}
                 </div>
               </div>
               <div className="text-xs text-[hsl(var(--fg))]/70">
                 {customTrafficLocked
-                  ? "طبق سیاست حساب، فقط حجم‌های مجاز قابل انتخاب هستند."
-                  : "می‌توانید حجم را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید."}
+                  ? copy.trafficPolicyLocked
+                  : copy.trafficPolicyOpen}
               </div>
             </div>
 
@@ -849,11 +999,11 @@ export default function NewUserPage() {
               <div className="flex items-center justify-between gap-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <CalendarDays size={15} />
-                  مدت زمان (روز)
+                  {copy.durationDays}
                 </label>
                 {customDaysLocked ? (
                   <Badge variant="warning" className="gap-1">
-                    <Lock size={12} /> محدود شده
+                    <Lock size={12} /> {copy.locked}
                   </Badge>
                 ) : null}
               </div>
@@ -885,24 +1035,24 @@ export default function NewUserPage() {
                       size="sm"
                       onClick={() => applyDurationPreset(p.key)}
                     >
-                      {p.label}
+                    {durationPresetLabel(p, lang)}
                     </Button>
                   ))}
                 </div>
               </div>
               {targetExpireAt ? (
                 <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-[11px] text-[hsl(var(--fg))]/75">
-                  تاریخ پایان انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetExpireAt)}</span>
+                  {copy.targetExpire}: <span className="font-semibold">{formatJalaliDateTime(targetExpireAt)}</span>
                   <span className="mx-1">•</span>
-                  معادل: <span className="font-semibold">{fmtNumber(days)} روز</span>
+                  {copy.equivalent}: <span className="font-semibold">{fmtNumber(days)} {copy.days}</span>
                 </div>
               ) : null}
               <div className="text-xs text-[hsl(var(--fg))]/70">
                 {customDaysLocked
-                  ? "روز دستی برای این حساب غیرفعال است و فقط پکیج‌های زمانی مجاز قابل استفاده هستند."
+                  ? copy.daysPolicyLocked
                   : userPolicy.enabled
-                  ? `بازه روز مجاز: ${userPolicy.min_days} تا ${userPolicy.max_days}${userPolicy.allow_no_expire ? " • نامحدود مجاز" : ""}`
-                  : "می‌توانید روز را دستی وارد کنید یا از پکیج‌های آماده انتخاب کنید."}
+                  ? copy.allowedDaysRange(userPolicy.min_days, userPolicy.max_days, userPolicy.allow_no_expire)
+                  : copy.daysPolicyOpen}
               </div>
             </div>
           </div>
@@ -911,10 +1061,10 @@ export default function NewUserPage() {
             <summary className="flex cursor-pointer list-none flex-col items-start gap-2 rounded-xl px-1 py-1 text-sm font-semibold sm:flex-row sm:items-center sm:justify-between">
               <span className="flex items-center gap-2">
                 <Settings2 size={16} />
-                تنظیمات پیشرفته
+                {copy.advanced}
               </span>
               <span className="max-w-full break-words text-xs font-normal leading-5 text-[hsl(var(--fg))]/65 [overflow-wrap:anywhere]">
-                {createStatus === "on_hold" ? "On Hold" : "Active"} • {pricingMode === "bundle" ? "Bundle" : "Per Node"} • {nodeMode === "all" ? "همه نودها" : nodeMode === "manual" ? "انتخاب دستی" : "گروهی"}
+                {createStatus === "on_hold" ? "On Hold" : "Active"} • {pricingMode === "bundle" ? "Bundle" : "Per Node"} • {nodeMode === "all" ? t("newUser.nodesAll") : nodeMode === "manual" ? t("newUser.nodesManual") : t("newUser.nodesGroup")}
               </span>
             </summary>
 
@@ -923,8 +1073,8 @@ export default function NewUserPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 text-sm font-medium">
-                      ساخت کاربر در حالت On Hold
-                      <HelpTip text="برای مرزبان و پاسارگارد اعمال می‌شود. اگر خاموش باشد، کاربر در پنل مقصد Active ساخته می‌شود." />
+                      {copy.openHoldTitle}
+                      <HelpTip text={copy.openHoldHelp} />
                     </div>
                   </div>
                   <Switch checked={createStatus === "on_hold"} onCheckedChange={(checked) => setCreateStatus(checked ? "on_hold" : "active")} />
@@ -1001,10 +1151,10 @@ export default function NewUserPage() {
 
                 <div className="text-xs text-[hsl(var(--fg))]/70">
                   {allManualSelected
-                    ? "همه نودهای مجاز انتخاب شده‌اند."
+                    ? copy.allNodesSelected
                     : selectedNodeIds.length
-                    ? `${selectedNodeIds.length} نود انتخاب شده است.`
-                    : "هیچ نودی انتخاب نشده است."}
+                    ? copy.nodeSelected(selectedNodeIds.length)
+                    : copy.noNodeSelected}
                 </div>
 
                 <div className="grid gap-2 md:grid-cols-2">
@@ -1063,7 +1213,7 @@ export default function NewUserPage() {
             <Button type="button" variant="outline" disabled={loading || locked} onClick={doQuote}>{t("newUser.quote")}</Button>
             <Button type="button" disabled={loading || locked} onClick={doCreate}>{bulkEnabled ? t("newUser.createBulk") : t("newUser.create")}</Button>
             {creating ? (
-              <Button type="button" variant="outline" disabled={!creating} onClick={cancelCreate}>توقف ساخت</Button>
+              <Button type="button" variant="outline" disabled={!creating} onClick={cancelCreate}>{copy.stopCreate}</Button>
             ) : null}
             <Button type="button" variant="ghost" onClick={() => r.push("/app/users")}>{t("newUser.back")}</Button>
           </div>
@@ -1071,15 +1221,14 @@ export default function NewUserPage() {
           {creating ? (
             <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <div className="font-medium">در حال ساخت کاربران...</div>
+                <div className="font-medium">{copy.creatingUsers}</div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">
                   {createDone}/{createTotal}
                 </div>
               </div>
               <Progress value={createTotal ? Math.round((createDone / createTotal) * 100) : 0} />
               <div className="text-xs text-[hsl(var(--fg))]/70">
-                موفق: {createSuccess} • ناموفق: {createFailed}
-                {createCurrentLabel ? ` • آخرین مورد: ${createCurrentLabel}` : ""}
+                {copy.createProgress(createSuccess, createFailed, createCurrentLabel)}
               </div>
             </div>
           ) : null}
@@ -1087,9 +1236,9 @@ export default function NewUserPage() {
           {quote ? (
             <Card className="overflow-hidden">
               <CardHeader>
-                <div className="text-sm text-[hsl(var(--fg))]/70">پیش‌فاکتور</div>
+                <div className="text-sm text-[hsl(var(--fg))]/70">{copy.quoteTitle}</div>
                 <div className="text-xl font-semibold">
-                  {fmtNumber(quote.total_amount * (bulkEnabled ? bulkCount : 1))} تومان
+                  {fmtNumber(quote.total_amount * (bulkEnabled ? bulkCount : 1))} {copy.toman}
                 </div>
                 {bulkEnabled ? (
                   <div className="text-xs text-[hsl(var(--fg))]/60">
@@ -1098,8 +1247,8 @@ export default function NewUserPage() {
                 ) : null}
               </CardHeader>
               <CardContent className="text-sm space-y-1">
-                <div>هزینه زمان: {fmtNumber(quote.time_amount)}</div>
-                <div className="text-[hsl(var(--fg))]/70">جزئیات per-node (اگر per_node باشد):</div>
+                <div>{copy.timeCost}: {fmtNumber(quote.time_amount)}</div>
+                <div className="text-[hsl(var(--fg))]/70">{copy.perNodeDetails}</div>
                 <pre className="text-xs bg-[hsl(var(--surface-card-3))] rounded-xl p-3 overflow-auto">{JSON.stringify(quote.per_node_amount, null, 2)}</pre>
               </CardContent>
             </Card>
@@ -1114,27 +1263,26 @@ export default function NewUserPage() {
           setResultLinks([]);
           setCreateSummary(null);
         }}
-        title={bulkEnabled ? "نتیجه ساخت گروهی" : "نتیجه ساخت کاربر"}
+        title={copy.resultTitle(bulkEnabled)}
         className="max-w-4xl"
       >
         <div className="space-y-4 text-sm">
           {createSummary ? (
             <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
-              کل: {createSummary.total} • انجام‌شده: {createSummary.done} • موفق: {createSummary.success} • ناموفق: {createSummary.failed}
-              {createSummary.cancelled ? " • وضعیت: متوقف‌شده توسط کاربر" : ""}
+              {copy.resultSummary(createSummary)}
             </div>
           ) : null}
 
           <div className="max-w-full overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs text-[hsl(var(--fg))]/80 break-words [overflow-wrap:anywhere]">
-            پیشنهاد: برای استفاده روزمره، لینک مستقیم هر پنل را کپی کنید. لینک تجمیعی Guardino بیشتر برای کاربرهای چندنودی مناسب است.
+            {copy.resultHint}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" className="gap-2" onClick={copyAllDirect}>
-              <Link2 size={16} /> کپی همه لینک‌های مستقیم
+              <Link2 size={16} /> {copy.copyAllDirect}
             </Button>
             <Button type="button" variant="outline" className="gap-2" onClick={copyAllMaster}>
-              <Copy size={16} /> کپی همه لینک‌های Guardino
+              <Copy size={16} /> {copy.copyAllGuardino}
             </Button>
           </div>
 
@@ -1144,12 +1292,12 @@ export default function NewUserPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-[hsl(var(--fg))]/70">{x.label} • #{x.user_id}</div>
                   <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => r.push(`/app/users/${x.user_id}`)}>
-                    <ExternalLink size={14} /> جزئیات کاربر
+                    <ExternalLink size={14} /> {copy.userDetails}
                   </Button>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs font-medium">اشتراک‌های مستقیم پنل (پیشنهادی)</div>
+                  <div className="text-xs font-medium">{copy.directSubs}</div>
                   {x.node_links.length ? (
                     <div className="space-y-2">
                       {x.node_links.map((n) => (
@@ -1187,13 +1335,13 @@ export default function NewUserPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-xs text-[hsl(var(--fg))]/70">لینک مستقیمی ثبت نشده است.</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.noDirectSaved}</div>
                   )}
                 </div>
 
                 {x.master_link ? (
                 <div className="space-y-2">
-                  <div className="text-xs font-medium">اشتراک تجمیعی Guardino</div>
+                  <div className="text-xs font-medium">{copy.guardinoSub}</div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input value={x.master_link || ""} readOnly />
                     <Button
@@ -1226,7 +1374,7 @@ export default function NewUserPage() {
 
           {createSummary?.issues?.length ? (
             <div className="space-y-2">
-              <div className="text-xs font-medium text-red-600">خطاها</div>
+              <div className="text-xs font-medium text-red-600">{copy.errors}</div>
               <div className="max-h-56 overflow-auto rounded-xl border border-red-300/60 p-2">
                 {createSummary.issues.map((it, idx) => (
                   <div key={`${it.label}-${idx}`} className="border-b border-red-200/60 py-1 text-xs last:border-b-0">

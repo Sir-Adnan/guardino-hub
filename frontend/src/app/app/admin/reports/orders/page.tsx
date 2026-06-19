@@ -12,6 +12,7 @@ import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
 import { useAuth } from "@/components/auth-context";
 import { formatJalaliDateTime } from "@/lib/jalali";
+import { useI18n } from "@/components/i18n-context";
 
 type ResellerMini = { id: number; username: string };
 type OrderRow = {
@@ -48,38 +49,102 @@ async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]>
   return all;
 }
 
-function orderTypeMeta(row: Pick<OrderRow, "type" | "purchased_gb">): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+function orderTypeMeta(row: Pick<OrderRow, "type" | "purchased_gb">, lang: "fa" | "en"): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
   const type = row.type;
+  const en = lang === "en";
   const m: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
-    create: { label: "ساخت کاربر", variant: "danger" },
-    add_traffic: { label: "افزایش حجم", variant: "danger" },
-    extend: { label: row.purchased_gb != null ? "تمدید بسته‌ای" : "افزایش زمان", variant: "warning" },
-    change_nodes: { label: "تغییر نود", variant: "warning" },
-    refund: { label: "بازگشت وجه", variant: "success" },
-    delete: { label: "حذف کاربر", variant: "muted" },
+    create: { label: en ? "Create user" : "ساخت کاربر", variant: "danger" },
+    add_traffic: { label: en ? "Add traffic" : "افزایش حجم", variant: "danger" },
+    extend: { label: row.purchased_gb != null ? (en ? "Package renewal" : "تمدید بسته‌ای") : en ? "Add time" : "افزایش زمان", variant: "warning" },
+    change_nodes: { label: en ? "Change nodes" : "تغییر نود", variant: "warning" },
+    refund: { label: en ? "Refund" : "بازگشت وجه", variant: "success" },
+    delete: { label: en ? "Delete user" : "حذف کاربر", variant: "muted" },
   };
-  return m[(type || "").toLowerCase()] || { label: type || "نامشخص", variant: "muted" };
+  return m[(type || "").toLowerCase()] || { label: type || (en ? "Unknown" : "نامشخص"), variant: "muted" };
 }
 
-function orderStatusMeta(status: string): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+function orderStatusMeta(status: string, lang: "fa" | "en"): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+  const en = lang === "en";
   const m: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
-    completed: { label: "تکمیل‌شده", variant: "success" },
-    pending: { label: "در انتظار", variant: "warning" },
-    failed: { label: "ناموفق", variant: "danger" },
-    rolled_back: { label: "برگشت‌خورده", variant: "muted" },
+    completed: { label: en ? "Completed" : "تکمیل‌شده", variant: "success" },
+    pending: { label: en ? "Pending" : "در انتظار", variant: "warning" },
+    failed: { label: en ? "Failed" : "ناموفق", variant: "danger" },
+    rolled_back: { label: en ? "Rolled back" : "برگشت‌خورده", variant: "muted" },
   };
-  return m[(status || "").toLowerCase()] || { label: status || "نامشخص", variant: "muted" };
+  return m[(status || "").toLowerCase()] || { label: status || (en ? "Unknown" : "نامشخص"), variant: "muted" };
 }
 
-function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean) {
-  if (!isAdmin) return "حساب شما";
-  return resellerMap[resellerId] || `ریسیلر #${resellerId}`;
+function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean, lang: "fa" | "en") {
+  if (!isAdmin) return lang === "en" ? "Your account" : "حساب شما";
+  return resellerMap[resellerId] || `${lang === "en" ? "Reseller" : "ریسیلر"} #${resellerId}`;
 }
 
 export default function OrdersPage() {
   const { push } = useToast();
   const { me } = useAuth();
+  const { t, lang } = useI18n();
   const isAdmin = me?.role === "admin";
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            eyebrow: "Orders Analytics",
+            title: "Orders",
+            subtitleAdmin: "Order history for all resellers",
+            subtitleReseller: "Order history for your account",
+            live: "Order monitor",
+            updating: "Updating...",
+            total: "Orders",
+            completed: "Completed",
+            pending: "Pending",
+            failed: "Failed / rolled back",
+            detailsTitle: "Order details",
+            detailsSubtitle: "Filter and review order status",
+            resellerSearch: "Search reseller by name or ID",
+            allResellers: "All resellers",
+            load: "Load",
+            refresh: "Refresh",
+            personal: "Your orders",
+            reseller: "Reseller",
+            user: "User",
+            orderVolume: "Order volume",
+            id: "ID",
+            orderType: "Order type",
+            status: "Status",
+            volume: "Volume",
+            time: "Time",
+            empty: "No items found.",
+          }
+        : {
+            eyebrow: "تحلیل سفارشات",
+            title: "سفارشات",
+            subtitleAdmin: "تاریخچه سفارشات تمام رسیلرها",
+            subtitleReseller: "تاریخچه سفارشات حساب شما",
+            live: "پایش سفارش",
+            updating: "در حال بروزرسانی...",
+            total: "تعداد سفارشات",
+            completed: "تکمیل‌شده",
+            pending: "در انتظار",
+            failed: "ناموفق/برگشتی",
+            detailsTitle: "جزئیات سفارشات",
+            detailsSubtitle: "فیلتر و مشاهده وضعیت سفارش‌ها",
+            resellerSearch: "جستجوی رسیلر (نام یا ID)",
+            allResellers: "همه رسیلرها",
+            load: "بارگذاری",
+            refresh: "به‌روزرسانی",
+            personal: "سفارشات شخصی شما",
+            reseller: "ریسیلر",
+            user: "کاربر",
+            orderVolume: "حجم سفارش",
+            id: "شناسه",
+            orderType: "نوع سفارش",
+            status: "وضعیت",
+            volume: "حجم",
+            time: "زمان",
+            empty: "موردی یافت نشد.",
+          },
+    [lang]
+  );
 
   const [resellerId, setResellerId] = React.useState<string>("");
   const [resellerQuery, setResellerQuery] = React.useState("");
@@ -106,7 +171,7 @@ export default function OrdersPage() {
       setSummary((res.summary || null) as OrderSummary | null);
       setTotal(res.total || 0);
     } catch (e: any) {
-      push({ title: "خطا", desc: String(e.message || e), type: "error" });
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
       setLoading(false);
     }
@@ -118,7 +183,7 @@ export default function OrdersPage() {
       try {
         setResellers(await fetchAllResellersForAdmin());
       } catch (e: any) {
-        push({ title: "خطا", desc: String(e.message || e), type: "error" });
+        push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,16 +230,16 @@ export default function OrdersPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <ShoppingCart size={13} />
-              Orders Analytics
+              {copy.eyebrow}
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">سفارشات</h1>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{copy.title}</h1>
             <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">
-              {isAdmin ? "تاریخچه سفارشات تمام رسیلرها" : "تاریخچه سفارشات حساب شما"}
+              {isAdmin ? copy.subtitleAdmin : copy.subtitleReseller}
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            {loading ? "در حال بروزرسانی..." : "پایش سفارش"}
+            {loading ? copy.updating : copy.live}
           </div>
         </div>
       </section>
@@ -182,28 +247,28 @@ export default function OrdersPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">تعداد سفارشات</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.total}</div>
             <ChartNoAxesCombined size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.total)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">تکمیل‌شده</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.completed}</div>
             <ShoppingCart size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.completed)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">در انتظار</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.pending}</div>
             <UserRound size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-amber-600">{fmtNumber(stats.pending)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">ناموفق/برگشتی</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.failed}</div>
             <Activity size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-red-600">{fmtNumber(stats.failed)}</div>
@@ -212,14 +277,14 @@ export default function OrdersPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">جزئیات سفارشات</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">فیلتر و مشاهده وضعیت سفارش‌ها</div>
+          <div className="text-xl font-semibold">{copy.detailsTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.detailsSubtitle}</div>
         </CardHeader>
         <CardContent className="space-y-3">
           {isAdmin ? (
             <div className="grid gap-2 md:grid-cols-3">
               <Input
-                placeholder="جستجوی رسیلر (نام یا ID)"
+                placeholder={copy.resellerSearch}
                 value={resellerQuery}
                 onChange={(e) => setResellerQuery(e.target.value)}
               />
@@ -228,7 +293,7 @@ export default function OrdersPage() {
                 value={resellerId}
                 onChange={(e) => setResellerId(e.target.value)}
               >
-                <option value="">همه رسیلرها</option>
+                <option value="">{copy.allResellers}</option>
                 {filteredResellers.map((r) => (
                   <option key={r.id} value={String(r.id)}>
                     {r.username} (#{r.id})
@@ -236,22 +301,22 @@ export default function OrdersPage() {
                 ))}
               </select>
               <Button type="button" variant="outline" onClick={load} disabled={loading}>
-                {loading ? "..." : "بارگذاری"}
+                {loading ? "..." : copy.load}
               </Button>
             </div>
           ) : (
             <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
-              <span>سفارشات شخصی شما</span>
+              <span>{copy.personal}</span>
               <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
-                {loading ? "..." : "به‌روزرسانی"}
+                {loading ? "..." : copy.refresh}
               </Button>
             </div>
           )}
 
           <div className="space-y-2 md:hidden">
             {items.map((o) => {
-              const tm = orderTypeMeta(o);
-              const sm = orderStatusMeta(o.status);
+              const tm = orderTypeMeta(o, lang);
+              const sm = orderStatusMeta(o.status, lang);
               return (
                 <div key={o.id} className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs">
                   <div className="flex items-center justify-between">
@@ -262,40 +327,40 @@ export default function OrdersPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--surface-card-1))] px-2 py-1">
-                    <span className="text-[hsl(var(--fg))]/65">ریسیلر</span>
-                    <span className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin)}</span>
+                    <span className="text-[hsl(var(--fg))]/65">{copy.reseller}</span>
+                    <span className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin, lang)}</span>
                   </div>
-                  <div>کاربر: {o.user_id ? `#${o.user_id}` : "-"}</div>
-                  <div>حجم سفارش: {o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</div>
+                  <div>{copy.user}: {o.user_id ? `#${o.user_id}` : "-"}</div>
+                  <div>{copy.orderVolume}: {o.purchased_gb != null ? `${fmtNumber(o.purchased_gb)} GB` : "-"}</div>
                   <div className="text-[hsl(var(--fg))]/65">{o.created_at ? formatJalaliDateTime(o.created_at) : "-"}</div>
                 </div>
               );
             })}
-            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">موردی یافت نشد.</div> : null}
+            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">{copy.empty}</div> : null}
           </div>
 
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
-                  <th className="text-right py-2">شناسه</th>
-                  <th className="text-right py-2">ریسیلر</th>
-                  <th className="text-right py-2">کاربر</th>
-                  <th className="text-right py-2">نوع سفارش</th>
-                  <th className="text-right py-2">وضعیت</th>
-                  <th className="text-right py-2">حجم</th>
-                  <th className="text-right py-2">زمان</th>
+                  <th className="text-right py-2">{copy.id}</th>
+                  <th className="text-right py-2">{copy.reseller}</th>
+                  <th className="text-right py-2">{copy.user}</th>
+                  <th className="text-right py-2">{copy.orderType}</th>
+                  <th className="text-right py-2">{copy.status}</th>
+                  <th className="text-right py-2">{copy.volume}</th>
+                  <th className="text-right py-2">{copy.time}</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((o) => {
-                  const tm = orderTypeMeta(o);
-                  const sm = orderStatusMeta(o.status);
+                  const tm = orderTypeMeta(o, lang);
+                  const sm = orderStatusMeta(o.status, lang);
                   return (
                     <tr key={o.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                       <td className="py-2">{o.id}</td>
                       <td className="py-2">
-                        <div className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin)}</div>
+                        <div className="font-medium">{resellerName(o.reseller_id, resellerMap, isAdmin, lang)}</div>
                         {isAdmin ? <div className="text-xs text-[hsl(var(--fg))]/55">#{o.reseller_id}</div> : null}
                       </td>
                       <td className="py-2">
@@ -314,7 +379,7 @@ export default function OrdersPage() {
                 })}
                 {!items.length ? (
                   <tr>
-                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={7}>موردی یافت نشد.</td>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={7}>{copy.empty}</td>
                   </tr>
                 ) : null}
               </tbody>

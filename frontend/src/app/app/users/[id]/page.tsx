@@ -48,11 +48,11 @@ type ResellerUserPolicy = {
 };
 const AUTO_REFRESH_MS = 30_000;
 const DURATION_PRESETS = [
-  { key: "7d", label: "7 روز", days: 7 },
-  { key: "1m", label: "1 ماه", days: 31 },
-  { key: "3m", label: "3 ماه", days: 90 },
-  { key: "6m", label: "6 ماه", days: 180 },
-  { key: "1y", label: "1 سال", days: 365 },
+  { key: "7d", label: "7 days", days: 7 },
+  { key: "1m", label: "1 month", days: 31 },
+  { key: "3m", label: "3 months", days: 90 },
+  { key: "6m", label: "6 months", days: 180 },
+  { key: "1y", label: "1 year", days: 365 },
 ];
 const TRAFFIC_PRESETS = [20, 30, 50, 70, 100, 150, 200];
 
@@ -60,17 +60,18 @@ function bytesToGb(bytes: number) {
   return bytes / (1024 * 1024 * 1024);
 }
 
-function fmtTrafficBytes(bytes: number) {
+function fmtTrafficBytes(bytes: number, lang: "fa" | "en") {
   const safe = Math.max(0, Number(bytes) || 0);
   if (safe > 0 && safe < 1024 * 1024 * 1024) {
     const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
-    return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(mb)} مگابایت`;
+    return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 0 }).format(mb)} ${lang === "fa" ? "مگابایت" : "MB"}`;
   }
-  return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(bytesToGb(safe))} گیگ`;
+  return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 1 }).format(bytesToGb(safe))} ${lang === "fa" ? "گیگ" : "GB"}`;
 }
 
-function usagePercentLabel(percent: number, usedBytes: number) {
-  return usedBytes > 0 && percent === 0 ? "<۱٪" : `${percent}٪`;
+function usagePercentLabel(percent: number, usedBytes: number, lang: "fa" | "en") {
+  if (usedBytes > 0 && percent === 0) return lang === "fa" ? "<۱٪" : "<1%";
+  return lang === "fa" ? `${percent}٪` : `${percent}%`;
 }
 
 function clamp01(x: number) {
@@ -95,38 +96,178 @@ function normalizeUrl(maybeUrl: string, baseUrl?: string) {
   return `${origin.replace(/\/+$/, "")}${uu}`;
 }
 
-function panelLabel(panelType?: string) {
+function panelLabel(panelType: string | undefined, lang: "fa" | "en") {
   const p = String(panelType || "").toLowerCase();
-  if (p === "wg_dashboard") return "وایرگارد";
-  return "لینک امن";
+  if (p === "wg_dashboard") return lang === "fa" ? "وایرگارد" : "WireGuard";
+  return lang === "fa" ? "لینک امن" : "Secure link";
 }
 
-function statusMeta(raw: string, createStatus?: string | null) {
+function statusMeta(raw: string, createStatus: string | null | undefined, lang: "fa" | "en") {
   const s = String(raw || "").toLowerCase();
   if (s === "active" && String(createStatus || "").toLowerCase() === "on_hold") {
     return {
       variant: "default" as const,
-      label: "در انتظار اتصال",
+      label: lang === "fa" ? "در انتظار اتصال" : "On Hold",
       className: "border-violet-500/35 bg-violet-500/15 text-violet-700 dark:text-violet-300",
     };
   }
-  if (s === "active") return { variant: "success" as const, label: "فعال", className: "" };
-  if (s === "disabled") return { variant: "warning" as const, label: "غیرفعال", className: "" };
-  if (s === "deleted") return { variant: "danger" as const, label: "حذف‌شده", className: "" };
-  return { variant: "muted" as const, label: raw || "نامشخص", className: "" };
+  if (s === "active") return { variant: "success" as const, label: lang === "fa" ? "فعال" : "Active", className: "" };
+  if (s === "disabled") return { variant: "warning" as const, label: lang === "fa" ? "غیرفعال" : "Disabled", className: "" };
+  if (s === "deleted") return { variant: "danger" as const, label: lang === "fa" ? "حذف‌شده" : "Deleted", className: "" };
+  return { variant: "muted" as const, label: raw || (lang === "fa" ? "نامشخص" : "Unknown"), className: "" };
+}
+
+function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
+  if (lang === "en") return p.label;
+  if (p.key === "7d") return "۷ روز";
+  if (p.key === "1m") return "۱ ماه";
+  if (p.key === "3m") return "۳ ماه";
+  if (p.key === "6m") return "۶ ماه";
+  if (p.key === "1y") return "۱ سال";
+  return `${fmtNumber(p.days)} روز`;
 }
 
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { me, refresh: refreshMe } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { push } = useToast();
 
   const parsedUserId = Number(id);
   const userId = Number.isFinite(parsedUserId) ? parsedUserId : 0;
   const hasValidUserId = Number.isInteger(parsedUserId) && parsedUserId > 0;
   const locked = (me?.balance ?? 1) <= 0;
+
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            invalidUserId: "Invalid user ID.",
+            resetDone: "Usage reset completed",
+            revokeDone: "Subscription links rebuilt",
+            deleteDone: "User deleted and refund completed",
+            noLinkToCopy: "No link available to copy",
+            details: "User details",
+            disabledDone: "User disabled",
+            enabledDone: "User enabled",
+            blockedTitle: "Service status needs immediate action",
+            warningTitle: "Service status is close to a limit",
+            stableTitle: "User service is stable",
+            blockedBody: "If traffic is exhausted, time has ended, or the user is disabled, renew/add first or enable the user.",
+            warningBody: "To avoid interruption, renew or add traffic before the service ends.",
+            stableBody: "All indicators look good. Subscription links can be used without limitations.",
+            subStatus: "Subscription Status",
+            totalTraffic: "Total traffic",
+            usedTraffic: "Used",
+            remainingDays: "Remaining days",
+            usagePercent: "Usage percent",
+            expiryDate: "Expiry date",
+            subscriptionLinks: "Subscription Links",
+            copyAllLinks: "Copy all links",
+            masterSub: "Main subscription link",
+            directLinks: "Direct links",
+            copy: "Copy",
+            downloadConf: "Download .conf",
+            unavailableLink: "Link is not available.",
+            opConsole: "User Operations Console",
+            opHelp: "Traffic and time increase/decrease tools in a simple step-by-step flow.",
+            opSubtitle: "Select the operation type first for faster work.",
+            renewalPackage: "Package renewal",
+            extendTime: "Extend time",
+            addTraffic: "Add traffic",
+            decreaseTraffic: "Decrease traffic",
+            decreaseTime: "Decrease time",
+            controls: "Service control",
+            renewalTitle: "Package renewal by super admin policy",
+            gb: "GB",
+            days: "days",
+            renewalDays: "Renewal duration (days)",
+            renewalGb: "Renewal traffic (GB)",
+            run: "Run",
+            extendTitle: "Extend user time",
+            currentExpire: "Current expiry",
+            selectedDate: "Selected date",
+            addTrafficTitle: "Add user traffic",
+            decreaseTrafficTitle: "Decrease traffic with refund",
+            decreaseTimeTitle: "Decrease time with refund",
+            controlsTitle: "Control operations",
+            resetUsage: "Reset usage",
+            rebuildSub: "Rebuild subscription link",
+            deleteWarning: "Use delete with refund only when you are sure about deleting the user.",
+            deleteRefund: "Delete user + refund",
+            confirmResetTitle: "Confirm usage reset",
+            confirmRevokeTitle: "Confirm subscription rebuild",
+            confirmDeleteTitle: "Confirm user deletion",
+            confirmResetBody: "Usage will be reset on all panels. Continue?",
+            confirmRevokeBody: "User subscription links will be rebuilt and may change. Continue?",
+            confirmDeleteBody: "The user will be deleted and refund will be processed by system policy. Continue?",
+            balanceLabel: t("users.balance"),
+          }
+        : {
+            invalidUserId: "شناسه کاربر نامعتبر است.",
+            resetDone: "ریست مصرف انجام شد",
+            revokeDone: "ساب‌لینک‌ها بازسازی شد",
+            deleteDone: "کاربر حذف و ریفاند انجام شد",
+            noLinkToCopy: "لینکی برای کپی وجود ندارد",
+            details: "جزئیات کاربر",
+            disabledDone: "کاربر غیرفعال شد",
+            enabledDone: "کاربر فعال شد",
+            blockedTitle: "وضعیت سرویس نیاز به اقدام فوری دارد",
+            warningTitle: "وضعیت سرویس نزدیک به محدودیت است",
+            stableTitle: "سرویس کاربر در وضعیت پایدار قرار دارد",
+            blockedBody: "اگر حجم تمام شده، زمان تمام شده یا وضعیت غیرفعال است، ابتدا تمدید/افزایش انجام دهید یا کاربر را فعال کنید.",
+            warningBody: "برای جلوگیری از قطعی سرویس، بهتر است پیش از اتمام، تمدید یا افزایش حجم انجام شود.",
+            stableBody: "همه شاخص‌ها مناسب هستند. می‌توانید لینک‌های اشتراک را بدون محدودیت استفاده کنید.",
+            subStatus: "وضعیت اشتراک",
+            totalTraffic: "حجم کل",
+            usedTraffic: "مصرف‌شده",
+            remainingDays: "روز باقی‌مانده",
+            usagePercent: "درصد مصرف",
+            expiryDate: "تاریخ انقضا",
+            subscriptionLinks: "لینک‌های اشتراک",
+            copyAllLinks: "کپی همه لینک‌ها",
+            masterSub: "لینک اصلی اشتراک",
+            directLinks: "لینک‌های مستقیم",
+            copy: "کپی",
+            downloadConf: "دانلود .conf",
+            unavailableLink: "لینک در دسترس نیست.",
+            opConsole: "کنسول عملیات کاربر",
+            opHelp: "ابزارهای افزایش/کاهش حجم و زمان به‌صورت ساده و مرحله‌ای.",
+            opSubtitle: "برای سرعت بالاتر، ابتدا نوع عملیات را انتخاب کنید.",
+            renewalPackage: "تمدید بسته‌ای",
+            extendTime: "افزایش زمان",
+            addTraffic: "افزایش حجم",
+            decreaseTraffic: "کاهش حجم",
+            decreaseTime: "کاهش زمان",
+            controls: "کنترل سرویس",
+            renewalTitle: "تمدید بسته‌ای طبق سیاست سوپرادمین",
+            gb: "گیگ",
+            days: "روز",
+            renewalDays: "مدت تمدید (روز)",
+            renewalGb: "حجم تمدید (گیگ)",
+            run: "اجرا",
+            extendTitle: "افزایش مدت زمان کاربر",
+            currentExpire: "تاریخ پایان فعلی",
+            selectedDate: "تاریخ انتخابی",
+            addTrafficTitle: "افزایش حجم کاربر",
+            decreaseTrafficTitle: "کاهش حجم (همراه ریفاند)",
+            decreaseTimeTitle: "کاهش زمان (همراه ریفاند)",
+            controlsTitle: "عملیات کنترلی",
+            resetUsage: "ریست مصرف",
+            rebuildSub: "بازسازی ساب‌لینک",
+            deleteWarning: "حذف کاربر همراه ریفاند فقط وقتی استفاده شود که از حذف مطمئن هستید.",
+            deleteRefund: "حذف کاربر + ریفاند",
+            confirmResetTitle: "تایید ریست مصرف",
+            confirmRevokeTitle: "تایید بازسازی ساب‌لینک",
+            confirmDeleteTitle: "تایید حذف کاربر",
+            confirmResetBody: "مصرف کاربر روی همه پنل‌ها ریست می‌شود. ادامه می‌دهید؟",
+            confirmRevokeBody: "ساب‌لینک‌های کاربر بازسازی می‌شود و ممکن است لینک‌ها تغییر کنند. ادامه می‌دهید؟",
+            confirmDeleteBody: "کاربر حذف می‌شود و عملیات ریفاند طبق سیاست سیستم انجام خواهد شد. ادامه می‌دهید؟",
+            balanceLabel: t("users.balance"),
+          },
+    [lang, t]
+  );
 
   const [user, setUser] = React.useState<UserOut | null>(null);
   const [links, setLinks] = React.useState<LinksResp | null>(null);
@@ -156,7 +297,7 @@ export default function UserDetailPage() {
 
   async function refresh() {
     if (!hasValidUserId) {
-      setErr("شناسه کاربر نامعتبر است.");
+      setErr(copy.invalidUserId);
       setUser(null);
       setLinks(null);
       setLoading(false);
@@ -247,9 +388,9 @@ export default function UserDetailPage() {
   async function doConfirm() {
     setConfirmOpen(false);
     if (!confirmKind) return;
-    if (confirmKind === "reset") await runOp(`/api/v1/reseller/users/${userId}/reset-usage`, {}, "ریست مصرف انجام شد");
-    if (confirmKind === "revoke") await runOp(`/api/v1/reseller/users/${userId}/revoke`, {}, "ساب‌لینک‌ها بازسازی شد");
-    if (confirmKind === "delete") await runOp(`/api/v1/reseller/users/${userId}/refund`, { action: "delete" }, "کاربر حذف و ریفاند انجام شد");
+    if (confirmKind === "reset") await runOp(`/api/v1/reseller/users/${userId}/reset-usage`, {}, copy.resetDone);
+    if (confirmKind === "revoke") await runOp(`/api/v1/reseller/users/${userId}/revoke`, {}, copy.revokeDone);
+    if (confirmKind === "delete") await runOp(`/api/v1/reseller/users/${userId}/refund`, { action: "delete" }, copy.deleteDone);
   }
 
   async function copyAllLinks() {
@@ -265,7 +406,7 @@ export default function UserDetailPage() {
       .filter(Boolean);
     const text = [links.master_link, ...direct].filter(Boolean).join("\n");
     if (!text) {
-      push({ title: "لینکی برای کپی وجود ندارد", type: "warning" });
+      push({ title: copy.noLinkToCopy, type: "warning" });
       return;
     }
     const ok = await copyText(text);
@@ -281,7 +422,7 @@ export default function UserDetailPage() {
     return { ok: true as const, direction: diffMs >= 0 ? "up" : "down", diffDays };
   }
 
-  const status = statusMeta(user?.status || "", user?.create_status);
+  const status = statusMeta(user?.status || "", user?.create_status, lang);
   const totalBytes = (user?.total_gb || 0) * 1024 * 1024 * 1024;
   const usedBytes = Number(user?.used_bytes || 0);
   const usagePct = Math.round(clamp01(totalBytes > 0 ? usedBytes / totalBytes : 0) * 100);
@@ -312,7 +453,7 @@ export default function UserDetailPage() {
           </Button>
         </div>
         <div className="text-xs text-[hsl(var(--fg))]/70">
-          {t("users.balance")}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
+          {copy.balanceLabel}: <span className="font-semibold">{fmtNumber(me?.balance ?? null)}</span>
         </div>
       </div>
 
@@ -335,18 +476,18 @@ export default function UserDetailPage() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs text-[hsl(var(--fg))]/70">جزئیات کاربر</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/70">{copy.details}</div>
                   <div className="mt-1 text-2xl font-semibold break-all">{user ? user.label : `#${userId}`}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={status.variant} className={status.className}>{status.label}</Badge>
                   {user ? (
                     (user.status || "").toLowerCase() === "active" ? (
-                      <Button variant="outline" disabled={locked || busy} onClick={() => runOp(`/api/v1/reseller/users/${userId}/set-status`, { status: "disabled" }, "کاربر غیرفعال شد")}>
+                      <Button variant="outline" disabled={locked || busy} onClick={() => runOp(`/api/v1/reseller/users/${userId}/set-status`, { status: "disabled" }, copy.disabledDone)}>
                         {t("user.disable")}
                       </Button>
                     ) : (
-                      <Button disabled={locked || busy} onClick={() => runOp(`/api/v1/reseller/users/${userId}/set-status`, { status: "active" }, "کاربر فعال شد")}>
+                      <Button disabled={locked || busy} onClick={() => runOp(`/api/v1/reseller/users/${userId}/set-status`, { status: "active" }, copy.enabledDone)}>
                         {t("user.enable")}
                       </Button>
                     )
@@ -359,14 +500,14 @@ export default function UserDetailPage() {
                   <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                   <div className="space-y-1 text-sm">
                     <div className="font-semibold">
-                      {blocked ? "وضعیت سرویس نیاز به اقدام فوری دارد" : warning ? "وضعیت سرویس نزدیک به محدودیت است" : "سرویس کاربر در وضعیت پایدار قرار دارد"}
+                      {blocked ? copy.blockedTitle : warning ? copy.warningTitle : copy.stableTitle}
                     </div>
                     <div className="text-xs opacity-90">
                       {blocked
-                        ? "اگر حجم تمام شده، زمان تمام شده یا وضعیت غیرفعال است، ابتدا تمدید/افزایش انجام دهید یا کاربر را فعال کنید."
+                        ? copy.blockedBody
                         : warning
-                        ? "برای جلوگیری از قطعی سرویس، بهتر است پیش از اتمام، تمدید یا افزایش حجم انجام شود."
-                        : "همه شاخص‌ها مناسب هستند. می‌توانید لینک‌های اشتراک را بدون محدودیت استفاده کنید."}
+                        ? copy.warningBody
+                        : copy.stableBody}
                     </div>
                   </div>
                 </div>
@@ -380,7 +521,7 @@ export default function UserDetailPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <div className="text-xl font-semibold">وضعیت اشتراک</div>
+              <div className="text-xl font-semibold">{copy.subStatus}</div>
             </CardHeader>
             <CardContent className="space-y-4">
               {loading ? (
@@ -392,27 +533,27 @@ export default function UserDetailPage() {
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">حجم کل</div>
-                      <div className="mt-1 text-lg font-semibold">{fmtNumber(user.total_gb)} گیگ</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{copy.totalTraffic}</div>
+                      <div className="mt-1 text-lg font-semibold">{fmtNumber(user.total_gb)} {copy.gb}</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">مصرف‌شده</div>
-                      <div className="mt-1 text-lg font-semibold">{fmtTrafficBytes(usedBytes)}</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{copy.usedTraffic}</div>
+                      <div className="mt-1 text-lg font-semibold">{fmtTrafficBytes(usedBytes, lang)}</div>
                     </div>
                     <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                      <div className="text-xs text-[hsl(var(--fg))]/70">روز باقی‌مانده</div>
+                      <div className="text-xs text-[hsl(var(--fg))]/70">{copy.remainingDays}</div>
                       <div className="mt-1 text-lg font-semibold">{daysLeft == null ? "—" : fmtNumber(daysLeft)}</div>
                     </div>
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-xs text-[hsl(var(--fg))]/70">
-                      <span>درصد مصرف</span>
-                      <span className="font-semibold">{usagePercentLabel(usagePct, usedBytes)}</span>
+                      <span>{copy.usagePercent}</span>
+                      <span className="font-semibold">{usagePercentLabel(usagePct, usedBytes, lang)}</span>
                     </div>
                     <Progress value={visibleUsagePct} />
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/70">
-                    تاریخ انقضا: {formatJalaliDateTime(new Date(user.expire_at))}
+                    {copy.expiryDate}: {formatJalaliDateTime(new Date(user.expire_at))}
                   </div>
                 </>
               ) : null}
@@ -422,9 +563,9 @@ export default function UserDetailPage() {
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xl font-semibold">لینک‌های اشتراک</div>
+                <div className="text-xl font-semibold">{copy.subscriptionLinks}</div>
                 <Button type="button" variant="outline" className="gap-2" disabled={!links} onClick={copyAllLinks}>
-                  <Copy size={16} /> کپی همه لینک‌ها
+                  <Copy size={16} /> {copy.copyAllLinks}
                 </Button>
               </div>
             </CardHeader>
@@ -438,7 +579,7 @@ export default function UserDetailPage() {
                 <>
                   {links.master_link ? (
                   <div className="space-y-2">
-                    <div className="text-xs text-[hsl(var(--fg))]/70">لینک اصلی اشتراک</div>
+                    <div className="text-xs text-[hsl(var(--fg))]/70">{copy.masterSub}</div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Input value={links.master_link || ""} readOnly />
                       <Button
@@ -456,7 +597,7 @@ export default function UserDetailPage() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <div className="text-sm font-semibold">لینک‌های مستقیم</div>
+                    <div className="text-sm font-semibold">{copy.directLinks}</div>
                     {(links.node_links || []).map((n) => {
                       const meta = nodeMap.get(n.node_id);
                       const full = n.config_download_url
@@ -474,7 +615,7 @@ export default function UserDetailPage() {
                               {meta?.name || n.node_name || `Node #${n.node_id}`} (#{n.node_id})
                             </div>
                             <div className="flex items-center gap-2">
-                              <Badge variant="muted">{panelLabel(n.panel_type)}</Badge>
+                              <Badge variant="muted">{panelLabel(n.panel_type, lang)}</Badge>
                               <Badge variant={n.status === "ok" ? "success" : n.status === "missing" ? "warning" : "danger"}>{n.status}</Badge>
                             </div>
                           </div>
@@ -491,7 +632,7 @@ export default function UserDetailPage() {
                                     copyText(full).then((ok) => push({ title: ok ? t("common.copied") : t("common.failed"), type: ok ? "success" : "error" }));
                                   }}
                                 >
-                                  <Copy size={15} /> کپی
+                                  <Copy size={15} /> {copy.copy}
                                 </Button>
                                 {isWg ? (
                                   <Button
@@ -501,13 +642,13 @@ export default function UserDetailPage() {
                                     className="gap-2"
                                     onClick={() => window.open(full, "_blank", "noopener,noreferrer")}
                                   >
-                                    <Download size={15} /> دانلود .conf
+                                    <Download size={15} /> {copy.downloadConf}
                                   </Button>
                                 ) : null}
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{n.detail || "لینک در دسترس نیست."}</div>
+                            <div className="mt-2 text-xs text-[hsl(var(--fg))]/70">{n.detail || copy.unavailableLink}</div>
                           )}
                         </div>
                       );
@@ -525,36 +666,36 @@ export default function UserDetailPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <div className="text-xl font-semibold">کنسول عملیات کاربر</div>
-                <HelpTip text="ابزارهای افزایش/کاهش حجم و زمان به‌صورت ساده و مرحله‌ای." />
+                <div className="text-xl font-semibold">{copy.opConsole}</div>
+                <HelpTip text={copy.opHelp} />
               </div>
-              <div className="text-sm text-[hsl(var(--fg))]/70">برای سرعت بالاتر، ابتدا نوع عملیات را انتخاب کنید.</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{copy.opSubtitle}</div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {renewalOnly ? (
                   <Button variant="primary" className="gap-2 sm:col-span-3" onClick={() => setOpMode("renewal")} type="button">
-                    <CalendarDays size={15} /> تمدید بسته‌ای
+                    <CalendarDays size={15} /> {copy.renewalPackage}
                   </Button>
                 ) : (
                   <>
                     <Button variant={opMode === "renewal" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("renewal")} type="button">
-                      <CalendarDays size={15} /> تمدید بسته‌ای
+                      <CalendarDays size={15} /> {copy.renewalPackage}
                     </Button>
                     <Button variant={opMode === "extend" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("extend")} type="button">
-                      <CalendarDays size={15} /> افزایش زمان
+                      <CalendarDays size={15} /> {copy.extendTime}
                     </Button>
                     <Button variant={opMode === "traffic_up" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_up")} type="button">
-                      <Gauge size={15} /> افزایش حجم
+                      <Gauge size={15} /> {copy.addTraffic}
                     </Button>
                     <Button variant={opMode === "traffic_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("traffic_down")} type="button">
-                      <Sparkles size={15} /> کاهش حجم
+                      <Sparkles size={15} /> {copy.decreaseTraffic}
                     </Button>
                     <Button variant={opMode === "time_down" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("time_down")} type="button">
-                      <CalendarDays size={15} /> کاهش زمان
+                      <CalendarDays size={15} /> {copy.decreaseTime}
                     </Button>
                     <Button variant={opMode === "controls" ? "primary" : "outline"} className="gap-2" onClick={() => setOpMode("controls")} type="button">
-                      <ShieldAlert size={15} /> کنترل سرویس
+                      <ShieldAlert size={15} /> {copy.controls}
                     </Button>
                   </>
                 )}
@@ -562,36 +703,36 @@ export default function UserDetailPage() {
 
               {opMode === "renewal" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">تمدید بسته‌ای طبق سیاست سوپرادمین</div>
+                  <div className="text-sm font-medium">{copy.renewalTitle}</div>
                   <div className="flex flex-wrap gap-2">
                     {renewalDurationPresets.map((p) => (
                       <Button key={p.key} type="button" size="sm" variant={renewDays === p.days ? "primary" : "outline"} onClick={() => setRenewDays(p.days)}>
-                        {p.label}
+                        {durationPresetLabel(p, lang)}
                       </Button>
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {renewalTrafficPresets.map((g) => (
                       <Button key={g} type="button" size="sm" variant={renewGb === g ? "primary" : "outline"} onClick={() => setRenewGb(g)}>
-                        {g} گیگ
+                        {g} {copy.gb}
                       </Button>
                     ))}
                   </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
                     <label className="space-y-1">
-                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">مدت تمدید (روز)</span>
+                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">{copy.renewalDays}</span>
                       <Input className="min-w-0" type="number" min={1} value={renewDays} disabled={renewalOnly} onChange={(e) => setRenewDays(Math.max(1, Number(e.target.value) || 1))} />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">حجم تمدید (گیگ)</span>
+                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">{copy.renewalGb}</span>
                       <Input className="min-w-0" type="number" min={1} value={renewGb} disabled={renewalOnly} onChange={(e) => setRenewGb(Math.max(1, Number(e.target.value) || 1))} />
                     </label>
                     <Button
                       className="self-end"
                       disabled={locked || busy}
-                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/renew`, { days: renewDays, total_gb: renewGb, pricing_mode: "bundle" }, "تمدید بسته‌ای انجام شد")}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/renew`, { days: renewDays, total_gb: renewGb, pricing_mode: "bundle" }, copy.renewalPackage)}
                     >
-                      اجرا
+                      {copy.run}
                     </Button>
                   </div>
                 </div>
@@ -599,11 +740,11 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "extend" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">افزایش مدت زمان کاربر</div>
+                  <div className="text-sm font-medium">{copy.extendTitle}</div>
                   <div className="flex flex-wrap gap-2">
                     {[7, 31, 90, 180, 365].map((d) => (
                       <Button key={d} type="button" size="sm" variant={extendDays === d ? "primary" : "outline"} onClick={() => setExtendDays(d)}>
-                        {d} روز
+                        {d} {copy.days}
                       </Button>
                     ))}
                   </div>
@@ -623,16 +764,16 @@ export default function UserDetailPage() {
                     />
                     <Button
                       disabled={locked || busy}
-                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/extend`, { days: extendDays }, "تمدید انجام شد")}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/extend`, { days: extendDays }, copy.extendTime)}
                     >
-                      اجرا
+                      {copy.run}
                     </Button>
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/75">
-                    تاریخ پایان فعلی: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
+                    {copy.currentExpire}: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
                     {targetDate ? (
                       <span className="mr-2">
-                        | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
+                        | {copy.selectedDate}: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
                       </span>
                     ) : null}
                   </div>
@@ -641,11 +782,11 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "traffic_up" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">افزایش حجم کاربر</div>
+                  <div className="text-sm font-medium">{copy.addTrafficTitle}</div>
                   <div className="flex flex-wrap gap-2">
                     {[5, 10, 20, 50, 100].map((g) => (
                       <Button key={g} type="button" size="sm" variant={addGb === g ? "primary" : "outline"} onClick={() => setAddGb(g)}>
-                        +{g} گیگ
+                        +{g} {copy.gb}
                       </Button>
                     ))}
                   </div>
@@ -653,9 +794,9 @@ export default function UserDetailPage() {
                     <Input className="min-w-[130px] flex-1" type="number" min={1} value={addGb} onChange={(e) => setAddGb(Math.max(1, Number(e.target.value) || 1))} />
                     <Button
                       disabled={locked || busy}
-                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/add-traffic`, { add_gb: addGb }, "افزایش حجم انجام شد")}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/add-traffic`, { add_gb: addGb }, copy.addTraffic)}
                     >
-                      اجرا
+                      {copy.run}
                     </Button>
                   </div>
                 </div>
@@ -663,11 +804,11 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "traffic_down" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.24)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">کاهش حجم (همراه ریفاند)</div>
+                  <div className="text-sm font-medium">{copy.decreaseTrafficTitle}</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 5, 10, 20, 50].map((g) => (
                       <Button key={g} type="button" size="sm" variant={decreaseGb === g ? "primary" : "outline"} onClick={() => setDecreaseGb(g)}>
-                        -{g} گیگ
+                        -{g} {copy.gb}
                       </Button>
                     ))}
                   </div>
@@ -677,10 +818,10 @@ export default function UserDetailPage() {
                       variant="outline"
                       disabled={locked || busy}
                       onClick={() =>
-                        runOp(`/api/v1/reseller/users/${userId}/refund`, { action: "decrease", decrease_gb: decreaseGb }, "کاهش حجم و ریفاند انجام شد")
+                        runOp(`/api/v1/reseller/users/${userId}/refund`, { action: "decrease", decrease_gb: decreaseGb }, copy.decreaseTraffic)
                       }
                     >
-                      اجرا
+                      {copy.run}
                     </Button>
                   </div>
                 </div>
@@ -688,11 +829,11 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "time_down" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">کاهش زمان (همراه ریفاند)</div>
+                  <div className="text-sm font-medium">{copy.decreaseTimeTitle}</div>
                   <div className="flex flex-wrap gap-2">
                     {[1, 3, 7, 15, 31, 60].map((d) => (
                       <Button key={d} type="button" size="sm" variant={decreaseDays === d ? "primary" : "outline"} onClick={() => setDecreaseDays(d)}>
-                        -{d} روز
+                        -{d} {copy.days}
                       </Button>
                     ))}
                   </div>
@@ -713,16 +854,16 @@ export default function UserDetailPage() {
                     <Button
                       variant="outline"
                       disabled={locked || busy}
-                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/decrease-time`, { days: decreaseDays }, "کاهش زمان انجام شد")}
+                      onClick={() => runOp(`/api/v1/reseller/users/${userId}/decrease-time`, { days: decreaseDays }, copy.decreaseTime)}
                     >
-                      اجرا
+                      {copy.run}
                     </Button>
                   </div>
                   <div className="text-xs text-[hsl(var(--fg))]/75">
-                    تاریخ پایان فعلی: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
+                    {copy.currentExpire}: <span className="font-semibold">{user ? formatJalaliDateTime(new Date(user.expire_at)) : "—"}</span>
                     {targetDate ? (
                       <span className="mr-2">
-                        | تاریخ انتخابی: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
+                        | {copy.selectedDate}: <span className="font-semibold">{formatJalaliDateTime(targetDate)}</span>
                       </span>
                     ) : null}
                   </div>
@@ -731,20 +872,20 @@ export default function UserDetailPage() {
 
               {!renewalOnly && opMode === "controls" ? (
                 <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.3)_100%)] p-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
-                  <div className="text-sm font-medium">عملیات کنترلی</div>
+                  <div className="text-sm font-medium">{copy.controlsTitle}</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={locked || busy} onClick={() => ask("reset")}>
-                      ریست مصرف
+                      {copy.resetUsage}
                     </Button>
                     <Button type="button" variant="outline" disabled={busy} onClick={() => ask("revoke")}>
-                      بازسازی ساب‌لینک
+                      {copy.rebuildSub}
                     </Button>
                   </div>
                   <div className="max-w-full overflow-hidden rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 break-words [overflow-wrap:anywhere]">
-                    حذف کاربر همراه ریفاند فقط وقتی استفاده شود که از حذف مطمئن هستید.
+                    {copy.deleteWarning}
                   </div>
                   <Button type="button" variant="outline" disabled={busy} onClick={() => ask("delete")}>
-                    حذف کاربر + ریفاند
+                    {copy.deleteRefund}
                   </Button>
                 </div>
               ) : null}
@@ -758,19 +899,19 @@ export default function UserDetailPage() {
         onClose={() => setConfirmOpen(false)}
         title={
           confirmKind === "reset"
-            ? "تایید ریست مصرف"
+            ? copy.confirmResetTitle
             : confirmKind === "revoke"
-            ? "تایید بازسازی ساب‌لینک"
-            : "تایید حذف کاربر"
+            ? copy.confirmRevokeTitle
+            : copy.confirmDeleteTitle
         }
       >
         <div className="space-y-4">
           <div className="text-sm text-[hsl(var(--fg))]/80">
             {confirmKind === "reset"
-              ? "مصرف کاربر روی همه پنل‌ها ریست می‌شود. ادامه می‌دهید؟"
+              ? copy.confirmResetBody
               : confirmKind === "revoke"
-              ? "ساب‌لینک‌های کاربر بازسازی می‌شود و ممکن است لینک‌ها تغییر کنند. ادامه می‌دهید؟"
-              : "کاربر حذف می‌شود و عملیات ریفاند طبق سیاست سیستم انجام خواهد شد. ادامه می‌دهید؟"}
+              ? copy.confirmRevokeBody
+              : copy.confirmDeleteBody}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>

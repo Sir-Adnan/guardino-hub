@@ -12,6 +12,7 @@ import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
 import { useAuth } from "@/components/auth-context";
 import { formatJalaliDateTime } from "@/lib/jalali";
+import { useI18n } from "@/components/i18n-context";
 
 type ResellerMini = { id: number; username: string };
 type LedgerRow = {
@@ -47,38 +48,97 @@ async function fetchAllResellersForAdmin(maxPages = 50): Promise<ResellerMini[]>
   return all;
 }
 
-function reasonMeta(reason: string, amount: number): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
+function reasonMeta(reason: string, amount: number, lang: "fa" | "en"): { label: string; variant: "success" | "danger" | "warning" | "muted" } {
   const key = (reason || "").toLowerCase();
+  const en = lang === "en";
   const map: Record<string, { label: string; variant: "success" | "danger" | "warning" | "muted" }> = {
-    manual_credit: { label: "شارژ دستی", variant: "success" },
-    manual_debit: { label: "کاهش دستی موجودی", variant: "danger" },
-    user_create: { label: "هزینه ساخت کاربر", variant: "danger" },
-    add_traffic: { label: "هزینه افزایش حجم", variant: "danger" },
-    extend: { label: "هزینه افزایش زمان", variant: "danger" },
-    renew_reset_time_and_volume: { label: "تمدید: ریست زمان و حجم", variant: "danger" },
-    renew_add_time_and_volume: { label: "تمدید: افزودن زمان و حجم", variant: "danger" },
-    renew_reset_time_carry_volume: { label: "تمدید: ریست زمان + حجم باقی‌مانده", variant: "danger" },
-    renew_reset_volume_carry_time: { label: "تمدید: ریست حجم + زمان باقی‌مانده", variant: "danger" },
-    refund_decrease: { label: "بازگشت وجه کاهش حجم", variant: "success" },
-    refund_decrease_time: { label: "بازگشت وجه کاهش زمان", variant: "success" },
-    refund_delete: { label: "بازگشت وجه حذف کاربر", variant: "success" },
-    change_nodes_add: { label: "هزینه افزودن نود", variant: "warning" },
+    manual_credit: { label: en ? "Manual credit" : "شارژ دستی", variant: "success" },
+    manual_debit: { label: en ? "Manual debit" : "کاهش دستی موجودی", variant: "danger" },
+    user_create: { label: en ? "User creation charge" : "هزینه ساخت کاربر", variant: "danger" },
+    add_traffic: { label: en ? "Traffic add charge" : "هزینه افزایش حجم", variant: "danger" },
+    extend: { label: en ? "Time extension charge" : "هزینه افزایش زمان", variant: "danger" },
+    renew_reset_time_and_volume: { label: en ? "Renewal: reset time and volume" : "تمدید: ریست زمان و حجم", variant: "danger" },
+    renew_add_time_and_volume: { label: en ? "Renewal: add time and volume" : "تمدید: افزودن زمان و حجم", variant: "danger" },
+    renew_reset_time_carry_volume: { label: en ? "Renewal: reset time + carry volume" : "تمدید: ریست زمان + حجم باقی‌مانده", variant: "danger" },
+    renew_reset_volume_carry_time: { label: en ? "Renewal: reset volume + carry time" : "تمدید: ریست حجم + زمان باقی‌مانده", variant: "danger" },
+    refund_decrease: { label: en ? "Traffic decrease refund" : "بازگشت وجه کاهش حجم", variant: "success" },
+    refund_decrease_time: { label: en ? "Time decrease refund" : "بازگشت وجه کاهش زمان", variant: "success" },
+    refund_delete: { label: en ? "Delete user refund" : "بازگشت وجه حذف کاربر", variant: "success" },
+    change_nodes_add: { label: en ? "Add node charge" : "هزینه افزودن نود", variant: "warning" },
   };
   if (map[key]) return map[key];
-  if (amount > 0) return { label: "افزایش موجودی", variant: "success" };
-  if (amount < 0) return { label: "کسر موجودی", variant: "danger" };
-  return { label: reason || "نامشخص", variant: "muted" };
+  if (amount > 0) return { label: en ? "Balance increase" : "افزایش موجودی", variant: "success" };
+  if (amount < 0) return { label: en ? "Balance decrease" : "کسر موجودی", variant: "danger" };
+  return { label: reason || (en ? "Unknown" : "نامشخص"), variant: "muted" };
 }
 
-function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean) {
-  if (!isAdmin) return "حساب شما";
-  return resellerMap[resellerId] || `ریسیلر #${resellerId}`;
+function resellerName(resellerId: number, resellerMap: Record<number, string>, isAdmin: boolean, lang: "fa" | "en") {
+  if (!isAdmin) return lang === "en" ? "Your account" : "حساب شما";
+  return resellerMap[resellerId] || `${lang === "en" ? "Reseller" : "ریسیلر"} #${resellerId}`;
 }
 
 export default function LedgerPage() {
   const { push } = useToast();
   const { me } = useAuth();
+  const { t, lang } = useI18n();
   const isAdmin = me?.role === "admin";
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            eyebrow: "Ledger Analytics",
+            title: "Financial ledger",
+            subtitleAdmin: "Transaction history for all resellers",
+            subtitleReseller: "Transaction history for your account",
+            live: "Live data",
+            updating: "Updating...",
+            records: "Records",
+            incoming: "Total incoming",
+            outgoing: "Total outgoing",
+            net: "Net",
+            detailsTitle: "Transaction details",
+            detailsSubtitle: "Filter and review financial rows",
+            resellerSearch: "Search reseller by name or ID",
+            allResellers: "All resellers",
+            load: "Load",
+            refresh: "Refresh",
+            personal: "Your personal ledger",
+            reseller: "Reseller",
+            amount: "Amount",
+            balanceAfter: "Balance after",
+            operationType: "Operation type",
+            id: "ID",
+            time: "Time",
+            empty: "No items found.",
+          }
+        : {
+            eyebrow: "تحلیل دفترکل",
+            title: "دفتر کل مالی",
+            subtitleAdmin: "تاریخچه تراکنش تمام رسیلرها",
+            subtitleReseller: "تاریخچه تراکنش‌های حساب شما",
+            live: "داده‌های زنده",
+            updating: "در حال بروزرسانی...",
+            records: "تعداد رکوردها",
+            incoming: "ورودی کل",
+            outgoing: "خروجی کل",
+            net: "خالص",
+            detailsTitle: "جزئیات تراکنش‌ها",
+            detailsSubtitle: "فیلتر و بررسی دقیق ردیف‌های مالی",
+            resellerSearch: "جستجوی رسیلر (نام یا ID)",
+            allResellers: "همه رسیلرها",
+            load: "بارگذاری",
+            refresh: "به‌روزرسانی",
+            personal: "دفتر کل شخصی شما",
+            reseller: "ریسیلر",
+            amount: "مبلغ",
+            balanceAfter: "موجودی بعد",
+            operationType: "نوع عملیات",
+            id: "شناسه",
+            time: "زمان",
+            empty: "موردی یافت نشد.",
+          },
+    [lang]
+  );
 
   const [resellerId, setResellerId] = React.useState<string>("");
   const [resellerQuery, setResellerQuery] = React.useState("");
@@ -105,7 +165,7 @@ export default function LedgerPage() {
       setSummary((res.summary || null) as LedgerSummary | null);
       setTotal(res.total || 0);
     } catch (e: any) {
-      push({ title: "خطا", desc: String(e.message || e), type: "error" });
+      push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
       setLoading(false);
     }
@@ -117,7 +177,7 @@ export default function LedgerPage() {
       try {
         setResellers(await fetchAllResellersForAdmin());
       } catch (e: any) {
-        push({ title: "خطا", desc: String(e.message || e), type: "error" });
+        push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,16 +236,16 @@ export default function LedgerPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-1 text-xs text-[hsl(var(--fg))]/75">
               <ArrowRightLeft size={13} />
-              Ledger Analytics
+              {copy.eyebrow}
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">دفتر کل مالی</h1>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">{copy.title}</h1>
             <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">
-              {isAdmin ? "تاریخچه تراکنش تمام رسیلرها" : "تاریخچه تراکنش‌های حساب شما"}
+              {isAdmin ? copy.subtitleAdmin : copy.subtitleReseller}
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            {loading ? "در حال بروزرسانی..." : "داده‌های زنده"}
+            {loading ? copy.updating : copy.live}
           </div>
         </div>
       </section>
@@ -193,28 +253,28 @@ export default function LedgerPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">تعداد رکوردها</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.records}</div>
             <ChartNoAxesCombined size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.count)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">ورودی کل</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.incoming}</div>
             <Wallet size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.inAmount)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">خروجی کل</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.outgoing}</div>
             <Wallet size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-red-600">{fmtNumber(stats.outAmount)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">خالص</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.net}</div>
             <ArrowRightLeft size={16} className="opacity-60" />
           </div>
           <div className={`mt-1 text-lg font-semibold ${stats.net >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtNumber(stats.net)}</div>
@@ -223,14 +283,14 @@ export default function LedgerPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">جزئیات تراکنش‌ها</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">فیلتر و بررسی دقیق ردیف‌های مالی</div>
+          <div className="text-xl font-semibold">{copy.detailsTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.detailsSubtitle}</div>
         </CardHeader>
         <CardContent className="space-y-3">
           {isAdmin ? (
             <div className="grid gap-2 md:grid-cols-3">
               <Input
-                placeholder="جستجوی رسیلر (نام یا ID)"
+                placeholder={copy.resellerSearch}
                 value={resellerQuery}
                 onChange={(e) => setResellerQuery(e.target.value)}
               />
@@ -239,7 +299,7 @@ export default function LedgerPage() {
                 value={resellerId}
                 onChange={(e) => setResellerId(e.target.value)}
               >
-                <option value="">همه رسیلرها</option>
+                <option value="">{copy.allResellers}</option>
                 {filteredResellers.map((r) => (
                   <option key={r.id} value={String(r.id)}>
                     {r.username} (#{r.id})
@@ -247,21 +307,21 @@ export default function LedgerPage() {
                 ))}
               </select>
               <Button type="button" variant="outline" onClick={load} disabled={loading}>
-                {loading ? "..." : "بارگذاری"}
+                {loading ? "..." : copy.load}
               </Button>
             </div>
           ) : (
             <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] px-3 py-2 text-xs text-[hsl(var(--fg))]/70">
-              <span>دفتر کل شخصی شما</span>
+              <span>{copy.personal}</span>
               <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
-                {loading ? "..." : "به‌روزرسانی"}
+                {loading ? "..." : copy.refresh}
               </Button>
             </div>
           )}
 
           <div className="space-y-2 md:hidden">
             {items.map((t) => {
-              const meta = reasonMeta(t.reason, t.amount);
+              const meta = reasonMeta(t.reason, t.amount, lang);
               return (
                 <div key={t.id} className="space-y-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(150deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3 text-xs">
                   <div className="flex items-center justify-between">
@@ -269,40 +329,40 @@ export default function LedgerPage() {
                     <Badge variant={meta.variant}>{meta.label}</Badge>
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--surface-card-1))] px-2 py-1">
-                    <span className="text-[hsl(var(--fg))]/65">ریسیلر</span>
-                    <span className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin)}</span>
+                    <span className="text-[hsl(var(--fg))]/65">{copy.reseller}</span>
+                    <span className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin, lang)}</span>
                   </div>
                   <div className={t.amount >= 0 ? "text-emerald-700" : "text-red-700"}>
-                    مبلغ: {t.amount >= 0 ? "+" : ""}{fmtNumber(t.amount)}
+                    {copy.amount}: {t.amount >= 0 ? "+" : ""}{fmtNumber(t.amount)}
                   </div>
-                  <div>موجودی بعد از عملیات: {fmtNumber(t.balance_after)}</div>
+                  <div>{copy.balanceAfter}: {fmtNumber(t.balance_after)}</div>
                   <div className="text-[hsl(var(--fg))]/65">{t.occurred_at ? formatJalaliDateTime(t.occurred_at) : "-"}</div>
                 </div>
               );
             })}
-            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">موردی یافت نشد.</div> : null}
+            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">{copy.empty}</div> : null}
           </div>
 
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="text-[hsl(var(--fg))]/70">
                 <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
-                  <th className="text-right py-2">شناسه</th>
-                  <th className="text-right py-2">ریسیلر</th>
-                  <th className="text-right py-2">مبلغ</th>
-                  <th className="text-right py-2">نوع عملیات</th>
-                  <th className="text-right py-2">موجودی بعد</th>
-                  <th className="text-right py-2">زمان</th>
+                  <th className="text-right py-2">{copy.id}</th>
+                  <th className="text-right py-2">{copy.reseller}</th>
+                  <th className="text-right py-2">{copy.amount}</th>
+                  <th className="text-right py-2">{copy.operationType}</th>
+                  <th className="text-right py-2">{copy.balanceAfter}</th>
+                  <th className="text-right py-2">{copy.time}</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((t) => {
-                  const meta = reasonMeta(t.reason, t.amount);
+                  const meta = reasonMeta(t.reason, t.amount, lang);
                   return (
                     <tr key={t.id} className="border-b border-[hsl(var(--border))] transition-colors hover:bg-[hsl(var(--accent)/0.06)]">
                       <td className="py-2">{t.id}</td>
                       <td className="py-2">
-                        <div className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin)}</div>
+                        <div className="font-medium">{resellerName(t.reseller_id, resellerMap, isAdmin, lang)}</div>
                         {isAdmin ? <div className="text-xs text-[hsl(var(--fg))]/55">#{t.reseller_id}</div> : null}
                       </td>
                       <td className={`py-2 font-medium ${t.amount >= 0 ? "text-emerald-700" : "text-red-700"}`}>
@@ -316,7 +376,7 @@ export default function LedgerPage() {
                 })}
                 {!items.length ? (
                   <tr>
-                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={6}>موردی یافت نشد.</td>
+                    <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={6}>{copy.empty}</td>
                   </tr>
                 ) : null}
               </tbody>

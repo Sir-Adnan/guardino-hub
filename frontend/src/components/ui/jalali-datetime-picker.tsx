@@ -7,6 +7,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react
 import { cn } from "@/lib/cn";
 import { formatJalaliDateTime, jalaliToGregorian, normalizeFaDigits } from "@/lib/jalali";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-context";
 
 const MONTHS_FA = [
   "فروردین",
@@ -23,10 +24,38 @@ const MONTHS_FA = [
   "اسفند",
 ];
 
+const MONTHS_EN = [
+  "Farvardin",
+  "Ordibehesht",
+  "Khordad",
+  "Tir",
+  "Mordad",
+  "Shahrivar",
+  "Mehr",
+  "Aban",
+  "Azar",
+  "Dey",
+  "Bahman",
+  "Esfand",
+];
+
 const WEEKDAYS_FA = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+const WEEKDAYS_EN = ["Sa", "Su", "Mo", "Tu", "We", "Th", "Fr"];
 
 function toPersianDigits(value: number | string) {
   return String(value).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)] || d);
+}
+
+function formatNumber(value: number | string, lang: string) {
+  return lang === "en" ? String(value) : toPersianDigits(value);
+}
+
+function formatJalaliDisplay(date: Date, lang: string) {
+  if (lang !== "en") return formatJalaliDateTime(date);
+  const parts = getJalaliParts(date);
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${parts.day} ${MONTHS_EN[parts.month - 1] || ""} ${parts.year} ${hh}:${mm}`;
 }
 
 function getJalaliParts(date: Date) {
@@ -78,7 +107,7 @@ export function JalaliDateTimePicker({
   className,
   triggerClassName,
   mode = "full",
-  placeholder = "انتخاب تاریخ",
+  placeholder,
 }: {
   value: Date | null;
   onChange: (next: Date) => void;
@@ -88,6 +117,32 @@ export function JalaliDateTimePicker({
   mode?: "full" | "icon";
   placeholder?: string;
 }) {
+  const { lang } = useI18n();
+  const isEn = lang === "en";
+  const copy = isEn
+    ? {
+        placeholder: "Select date",
+        previousMonth: "Previous month",
+        nextMonth: "Next month",
+        time: "Time",
+        now: "Now",
+        selectedDate: "Selected date",
+        chooseJalaliDate: "Select Jalali date",
+        backToNow: "Back to now",
+      }
+    : {
+        placeholder: "انتخاب تاریخ",
+        previousMonth: "ماه قبل",
+        nextMonth: "ماه بعد",
+        time: "زمان",
+        now: "الان",
+        selectedDate: "تاریخ انتخابی",
+        chooseJalaliDate: "انتخاب تاریخ شمسی",
+        backToNow: "بازگشت به الان",
+      };
+  const months = isEn ? MONTHS_EN : MONTHS_FA;
+  const weekdays = isEn ? WEEKDAYS_EN : WEEKDAYS_FA;
+  const placeholderText = placeholder || copy.placeholder;
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -223,7 +278,7 @@ export function JalaliDateTimePicker({
                   setViewMonth(m);
                   setViewYear(y);
                 }}
-                aria-label="ماه قبل"
+                aria-label={copy.previousMonth}
               >
                 <ChevronRight size={16} />
               </button>
@@ -234,7 +289,7 @@ export function JalaliDateTimePicker({
                   value={viewMonth}
                   onChange={(e) => setViewMonth(Number(e.target.value))}
                 >
-                  {MONTHS_FA.map((m, i) => (
+                  {months.map((m, i) => (
                     <option key={m} value={i + 1}>
                       {m}
                     </option>
@@ -247,7 +302,7 @@ export function JalaliDateTimePicker({
                 >
                   {years.map((y) => (
                     <option key={y} value={y}>
-                      {toPersianDigits(y)}
+                      {formatNumber(y, lang)}
                     </option>
                   ))}
                 </select>
@@ -262,14 +317,14 @@ export function JalaliDateTimePicker({
                   setViewMonth(m);
                   setViewYear(y);
                 }}
-                aria-label="ماه بعد"
+                aria-label={copy.nextMonth}
               >
                 <ChevronLeft size={16} />
               </button>
             </div>
 
             <div className="grid grid-cols-7 gap-1 border-b border-[hsl(var(--border))] pb-2 text-center text-xs text-[hsl(var(--fg))]/70">
-              {WEEKDAYS_FA.map((d) => (
+              {weekdays.map((d) => (
                 <div key={d}>{d}</div>
               ))}
             </div>
@@ -301,7 +356,7 @@ export function JalaliDateTimePicker({
                       commit(viewYear, viewMonth, day, hour, minute);
                     }}
                   >
-                    {toPersianDigits(day)}
+                    {formatNumber(day, lang)}
                   </button>
                 );
               })}
@@ -328,7 +383,7 @@ export function JalaliDateTimePicker({
             <div className="mt-3 rounded-xl border border-[hsl(var(--border))] p-2.5">
               <div className="mb-2 flex items-center gap-2 text-xs text-[hsl(var(--fg))]/75">
                 <Clock3 size={14} />
-                زمان
+                {copy.time}
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -367,7 +422,7 @@ export function JalaliDateTimePicker({
                     syncFromDate(now);
                   }}
                 >
-                  الان
+                  {copy.now}
                 </Button>
               </div>
             </div>
@@ -383,8 +438,8 @@ export function JalaliDateTimePicker({
           type="button"
           disabled={disabled}
           onClick={() => !disabled && setOpen((v) => !v)}
-          title={value ? `تاریخ انتخابی: ${formatJalaliDateTime(value)}` : placeholder}
-          aria-label="انتخاب تاریخ شمسی"
+          title={value ? `${copy.selectedDate}: ${formatJalaliDisplay(value, lang)}` : placeholderText}
+          aria-label={copy.chooseJalaliDate}
           className={cn(
             "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--card))_0%,hsl(var(--muted)/0.34)_100%)] text-[hsl(var(--fg))]/80 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[hsl(var(--accent)/0.45)] hover:text-[hsl(var(--accent))] hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-60",
             triggerClassName
@@ -402,7 +457,7 @@ export function JalaliDateTimePicker({
             triggerClassName
           )}
         >
-          <span className="truncate text-right">{value ? formatJalaliDateTime(value) : placeholder}</span>
+          <span className="truncate text-right">{value ? formatJalaliDisplay(value, lang) : placeholderText}</span>
           <span className="flex items-center gap-1 text-[hsl(var(--fg))]/70">
             {value ? (
               <span
@@ -414,8 +469,8 @@ export function JalaliDateTimePicker({
                 }}
                 className="rounded p-1 hover:bg-[hsl(var(--muted))]"
                 role="button"
-                aria-label="بازگشت به الان"
-                title="بازگشت به الان"
+                aria-label={copy.backToNow}
+                title={copy.backToNow}
               >
                 <X size={14} />
               </span>

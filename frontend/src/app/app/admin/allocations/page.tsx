@@ -122,15 +122,21 @@ function isAdminGroup(group: ResellerAllocationGroup | null): boolean {
   return (group?.reseller_role || "").toLowerCase() === "admin";
 }
 
-function accountRoleLabel(group: ResellerAllocationGroup | null): string {
-  return isAdminGroup(group) ? "سوپرادمین" : "رسیلر";
+function accountRoleLabel(group: ResellerAllocationGroup | null, lang: "fa" | "en"): string {
+  if (isAdminGroup(group)) return lang === "fa" ? "سوپرادمین" : "Super Admin";
+  return lang === "fa" ? "رسیلر" : "Reseller";
 }
 
-function AllocationNodeCloud({ allocations }: { allocations: GroupedAllocationItem[] }) {
+function AllocationNodeCloud({ allocations, lang }: { allocations: GroupedAllocationItem[]; lang: "fa" | "en" }) {
+  const copy =
+    lang === "fa"
+      ? { empty: "بدون تخصیص", title: "نودهای تخصیص داده‌شده", nodeCount: (count: number) => `${fmtNumber(count)} نود`, default: "پیش‌فرض" }
+      : { empty: "No allocation", title: "Assigned nodes", nodeCount: (count: number) => `${fmtNumber(count)} nodes`, default: "Default" };
+
   if (!allocations.length) {
     return (
       <div className="rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-3 py-2 text-xs text-[hsl(var(--fg))]/60">
-        بدون تخصیص
+        {copy.empty}
       </div>
     );
   }
@@ -145,8 +151,8 @@ function AllocationNodeCloud({ allocations }: { allocations: GroupedAllocationIt
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[11px] text-[hsl(var(--fg))]/56">
-        <span>نودهای تخصیص داده‌شده</span>
-        <span>{fmtNumber(allocations.length)} نود</span>
+        <span>{copy.title}</span>
+        <span>{copy.nodeCount(allocations.length)}</span>
       </div>
       <div className="grid max-h-44 min-w-0 gap-1.5 overflow-y-auto pr-1 sm:max-h-36 sm:grid-cols-2 xl:max-h-32">
         {sorted.map((a) => (
@@ -160,7 +166,7 @@ function AllocationNodeCloud({ allocations }: { allocations: GroupedAllocationIt
               <span className="truncate text-xs font-semibold">{a.node_name}</span>
               {a.default_for_reseller ? (
                 <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-                  پیش‌فرض
+                  {copy.default}
                 </span>
               ) : null}
             </div>
@@ -176,7 +182,7 @@ function AllocationNodeCloud({ allocations }: { allocations: GroupedAllocationIt
 
 export default function AllocationsPage() {
   const { push } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   const [nodes, setNodes] = React.useState<NodeOut[]>([]);
   const [groups, setGroups] = React.useState<ResellerAllocationGroup[]>([]);
@@ -197,6 +203,86 @@ export default function AllocationsPage() {
   const [busy, setBusy] = React.useState(false);
   const [credentialBusy, setCredentialBusy] = React.useState<number | null>(null);
   const initialDeepLinkHandled = React.useRef(false);
+
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            subtitle: "Account-centered view for managing nodes, panels, and custom pricing for super admins and resellers.",
+            accountCount: (count: number) => `${fmtNumber(count)} accounts`,
+            allocatedAccounts: "Accounts with allocations",
+            activeAllocations: "Active allocations",
+            defaultNode: "Default node",
+            activePanelType: "Active panel types",
+            groupedTitle: "Allocations by account",
+            groupedSubtitle: "The super admin and each reseller appear once, with their related nodes inside the same card.",
+            searchPlaceholder: "Search super admin, reseller, ID, or username",
+            node: "Node",
+            enabled: "Enabled",
+            panel: "Panel",
+            manage: "Manage",
+            manageTitle: (group: ResellerAllocationGroup | null) =>
+              group ? `Manage allocations - ${accountRoleLabel(group, "en")} ${group.reseller_name}` : "Manage allocations",
+            account: "Account",
+            nodeCount: "Node count",
+            status: "Status",
+            addNodeTitle: "Add new node",
+            selectNode: "Select node",
+            priceOverrideGb: "Custom price/GB",
+            default: "Default",
+            add: "Add",
+            nodeEnabled: "Node enabled",
+            nodeDisabled: "Node disabled",
+            allocationEnabled: "Allocation enabled",
+            allocationDisabled: "Allocation disabled",
+            notDefault: "Not default",
+            priceOverridePlaceholder: "Override price",
+            savePrice: "Save price",
+            deleteAllocation: "Delete allocation",
+            noAllocations: "No node has been assigned to this account yet.",
+            deleteBody: (name: string) => `Allocation ${name} will be removed from this account.`,
+            autoImportFailedTitle: "Automatic user import did not complete",
+            autoImportFailedDesc: (message: string) => `Connection data was saved, but automatic import failed: ${message}`,
+          }
+        : {
+            subtitle: "نمای حساب‌محور برای مدیریت نودها، پنل‌ها و قیمت‌های اختصاصی سوپرادمین و رسیلرها.",
+            accountCount: (count: number) => `${fmtNumber(count)} حساب`,
+            allocatedAccounts: "حساب‌های دارای تخصیص",
+            activeAllocations: "تخصیص فعال",
+            defaultNode: "نود پیش‌فرض",
+            activePanelType: "نوع پنل فعال",
+            groupedTitle: "تخصیص‌ها بر اساس حساب",
+            groupedSubtitle: "سوپرادمین و هر رسیلر فقط یک بار نمایش داده می‌شوند و نودهای مرتبط داخل همان کارت دیده می‌شوند.",
+            searchPlaceholder: "جستجوی سوپرادمین، رسیلر، ID یا نام کاربری",
+            node: "نود",
+            enabled: "فعال",
+            panel: "پنل",
+            manage: "مدیریت",
+            manageTitle: (group: ResellerAllocationGroup | null) =>
+              group ? `مدیریت تخصیص‌ها - ${accountRoleLabel(group, "fa")} ${group.reseller_name}` : "مدیریت تخصیص‌ها",
+            account: "حساب",
+            nodeCount: "تعداد نود",
+            status: "وضعیت",
+            addNodeTitle: "افزودن نود جدید",
+            selectNode: "انتخاب نود",
+            priceOverrideGb: "قیمت اختصاصی/GB",
+            default: "پیش‌فرض",
+            add: "افزودن",
+            nodeEnabled: "نود فعال",
+            nodeDisabled: "نود غیرفعال",
+            allocationEnabled: "تخصیص فعال",
+            allocationDisabled: "تخصیص غیرفعال",
+            notDefault: "غیر پیش‌فرض",
+            priceOverridePlaceholder: "قیمت override",
+            savePrice: "ذخیره قیمت",
+            deleteAllocation: "حذف تخصیص",
+            noAllocations: "هنوز نودی به این حساب تخصیص داده نشده است.",
+            deleteBody: (name: string) => `تخصیص ${name} از این حساب حذف می‌شود.`,
+            autoImportFailedTitle: "ورود خودکار کاربران انجام نشد",
+            autoImportFailedDesc: (message: string) => `اطلاعات اتصال ذخیره شد، اما import خودکار خطا داد: ${message}`,
+          },
+    [lang]
+  );
 
   const selectedGroup = React.useMemo(
     () => groups.find((g) => g.reseller_id === selectedResellerId) || null,
@@ -409,8 +495,8 @@ export default function AllocationsPage() {
       await importAllocationUsersById(allocationId, false);
     } catch (e: any) {
       push({
-        title: "ورود خودکار کاربران انجام نشد",
-        desc: `اطلاعات اتصال ذخیره شد، اما import خودکار خطا داد: ${String(e.message || e)}`,
+        title: copy.autoImportFailedTitle,
+        desc: copy.autoImportFailedDesc(String(e.message || e)),
         type: "warning",
       });
     }
@@ -556,11 +642,11 @@ export default function AllocationsPage() {
               Reseller Node Access
             </div>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("adminAllocations.title")}</h1>
-            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">نمای حساب‌محور برای مدیریت نودها، پنل‌ها و قیمت‌های اختصاصی سوپرادمین و رسیلرها.</p>
+            <p className="mt-1 text-sm text-[hsl(var(--fg))]/70">{copy.subtitle}</p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--accent)/0.16),hsl(var(--surface-card-1)))] px-3 py-2 text-xs font-medium text-[hsl(var(--fg))]/80">
             <Activity size={14} />
-            {fmtNumber(total)} حساب
+            {copy.accountCount(total)}
           </div>
         </div>
       </section>
@@ -568,28 +654,28 @@ export default function AllocationsPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">حساب‌های دارای تخصیص</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.allocatedAccounts}</div>
             <UsersRound size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.allocatedResellers)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">تخصیص فعال</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.activeAllocations}</div>
             <ShieldCheck size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-emerald-600">{fmtNumber(stats.enabledAllocations)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">نود پیش‌فرض</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.defaultNode}</div>
             <Link2 size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold text-amber-600">{fmtNumber(stats.defaultAllocations)}</div>
         </div>
         <div className={metricCardClass}>
           <div className="flex items-center justify-between">
-            <div className="text-xs text-[hsl(var(--fg))]/70">نوع پنل فعال</div>
+            <div className="text-xs text-[hsl(var(--fg))]/70">{copy.activePanelType}</div>
             <Activity size={16} className="opacity-60" />
           </div>
           <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.activePanelTypes)}</div>
@@ -598,8 +684,8 @@ export default function AllocationsPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">تخصیص‌ها بر اساس حساب</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">سوپرادمین و هر رسیلر فقط یک بار نمایش داده می‌شوند و نودهای مرتبط داخل همان کارت دیده می‌شوند.</div>
+          <div className="text-xl font-semibold">{copy.groupedTitle}</div>
+          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.groupedSubtitle}</div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(130deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-2">
@@ -609,7 +695,7 @@ export default function AllocationsPage() {
                 setQ(e.target.value);
                 setPage(1);
               }}
-              placeholder="جستجوی سوپرادمین، رسیلر، ID یا نام کاربری"
+              placeholder={copy.searchPlaceholder}
             />
           </div>
 
@@ -621,7 +707,7 @@ export default function AllocationsPage() {
                   .filter((a) => a.enabled && a.node_is_enabled)
                   .map((a) => a.panel_type)
               ).size;
-              const roleLabel = accountRoleLabel(group);
+              const roleLabel = accountRoleLabel(group, lang);
               const adminAccount = isAdminGroup(group);
               return (
                 <article
@@ -639,24 +725,24 @@ export default function AllocationsPage() {
 
                   <div className="grid grid-cols-3 gap-2 text-xs md:contents">
                     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
-                      <div className="text-[hsl(var(--fg))]/55">نود</div>
+                      <div className="text-[hsl(var(--fg))]/55">{copy.node}</div>
                       <div className="font-semibold">{fmtNumber(group.allocations.length)}</div>
                     </div>
                     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
-                      <div className="text-[hsl(var(--fg))]/55">فعال</div>
+                      <div className="text-[hsl(var(--fg))]/55">{copy.enabled}</div>
                       <div className="font-semibold text-emerald-600">{fmtNumber(activeNodes)}</div>
                     </div>
                     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2))] px-2 py-1.5 md:border-0 md:bg-transparent md:p-0">
-                      <div className="text-[hsl(var(--fg))]/55">پنل</div>
+                      <div className="text-[hsl(var(--fg))]/55">{copy.panel}</div>
                       <div className="font-semibold">{fmtNumber(activePanelTypes)}</div>
                     </div>
                   </div>
 
-                  <AllocationNodeCloud allocations={group.allocations} />
+                  <AllocationNodeCloud allocations={group.allocations} lang={lang} />
 
                   <div className="flex justify-end">
                     <Button type="button" size="sm" variant="outline" onClick={() => setSelectedResellerId(group.reseller_id)}>
-                      مدیریت
+                      {copy.manage}
                     </Button>
                   </div>
                 </article>
@@ -682,29 +768,29 @@ export default function AllocationsPage() {
       <Modal
         open={!!selectedGroup}
         onClose={() => setSelectedResellerId(null)}
-        title={selectedGroup ? `مدیریت تخصیص‌ها - ${accountRoleLabel(selectedGroup)} ${selectedGroup.reseller_name}` : "مدیریت تخصیص‌ها"}
+        title={copy.manageTitle(selectedGroup)}
         className="!max-w-6xl"
       >
         {selectedGroup ? (
           <div className="space-y-4">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">حساب</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.account}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <span className="truncate text-sm font-semibold">{selectedGroup.reseller_name}</span>
-                  <Badge variant={isAdminGroup(selectedGroup) ? "warning" : "default"}>{accountRoleLabel(selectedGroup)}</Badge>
+                  <Badge variant={isAdminGroup(selectedGroup) ? "warning" : "default"}>{accountRoleLabel(selectedGroup, lang)}</Badge>
                 </div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">تعداد نود</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.nodeCount}</div>
                 <div className="mt-1 text-sm font-semibold">{fmtNumber(selectedGroup.allocations.length)}</div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">نوع پنل فعال</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.activePanelType}</div>
                 <div className="mt-1 text-sm font-semibold">{fmtNumber(selectedActivePanelTypes)}</div>
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
-                <div className="text-xs text-[hsl(var(--fg))]/60">وضعیت</div>
+                <div className="text-xs text-[hsl(var(--fg))]/60">{copy.status}</div>
                 <div className="mt-1"><Badge variant={statusVariant(selectedGroup.reseller_status)}>{selectedGroup.reseller_status}</Badge></div>
               </div>
             </div>
@@ -712,13 +798,13 @@ export default function AllocationsPage() {
             <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
                 <Plus size={16} />
-                افزودن نود جدید
+                {copy.addNodeTitle}
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_120px_120px_auto] xl:items-end">
                 <div className="space-y-1">
-                  <div className="text-xs text-[hsl(var(--fg))]/65">نود</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/65">{copy.node}</div>
                   <select className={selectClass} value={addNodeId} onChange={(e) => setAddNodeId(e.target.value === "" ? "" : Number(e.target.value))}>
-                    <option value="">انتخاب نود</option>
+                    <option value="">{copy.selectNode}</option>
                     {availableNodes.map((n) => (
                       <option key={n.id} value={n.id}>
                         {n.name} ({n.panel_type}) #{n.id}
@@ -727,19 +813,19 @@ export default function AllocationsPage() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-xs text-[hsl(var(--fg))]/65">قیمت اختصاصی/GB</div>
+                  <div className="text-xs text-[hsl(var(--fg))]/65">{copy.priceOverrideGb}</div>
                   <Input type="number" value={addPriceOverride} onChange={(e) => setAddPriceOverride(e.target.value === "" ? "" : Number(e.target.value))} />
                 </div>
                 <label className="flex h-10 items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 text-xs">
                   <Switch checked={addEnabled} onCheckedChange={setAddEnabled} />
-                  فعال
+                  {copy.enabled}
                 </label>
                 <label className="flex h-10 items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 text-xs">
                   <Switch checked={addDefault} onCheckedChange={setAddDefault} />
-                  پیش‌فرض
+                  {copy.default}
                 </label>
                 <Button type="button" onClick={addAllocation} disabled={busy || addNodeId === ""}>
-                  افزودن
+                  {copy.add}
                 </Button>
               </div>
               <div className="mt-3">
@@ -758,26 +844,26 @@ export default function AllocationsPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="truncate text-sm font-semibold">{a.node_name}</div>
-                        <Badge variant={a.node_is_enabled ? "default" : "danger"}>{a.node_is_enabled ? "نود فعال" : "نود غیرفعال"}</Badge>
-                        <Badge variant={a.enabled ? "success" : "muted"}>{a.enabled ? "تخصیص فعال" : "تخصیص غیرفعال"}</Badge>
+                        <Badge variant={a.node_is_enabled ? "default" : "danger"}>{a.node_is_enabled ? copy.nodeEnabled : copy.nodeDisabled}</Badge>
+                        <Badge variant={a.enabled ? "success" : "muted"}>{a.enabled ? copy.allocationEnabled : copy.allocationDisabled}</Badge>
                       </div>
                       <div className="mt-1 text-xs text-[hsl(var(--fg))]/65">{a.panel_type} · node #{a.node_id} · allocation #{a.id}</div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {a.default_for_reseller ? <Badge variant="warning">پیش‌فرض</Badge> : <Badge variant="muted">غیر پیش‌فرض</Badge>}
+                      {a.default_for_reseller ? <Badge variant="warning">{copy.default}</Badge> : <Badge variant="muted">{copy.notDefault}</Badge>}
                       {a.price_per_gb_override != null ? <Badge variant="default">{fmtNumber(a.price_per_gb_override)}/GB</Badge> : null}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                       <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
                         <Switch checked={a.enabled} onCheckedChange={(v) => patchAllocation(a.id, { enabled: v })} />
-                        فعال
+                        {copy.enabled}
                       </label>
 
                       <label className="flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs">
                         <Switch checked={a.default_for_reseller} onCheckedChange={(v) => patchAllocation(a.id, { default_for_reseller: v })} />
-                        پیش‌فرض
+                        {copy.default}
                       </label>
                     </div>
 
@@ -785,14 +871,14 @@ export default function AllocationsPage() {
                       <Input
                         type="number"
                         value={priceDrafts[a.id] ?? ""}
-                        placeholder="قیمت override"
+                        placeholder={copy.priceOverridePlaceholder}
                         onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [a.id]: e.target.value === "" ? "" : Number(e.target.value) }))}
                       />
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        title="ذخیره قیمت"
+                        title={copy.savePrice}
                         onClick={() =>
                           patchAllocation(a.id, {
                             price_per_gb_override: priceDrafts[a.id] === "" || priceDrafts[a.id] == null ? null : Number(priceDrafts[a.id]),
@@ -804,7 +890,7 @@ export default function AllocationsPage() {
                     </div>
 
                     <div className="flex justify-end">
-                      <Button type="button" size="sm" variant="outline" className="text-red-600" title="حذف تخصیص" onClick={() => setConfirmDelete(a)}>
+                      <Button type="button" size="sm" variant="outline" className="text-red-600" title={copy.deleteAllocation} onClick={() => setConfirmDelete(a)}>
                         <Trash2 size={14} />
                       </Button>
                     </div>
@@ -842,7 +928,7 @@ export default function AllocationsPage() {
               ))}
 
               {!selectedGroup.allocations.length ? (
-                <div className="rounded-xl border border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/70">هنوز نودی به این حساب تخصیص داده نشده است.</div>
+                <div className="rounded-xl border border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/70">{copy.noAllocations}</div>
               ) : null}
             </div>
           </div>
@@ -853,7 +939,7 @@ export default function AllocationsPage() {
         open={!!confirmDelete}
         onClose={() => (busy ? null : setConfirmDelete(null))}
         title={t("common.areYouSure")}
-        body={confirmDelete ? `تخصیص ${confirmDelete.node_name} از این حساب حذف می‌شود.` : t("common.thisActionCannotBeUndone")}
+        body={confirmDelete ? copy.deleteBody(confirmDelete.node_name) : t("common.thisActionCannotBeUndone")}
         confirmText={t("common.delete")}
         cancelText={t("common.cancel")}
         danger

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-context";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -11,6 +12,8 @@ type BeforeInstallPromptEvent = Event & {
 
 const DISMISSED_AT_KEY = "guardino:pwa-install-dismissed-at";
 const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const BRAND_ASSET_VERSION = "2026-06-19-1";
+const brandAsset = (path: string) => `${path}?v=${BRAND_ASSET_VERSION}`;
 
 function isStandaloneMode() {
   if (typeof window === "undefined") return false;
@@ -29,8 +32,25 @@ function canShowInstallPrompt() {
 }
 
 export function PwaRegister() {
+  const { lang } = useI18n();
   const [installPrompt, setInstallPrompt] = React.useState<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = React.useState(false);
+  const copy =
+    lang === "en"
+      ? {
+          title: "Install Guardino on mobile",
+          body: "Open the panel like an app with faster access, full-screen mode, and a better daily reseller workflow.",
+          install: "Install",
+          later: "Later",
+          close: "Close",
+        }
+      : {
+          title: "نصب گاردینو روی موبایل",
+          body: "پنل را مثل یک اپلیکیشن باز کنید؛ دسترسی سریع‌تر، تمام‌صفحه و مناسب استفاده روزانه رسیلرها.",
+          install: "نصب",
+          later: "بعداً",
+          close: "بستن",
+        };
 
   React.useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -116,20 +136,20 @@ export function PwaRegister() {
     >
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-red-900/10 bg-white shadow-[0_12px_24px_-16px_rgba(153,0,0,0.8)]">
-          <img src="/brand/guardino-mark.png" alt="" className="h-full w-full object-contain" />
+          <img src={brandAsset("/brand/guardino-mark.png")} alt="" className="h-full w-full object-contain" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">نصب گاردینو روی موبایل</div>
+          <div className="text-sm font-semibold">{copy.title}</div>
           <div className="mt-1 text-xs leading-5 text-[hsl(var(--fg))]/68">
-            پنل را مثل یک اپلیکیشن باز کنید؛ دسترسی سریع‌تر، تمام‌صفحه و مناسب استفاده روزانه رسیلرها.
+            {copy.body}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" size="sm" className="gap-2" onClick={install}>
               <Download size={14} />
-              نصب
+              {copy.install}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={dismiss}>
-              بعداً
+              {copy.later}
             </Button>
           </div>
         </div>
@@ -137,8 +157,8 @@ export function PwaRegister() {
           type="button"
           onClick={dismiss}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[hsl(var(--fg))]/60 transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--fg))]"
-          aria-label="بستن"
-          title="بستن"
+          aria-label={copy.close}
+          title={copy.close}
         >
           <X size={16} />
         </button>
