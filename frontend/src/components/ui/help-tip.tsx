@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 
 export function HelpTip({ text, className }: { text: string; className?: string }) {
@@ -10,7 +11,12 @@ export function HelpTip({ text, className }: { text: string; className?: string 
   const [hovered, setHovered] = React.useState(false);
   const [focused, setFocused] = React.useState(false);
   const [pos, setPos] = React.useState<React.CSSProperties>({ left: -9999, top: -9999, width: 288 });
+  const [mounted, setMounted] = React.useState(false);
   const visible = open || hovered || focused;
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const updatePosition = React.useCallback(() => {
     const trigger = triggerRef.current;
@@ -30,9 +36,11 @@ export function HelpTip({ text, className }: { text: string; className?: string 
   React.useEffect(() => {
     if (!visible) return;
     updatePosition();
+    const raf = window.requestAnimationFrame(updatePosition);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     return () => {
+      window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
@@ -87,16 +95,21 @@ export function HelpTip({ text, className }: { text: string; className?: string 
       >
         ?
       </button>
-      <span
-        ref={tipRef}
-        className={
-          "fixed z-[90] max-h-[min(20rem,calc(100dvh-24px))] max-w-[calc(100vw-24px)] overflow-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs text-[hsl(var(--fg))]/90 shadow-soft transition-all duration-150 " +
-          (visible ? "pointer-events-auto visible translate-y-0 opacity-100" : "pointer-events-none invisible -translate-y-1 opacity-0")
-        }
-        style={{ direction: "inherit", ...pos }}
-      >
-        <span className="block whitespace-pre-line break-words leading-5 [overflow-wrap:anywhere]">{text}</span>
-      </span>
+      {mounted
+        ? createPortal(
+            <span
+              ref={tipRef}
+              className={
+                "fixed z-[10000] max-h-[min(20rem,calc(100dvh-24px))] max-w-[calc(100vw-24px)] overflow-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs text-[hsl(var(--fg))]/90 shadow-2xl shadow-black/15 transition-all duration-150 " +
+                (visible ? "pointer-events-auto visible translate-y-0 opacity-100" : "pointer-events-none invisible -translate-y-1 opacity-0")
+              }
+              style={{ direction: "inherit", ...pos }}
+            >
+              <span className="block whitespace-pre-line break-words leading-5 [overflow-wrap:anywhere]">{text}</span>
+            </span>,
+            document.body
+          )
+        : null}
     </span>
   );
 }

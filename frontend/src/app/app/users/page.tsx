@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
 import { Menu, type MenuItem } from "@/components/ui/menu";
+import { HelpTip } from "@/components/ui/help-tip";
 import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,7 +40,6 @@ import {
   Ban,
   CheckCircle2,
   Clock3,
-  HelpCircle,
   Hourglass,
   LayoutGrid,
   List,
@@ -888,27 +888,6 @@ export default function UsersPage() {
     );
   }
 
-  function HelpHint({ text }: { text: string }) {
-    return (
-      <span className="group/help relative inline-flex align-middle">
-        <button
-          type="button"
-          aria-label="راهنما"
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] text-[hsl(var(--fg))]/65 transition-all duration-200 hover:border-[hsl(var(--accent)/0.45)] hover:text-[hsl(var(--accent))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.25)]"
-        >
-          <HelpCircle size={15} />
-        </button>
-        <span
-          className="pointer-events-none absolute right-0 top-8 z-30 hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 text-xs leading-6 text-[hsl(var(--fg))]/78 shadow-2xl shadow-black/10 [overflow-wrap:anywhere] group-hover/help:block group-focus-within/help:block"
-          style={{ width: "min(18rem, calc(100vw - 2rem))" }}
-        >
-          {text}
-        </span>
-      </span>
-    );
-  }
-
   const sortLabels: Record<SortMode, string> = {
     priority: "نیازمند رسیدگی",
     expiry: "نزدیک‌ترین انقضا",
@@ -1533,7 +1512,7 @@ export default function UsersPage() {
             {renewalOnly ? (
               <div className="flex max-w-full items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/10 p-3 text-xs text-[hsl(var(--fg))]/78">
                 <span className="font-medium">ویرایش آزاد بسته است.</span>
-                <HelpHint text="برای این رسیلر فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود." />
+                <HelpTip text="برای این رسیلر فقط تمدید بسته‌ای طبق پکیج‌های مجاز سوپرادمین انجام می‌شود." />
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -1559,7 +1538,7 @@ export default function UsersPage() {
               <div className="rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3)/0.28)_100%)] p-3 space-y-3 transition-all duration-200 hover:border-[hsl(var(--accent)/0.35)] hover:shadow-soft">
                 <div className="flex items-center gap-2">
                   <div className="font-medium">تمدید بسته‌ای</div>
-                  <HelpHint text="سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند." />
+                  <HelpTip text="سیاست تمدید توسط سوپرادمین تعیین می‌شود و رسیلر فقط مقدار روز و حجم پکیج را انتخاب می‌کند." />
                 </div>
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-[hsl(var(--fg))]/75">مدت تمدید</div>
@@ -1582,9 +1561,16 @@ export default function UsersPage() {
                   </div>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
-                  <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled={renewalOnly} onChange={(e) => setEditRenewDays(Math.max(1, Number(e.target.value) || 1))} />
-                  <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled={renewalOnly} onChange={(e) => setEditRenewGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">مدت تمدید (روز)</span>
+                    <Input className="min-w-0" type="number" min={1} value={editRenewDays} disabled={renewalOnly} onChange={(e) => setEditRenewDays(Math.max(1, Number(e.target.value) || 1))} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">حجم تمدید (گیگ)</span>
+                    <Input className="min-w-0" type="number" min={1} value={editRenewGb} disabled={renewalOnly} onChange={(e) => setEditRenewGb(Math.max(1, Number(e.target.value) || 1))} />
+                  </label>
                   <Button
+                    className="self-end"
                     disabled={busyId === editUser.id || locked}
                     onClick={async () => {
                       const ok = await op(editUser.id, `/api/v1/reseller/users/${editUser.id}/renew`, {

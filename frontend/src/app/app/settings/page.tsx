@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { HelpTip } from "@/components/ui/help-tip";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
@@ -604,6 +605,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2 text-sm font-semibold">
                 {twoFactorStatus?.enabled ? <ShieldCheck size={16} /> : <KeyRound size={16} />}
                 تایید دومرحله‌ای حساب
+                <HelpTip text="راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است." />
               </div>
               <div className="mt-1 text-xs leading-6 text-[hsl(var(--fg))]/70">
                 برای ورود سوپرادمین و رسیلرها می‌توانید یک لایه امنیتی TOTP فعال کنید. این روش با Google Authenticator، Microsoft Authenticator، 1Password و Bitwarden سازگار است.
@@ -621,7 +623,7 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className={guideBoxClass}>
+          <div className="hidden">
             راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.
           </div>
 
@@ -1082,13 +1084,16 @@ export default function SettingsPage() {
 
             <Card className="overflow-hidden">
               <CardHeader>
-                <div className="text-sm font-semibold">سیاست سراسری ساخت کاربر برای رسیلرها</div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span>سیاست سراسری ساخت کاربر برای رسیلرها</span>
+                  <HelpTip text="اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند. این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند؛ سیاست اختصاصی هر رسیلر همیشه اولویت دارد." />
+                </div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">
                   این مقدارها هنگام فعال‌کردن سیاست اختصاصی رسیلر به عنوان پیش‌فرض روی فرم ساخت/ویرایش رسیلر اعمال می‌شوند.
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className={guideBoxClass}>
+                <div className="hidden">
                   اگر می‌خواهید ساخت رسیلر سریع‌تر باشد، بسته‌های زمانی و حجمی مورد تأیید پنل را اینجا مشخص کنید. مثلا فقط 50GB و 100GB را فعال کنید تا هنگام اعمال پیش‌فرض پنل، همان‌ها برای رسیلر تیک بخورند.
                 </div>
 
@@ -1099,7 +1104,7 @@ export default function SettingsPage() {
                   </div>
                   <Switch checked={globalPolicy.enabled} onCheckedChange={(v) => setGlobalPolicy((x) => normalizePolicy({ ...x, enabled: v }))} />
                 </div>
-                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/70 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75">
+                <div className="hidden">
                   این گزینه قانون پیش‌فرض ساخت کاربر برای رسیلرهایی است که سیاست اختصاصی ذخیره‌شده ندارند. اگر روشن باشد، رسیلرهای قدیمی بدون سیاست اختصاصی و رسیلرهای جدیدی که هنگام ساخت برایشان «سیاست‌های اختصاصی رسیلر» را ذخیره نمی‌کنی، از همین بسته‌های زمان/حجم و اجازه روز/حجم دستی پیروی می‌کنند. اگر برای یک رسیلر سیاست اختصاصی ذخیره شده باشد، تنظیمات همان رسیلر اولویت دارد و با تغییر این بخش خودکار overwrite نمی‌شود. برای رسیلرهایی که باید بدون محدودیت دستی کار کنند، یا این سیاست سراسری را خاموش نگه دار، یا برای همان رسیلر سیاست اختصاصی آزادتر ذخیره کن. سیاست‌های حذف، ریست، ویرایش و تمدید از کارت بعدی کنترل می‌شوند و مستقل از این تیک هستند.
                 </div>
 
@@ -1213,11 +1218,14 @@ export default function SettingsPage() {
 
             <Card className="overflow-hidden">
               <CardHeader>
-                <div className="text-sm font-semibold">سیاست سراسری حذف، ریست، ویرایش و تمدید کاربران</div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span>سیاست سراسری حذف، ریست، ویرایش و تمدید کاربران</span>
+                  <HelpTip text="این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست." />
+                </div>
                 <div className="text-xs text-[hsl(var(--fg))]/70">این مقدار پایه برای رسیلرهایی استفاده می‌شود که سیاست اختصاصی ندارند.</div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className={guideBoxClass}>
+                <div className="hidden">
                   این سیاست روی رسیلرهایی اعمال می‌شود که تنظیم اختصاصی ندارند. «مهلت حذف/ریفاند» تعداد روز مجاز از زمان ساخت کاربر است و عدد 0 یعنی محدودیت زمانی ندارد. «حداکثر مصرف» اگر 0 باشد نامحدود است؛ اگر مثلا 0.5 وارد شود، کاربری که بیشتر از حدود 500 مگابایت مصرف کرده باشد قابل حذف/ریفاند نیست. کاربری که زمانش تمام شده یا کل حجمش مصرف شده باشد هم قابل حذف نیست.
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">

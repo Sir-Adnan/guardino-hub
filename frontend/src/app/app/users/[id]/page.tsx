@@ -577,10 +577,17 @@ export default function UserDetailPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Input className="min-w-[120px] flex-1" type="number" min={1} value={renewDays} disabled={renewalOnly} onChange={(e) => setRenewDays(Math.max(1, Number(e.target.value) || 1))} />
-                    <Input className="min-w-[120px] flex-1" type="number" min={1} value={renewGb} disabled={renewalOnly} onChange={(e) => setRenewGb(Math.max(1, Number(e.target.value) || 1))} />
+                  <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">مدت تمدید (روز)</span>
+                      <Input className="min-w-0" type="number" min={1} value={renewDays} disabled={renewalOnly} onChange={(e) => setRenewDays(Math.max(1, Number(e.target.value) || 1))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-[hsl(var(--fg))]/65">حجم تمدید (گیگ)</span>
+                      <Input className="min-w-0" type="number" min={1} value={renewGb} disabled={renewalOnly} onChange={(e) => setRenewGb(Math.max(1, Number(e.target.value) || 1))} />
+                    </label>
                     <Button
+                      className="self-end"
                       disabled={locked || busy}
                       onClick={() => runOp(`/api/v1/reseller/users/${userId}/renew`, { days: renewDays, total_gb: renewGb, pricing_mode: "bundle" }, "تمدید بسته‌ای انجام شد")}
                     >

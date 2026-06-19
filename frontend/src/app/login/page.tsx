@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/brand-logo";
+import { HelpTip } from "@/components/ui/help-tip";
+import { useI18n } from "@/components/i18n-context";
 import { storage } from "@/lib/storage";
 import { apiFetch } from "@/lib/api";
 
@@ -16,18 +18,19 @@ type TokenResponse = {
   expires_in_seconds?: number | null;
 };
 
-function localizeLoginError(raw: string): string {
+function localizeLoginError(raw: string, lang: "fa" | "en"): string {
   const s = (raw || "").trim();
   const lower = s.toLowerCase();
-  if (lower.includes("invalid credentials")) return "نام کاربری یا رمز عبور اشتباه است.";
-  if (lower.includes("account disabled")) return "حساب کاربری شما غیرفعال است.";
-  if (lower.includes("invalid token")) return "نشست شما معتبر نیست. دوباره وارد شوید.";
-  if (lower.includes("two-factor") || lower.includes("authenticator")) return "کد دومرحله‌ای صحیح نیست یا منقضی شده است.";
-  return s || "خطا در ورود.";
+  if (lower.includes("invalid credentials")) return lang === "en" ? "Username or password is incorrect." : "نام کاربری یا رمز عبور اشتباه است.";
+  if (lower.includes("account disabled")) return lang === "en" ? "Your account is disabled." : "حساب کاربری شما غیرفعال است.";
+  if (lower.includes("invalid token")) return lang === "en" ? "Your session is not valid. Sign in again." : "نشست شما معتبر نیست. دوباره وارد شوید.";
+  if (lower.includes("two-factor") || lower.includes("authenticator")) return lang === "en" ? "The two-factor code is incorrect or expired." : "کد دومرحله‌ای صحیح نیست یا منقضی شده است.";
+  return s || (lang === "en" ? "Login failed." : "خطا در ورود.");
 }
 
 export default function LoginPage() {
   const r = useRouter();
+  const { lang } = useI18n();
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [twoFactorCode, setTwoFactorCode] = React.useState("");
@@ -35,6 +38,31 @@ export default function LoginPage() {
   const [challengeTtl, setChallengeTtl] = React.useState<number | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const copy = React.useMemo(
+    () =>
+      lang === "en"
+        ? {
+            title: challengeToken ? "Two-factor verification" : "Sign in",
+            subtitle: challengeToken ? "Enter your Authenticator code or a saved backup code." : "Sign in with an admin or reseller account.",
+            twoFactorHelp: `This step protects your account. Authenticator codes rotate every 30 seconds and this login challenge is valid for about ${challengeTtl || 300} seconds.`,
+            twoFactorLabel: "Two-factor code or backup code",
+            username: "Username",
+            password: "Password",
+            submit: challengeToken ? "Verify and sign in" : "Sign in",
+            back: "Back to password login",
+          }
+        : {
+            title: challengeToken ? "تایید دومرحله‌ای" : "ورود",
+            subtitle: challengeToken ? "کد Authenticator یا یکی از backup codeهای ذخیره‌شده را وارد کنید." : "با حساب ادمین یا نماینده وارد شوید.",
+            twoFactorHelp: `این مرحله برای محافظت از حساب فعال شده است. کدهای Authenticator هر ۳۰ ثانیه عوض می‌شوند و challenge ورود حدود ${challengeTtl || 300} ثانیه اعتبار دارد.`,
+            twoFactorLabel: "کد دومرحله‌ای یا backup code",
+            username: "نام کاربری",
+            password: "رمز عبور",
+            submit: challengeToken ? "تایید و ورود" : "ورود",
+            back: "بازگشت به ورود با رمز",
+          },
+    [challengeToken, challengeTtl, lang]
+  );
 
   function resetTwoFactor() {
     setChallengeToken(null);
@@ -72,7 +100,7 @@ export default function LoginPage() {
       storage.set("token", res.access_token);
       r.push("/app");
     } catch (e: any) {
-      setErr(localizeLoginError(String(e.message || e)));
+      setErr(localizeLoginError(String(e.message || e), lang));
     } finally {
       setLoading(false);
     }
@@ -93,22 +121,17 @@ export default function LoginPage() {
         </div>
 
         <div>
-          <h1 className="text-xl font-semibold">{challengeToken ? "تایید دومرحله‌ای" : "ورود"}</h1>
-          <p className="text-sm text-[hsl(var(--fg))]/70">
-            {challengeToken
-              ? "کد ۶ رقمی Authenticator یا یکی از backup codeهای ذخیره‌شده را وارد کنید."
-              : "با حساب ادمین یا نماینده وارد شوید."}
-          </p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">{copy.title}</h1>
+            {challengeToken ? <HelpTip text={copy.twoFactorHelp} /> : null}
+          </div>
+          <p className="text-sm text-[hsl(var(--fg))]/70">{copy.subtitle}</p>
         </div>
 
         {challengeToken ? (
           <div className="space-y-3">
-            <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-3))]/60 p-3 text-xs leading-6 text-[hsl(var(--fg))]/75">
-              این مرحله برای محافظت از حساب فعال شده است. کدهای Authenticator هر ۳۰ ثانیه عوض می‌شوند و challenge ورود حدود{" "}
-              {challengeTtl || 300} ثانیه اعتبار دارد.
-            </div>
             <div className="space-y-2">
-              <label className="text-sm">کد دومرحله‌ای یا backup code</label>
+              <label className="text-sm">{copy.twoFactorLabel}</label>
               <Input
                 value={twoFactorCode}
                 onChange={(e) => setTwoFactorCode(e.target.value)}
@@ -122,11 +145,11 @@ export default function LoginPage() {
         ) : (
           <>
             <div className="space-y-2">
-              <label className="text-sm">نام کاربری</label>
+              <label className="text-sm">{copy.username}</label>
               <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm">رمز عبور</label>
+              <label className="text-sm">{copy.password}</label>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </div>
           </>
@@ -135,7 +158,7 @@ export default function LoginPage() {
         {err ? <div className="text-sm text-red-500">{err}</div> : null}
 
         <Button disabled={loading || (challengeToken ? !twoFactorCode.trim() : !username.trim() || !password)} className="w-full">
-          {loading ? "..." : challengeToken ? "تایید و ورود" : "ورود"}
+          {loading ? "..." : copy.submit}
         </Button>
         {challengeToken ? (
           <Button
@@ -147,7 +170,7 @@ export default function LoginPage() {
               setErr(null);
             }}
           >
-            بازگشت به ورود با رمز
+            {copy.back}
           </Button>
         ) : null}
       </form>

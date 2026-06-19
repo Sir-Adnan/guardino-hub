@@ -26,26 +26,29 @@ export function Menu({
   const [open, setOpen] = React.useState(false);
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const updatePos = React.useCallback(() => {
     const el = wrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const viewportPad = 8;
-    const menuWidth = Math.max(180, menuRef.current?.offsetWidth || 220);
-    const menuHeight = menuRef.current?.offsetHeight || 220;
+    const maxWidth = Math.max(180, window.innerWidth - viewportPad * 2);
+    const menuWidth = Math.min(maxWidth, Math.max(180, menuRef.current?.offsetWidth || 220));
+    const maxHeight = Math.max(160, window.innerHeight - viewportPad * 2);
+    const menuHeight = Math.min(maxHeight, menuRef.current?.offsetHeight || 220);
 
     let left = align === "right" ? r.right - menuWidth : r.left;
     left = Math.max(viewportPad, Math.min(left, window.innerWidth - menuWidth - viewportPad));
 
-    let top = r.bottom + 8;
-    if (top + menuHeight > window.innerHeight - viewportPad && r.top - menuHeight - 8 > viewportPad) {
-      top = r.top - menuHeight - 8;
-    }
-    top = Math.max(viewportPad, top);
+    const belowTop = r.bottom + 8;
+    const aboveTop = r.top - menuHeight - 8;
+    const spaceBelow = window.innerHeight - r.bottom - viewportPad - 8;
+    const spaceAbove = r.top - viewportPad - 8;
+    let top = spaceBelow >= Math.min(menuHeight, 240) || spaceBelow >= spaceAbove ? belowTop : aboveTop;
+    top = Math.max(viewportPad, Math.min(top, window.innerHeight - menuHeight - viewportPad));
 
-    setPos({ top, left });
+    setPos({ top, left, width: menuWidth, maxHeight });
   }, [align]);
 
   React.useEffect(() => {
@@ -61,6 +64,12 @@ export function Menu({
       window.removeEventListener("resize", onResize);
     };
   }, [open, updatePos]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const raf = window.requestAnimationFrame(updatePos);
+    return () => window.cancelAnimationFrame(raf);
+  }, [items, open, updatePos]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -103,6 +112,10 @@ export function Menu({
           style={{
             top: pos.top,
             left: pos.left,
+            width: pos.width,
+            minWidth: 0,
+            maxHeight: pos.maxHeight,
+            overflowY: "auto",
           }}
           role="menu"
         >

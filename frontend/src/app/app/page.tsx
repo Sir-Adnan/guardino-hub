@@ -997,8 +997,21 @@ export default function Dashboard() {
         </div>
       ) : null}
 
+      {!loading && !isAdmin && lowBalanceWarn ? (
+        <div className="rounded-xl border border-amber-400/45 bg-[linear-gradient(140deg,rgba(251,191,36,0.18),rgba(245,158,11,0.07))] px-4 py-3 text-sm text-amber-900 shadow-[0_12px_28px_-24px_rgba(245,158,11,0.8)] dark:text-amber-100">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle size={16} />
+            هشدار موجودی پایین
+          </div>
+          <div className="mt-1 text-xs leading-5">
+            موجودی شما {fmtNumber(lowBalanceWarn.balance)} تومان است.
+            {lowBalanceWarn.affordableGb != null ? ` با قیمت فعلی تقریبا ${fmtNumber(Math.max(0, Math.floor(lowBalanceWarn.affordableGb)))} گیگ قابل خرید است.` : ""}
+          </div>
+        </div>
+      ) : null}
+
       {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
+        <div className="grid gap-4">
           <SectionPanel
             title={isAdmin ? "نمای کاربران کل پنل" : "نمای کاربران من"}
             subtitle={isAdmin ? "تفکیک سریع کاربران فعال، منقضی، حجمی، On Hold و غیرفعال." : "وضعیت کاربران همین حساب، جدا از آمار مدیریتی سوپرادمین."}
@@ -1015,6 +1028,7 @@ export default function Dashboard() {
             />
           </SectionPanel>
 
+          {false ? (
           <SectionPanel
             title="مصرف و حجم زده‌شده"
             subtitle="مقایسه مصرف ثبت‌شده و حجم زده‌شده برای بازه و حساب انتخابی. اعداد کل بالای داشبورد همیشه کل سیستم را نشان می‌دهند."
@@ -1083,6 +1097,7 @@ export default function Dashboard() {
               </div>
             </div>
           </SectionPanel>
+          ) : null}
         </div>
       ) : null}
 
@@ -1102,7 +1117,7 @@ export default function Dashboard() {
             <KpiTile title="تراکنش‌های دفتر کل" value={fmtNumber(adminStats.ledger_entries_total)} hint={`شارژ اخیر: ${fmtNumber(ledgerStats.credit)}`} icon={<Database size={16} />} tone="blue" />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+          <div className="grid gap-4">
             <SectionPanel title="تحلیل فروش و مصرف" subtitle="نمودارها از گزارش سفارش‌ها و دفترکل موجود ساخته می‌شوند." icon={<BarChart3 size={18} />}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-3">
@@ -1128,12 +1143,12 @@ export default function Dashboard() {
               </div>
             </SectionPanel>
 
-            <SectionPanel title="مصرف کل ظرفیت" subtitle="نسبت مصرف کاربران به حجم فروخته شده." icon={<Gauge size={18} />}>
+            <SectionPanel className="hidden" title="مصرف کل ظرفیت" subtitle="نسبت مصرف کاربران به حجم فروخته شده." icon={<Gauge size={18} />}>
               <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} />
             </SectionPanel>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="hidden">
             <SectionPanel title="سلامت نودها" subtitle="Badgeها وضعیت فعال بودن، نمایش در ساب و آخرین sync هر نود را نشان می‌دهند." icon={<Server size={18} />} action={<Link href="/app/admin/nodes"><Button type="button" variant="outline" size="sm">مدیریت نودها</Button></Link>}>
               <NodeHealthList nodes={nodes} />
             </SectionPanel>
@@ -1147,19 +1162,6 @@ export default function Dashboard() {
 
       {!loading && !isAdmin && resellerStats ? (
         <>
-          {lowBalanceWarn ? (
-            <div className="rounded-xl border border-amber-400/45 bg-[linear-gradient(140deg,rgba(251,191,36,0.18),rgba(245,158,11,0.07))] px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-              <div className="flex items-center gap-2 font-semibold">
-                <AlertTriangle size={16} />
-                هشدار موجودی پایین
-              </div>
-              <div className="mt-1 text-xs leading-5">
-                موجودی شما {fmtNumber(lowBalanceWarn.balance)} تومان است.
-                {lowBalanceWarn.affordableGb != null ? ` با قیمت فعلی تقریبا ${fmtNumber(Math.max(0, Math.floor(lowBalanceWarn.affordableGb)))} گیگ قابل خرید است.` : ""}
-              </div>
-            </div>
-          ) : null}
-
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <KpiTile title="موجودی" value={fmtNumber(resellerStats.balance)} hint={`وضعیت حساب: ${resellerStats.status}`} icon={<Wallet size={16} />} tone="green" />
             <KpiTile title="کاربران" value={fmtNumber(resellerStats.users_total)} hint={`فعال: ${fmtNumber(resellerStats.users_active)}، غیرفعال: ${fmtNumber(resellerStats.users_disabled)}`} icon={<UsersRound size={16} />} tone="blue" />
@@ -1174,7 +1176,7 @@ export default function Dashboard() {
             <KpiTile title="قیمت/روز" value={fmtNumber(resellerStats.price_per_day)} hint="تمدید زمانی" icon={<Coins size={16} />} tone="orange" />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+          <div className="grid gap-4">
             <SectionPanel title="فروش و مصرف من" subtitle="نمودارها از سفارش‌ها و تراکنش‌های حساب شما ساخته می‌شوند." icon={<BarChart3 size={18} />}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="space-y-3">
@@ -1200,12 +1202,12 @@ export default function Dashboard() {
               </div>
             </SectionPanel>
 
-            <SectionPanel title="ظرفیت کاربران" subtitle="مصرف کل کاربران شما نسبت به حجم فروخته شده." icon={<Gauge size={18} />}>
+            <SectionPanel className="hidden" title="ظرفیت کاربران" subtitle="مصرف کل کاربران شما نسبت به حجم فروخته شده." icon={<Gauge size={18} />}>
               <UsageGauge percent={traffic.ratio} usedGb={traffic.usedGb} soldGb={traffic.soldGb} remainingGb={traffic.remainingGb} />
             </SectionPanel>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="hidden">
             <SectionPanel title="نودهای اختصاص داده شده" subtitle="وضعیت نودها، پنل و آخرین sync مربوط به کاربران شما." icon={<Server size={18} />} action={<Link href="/app/nodes"><Button type="button" variant="outline" size="sm">مشاهده نودها</Button></Link>}>
               <NodeHealthList nodes={nodes} />
             </SectionPanel>
@@ -1215,7 +1217,7 @@ export default function Dashboard() {
             </SectionPanel>
           </div>
 
-          <SectionPanel title="عملیات اخیر" subtitle="سفارش‌های در انتظار یا ناموفق برای جلوگیری از خطای فروش." icon={<Activity size={18} />}>
+          <SectionPanel className="hidden" title="عملیات اخیر" subtitle="سفارش‌های در انتظار یا ناموفق برای جلوگیری از خطای فروش." icon={<Activity size={18} />}>
             <OperationsPanel orders={orders} isAdmin={false} />
           </SectionPanel>
         </>

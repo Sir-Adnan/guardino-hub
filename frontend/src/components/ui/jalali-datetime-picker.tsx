@@ -91,7 +91,7 @@ export function JalaliDateTimePicker({
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const [viewYear, setViewYear] = React.useState<number>(0);
   const [viewMonth, setViewMonth] = React.useState<number>(1);
@@ -131,19 +131,21 @@ export function JalaliDateTimePicker({
     const el = wrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const panelWidth = Math.max(320, panelRef.current?.offsetWidth || 340);
-    const panelHeight = panelRef.current?.offsetHeight || 420;
     const vpPad = 8;
+    const panelWidth = Math.min(Math.max(300, panelRef.current?.offsetWidth || 340), Math.max(300, window.innerWidth - vpPad * 2));
+    const maxHeight = Math.max(260, window.innerHeight - vpPad * 2);
+    const panelHeight = Math.min(maxHeight, panelRef.current?.offsetHeight || 420);
 
     let left = r.left;
     left = Math.max(vpPad, Math.min(left, window.innerWidth - panelWidth - vpPad));
 
-    let top = r.bottom + 8;
-    if (top + panelHeight > window.innerHeight - vpPad && r.top - panelHeight - 8 > vpPad) {
-      top = r.top - panelHeight - 8;
-    }
-    top = Math.max(vpPad, top);
-    setPos({ top, left });
+    const belowTop = r.bottom + 8;
+    const aboveTop = r.top - panelHeight - 8;
+    const spaceBelow = window.innerHeight - r.bottom - vpPad - 8;
+    const spaceAbove = r.top - vpPad - 8;
+    let top = spaceBelow >= Math.min(panelHeight, 320) || spaceBelow >= spaceAbove ? belowTop : aboveTop;
+    top = Math.max(vpPad, Math.min(top, window.innerHeight - panelHeight - vpPad));
+    setPos({ top, left, width: panelWidth, maxHeight });
   }, []);
 
   React.useEffect(() => {
@@ -208,8 +210,8 @@ export function JalaliDateTimePicker({
       ? createPortal(
           <div
             ref={panelRef}
-            className="fixed z-[9999] w-[340px] rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_56%,hsl(var(--muted))_100%)] p-3 shadow-2xl"
-            style={{ top: pos.top, left: pos.left }}
+            className="fixed z-[9999] overflow-auto rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(165deg,hsl(var(--card))_0%,hsl(var(--card))_56%,hsl(var(--muted))_100%)] p-3 shadow-2xl"
+            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <button

@@ -768,20 +768,20 @@ export default function NewUserPage() {
                 نام کاربر <HelpTip text="هم برای نمایش داخل گاردینو استفاده می‌شود و هم نام کاربر پنل‌های مرزبان/پاسارگارد از همین مقدار ساخته می‌شود." />
               </label>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-                <div className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))]">
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-1.5 py-1">
                   {defaults.label_prefix ? (
-                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap border-l border-[hsl(var(--border))] px-3 text-xs text-[hsl(var(--fg))]/70">
+                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-[hsl(var(--accent)/0.18)] bg-[hsl(var(--accent)/0.10)] px-2.5 py-1.5 text-[11px] font-semibold text-[hsl(var(--accent))]">
                       {defaults.label_prefix}
                     </span>
                   ) : null}
                   <Input
-                    className="min-w-0 flex-1 border-0 bg-transparent"
+                    className="min-w-0 flex-1 border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
                     placeholder="مثلاً customer-01"
                   />
                   {defaults.label_suffix ? (
-                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap border-r border-[hsl(var(--border))] px-3 text-xs text-[hsl(var(--fg))]/70">
+                    <span dir="ltr" className="flex max-w-[35%] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-[hsl(var(--accent)/0.18)] bg-[hsl(var(--accent)/0.10)] px-2.5 py-1.5 text-[11px] font-semibold text-[hsl(var(--accent))]">
                       {defaults.label_suffix}
                     </span>
                   ) : null}
