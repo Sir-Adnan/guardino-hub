@@ -124,7 +124,7 @@ type LedgerRow = {
 
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted";
 type TileTone = "blue" | "green" | "orange" | "rose" | "cyan" | "violet" | "slate";
-type ChartMetric = "both" | "sold" | "used";
+type ChartMetric = "sold" | "used";
 
 const REPORT_LIMIT = 200;
 const CHART_DAYS = 14;
@@ -744,6 +744,7 @@ function UsageBarChart({
   rangeLabel,
   emptyLabel = "No data has been recorded for this range yet.",
   totalLabel,
+  totalValue,
   trendLabel,
 }: {
   data: Array<{ label: string; value: number }>;
@@ -754,27 +755,37 @@ function UsageBarChart({
   rangeLabel?: string;
   emptyLabel?: string;
   totalLabel: string;
+  totalValue?: number;
   trendLabel?: string;
 }) {
   const values = data.map((point) => Math.max(0, Number(point.value) || 0));
   const max = Math.max(1, ...values);
-  const total = values.reduce((acc, value) => acc + value, 0);
+  const total = totalValue ?? values.reduce((acc, value) => acc + value, 0);
   const first = values.find((value) => value > 0) || 0;
   const last = [...values].reverse().find((value) => value > 0) || 0;
   const trend = first > 0 ? Math.round(((last - first) / first) * 100) : last > 0 ? 100 : 0;
   const hasData = values.some((value) => value > 0);
   const tickValues = [max, max * 0.75, max * 0.5, max * 0.25, 0];
   const labelStep = Math.max(1, Math.ceil(data.length / 6));
-  const barClass: Record<TileTone, string> = {
-    blue: "bg-[#315f9c]",
-    green: "bg-emerald-600",
-    orange: "bg-orange-500",
-    rose: "bg-rose-500",
-    cyan: "bg-[#315f9c]",
-    violet: "bg-violet-600",
-    slate: "bg-slate-500",
+  const toneColor: Record<TileTone, string> = {
+    blue: "#2563eb",
+    green: "#059669",
+    orange: "#ea580c",
+    rose: "#e11d48",
+    cyan: "#315f9c",
+    violet: "#7c3aed",
+    slate: "#64748b",
   };
   const trendClass = trend < 0 ? "text-rose-600 dark:text-rose-300" : trend > 0 ? "text-emerald-600 dark:text-emerald-300" : "text-[hsl(var(--fg))]/58";
+  const width = 680;
+  const height = 270;
+  const pad = { top: 18, right: 12, bottom: 42, left: 64 };
+  const chartWidth = width - pad.left - pad.right;
+  const chartHeight = height - pad.top - pad.bottom;
+  const count = Math.max(1, data.length);
+  const step = chartWidth / count;
+  const barWidth = Math.max(6, Math.min(42, step * 0.58));
+  const fill = toneColor[tone];
 
   return (
     <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.86)] p-4 shadow-[0_14px_28px_-26px_hsl(var(--fg)/0.5)]">
@@ -790,38 +801,54 @@ function UsageBarChart({
         ) : null}
       </div>
 
-      <div className="mt-5 grid min-w-0 grid-cols-[54px_minmax(0,1fr)] gap-3 [direction:ltr]">
-        <div className="flex h-64 flex-col justify-between pb-8 pt-2 text-right text-[10px] text-[hsl(var(--fg))]/50">
-          {tickValues.map((tick, index) => (
-            <span key={`${tick}-${index}`}>{valueLabel(tick)}</span>
-          ))}
-        </div>
-        <div className="relative min-w-0">
-          {[12, 31, 50, 69, 88].map((top) => (
-            <div key={top} className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[hsl(var(--border))]" style={{ top: `${top}%` }} />
-          ))}
-          <div className="flex h-64 min-w-0 items-end gap-2 pb-8 pt-2">
-            {data.map((point, index) => {
-              const raw = Math.max(0, Number(point.value) || 0);
-              const height = raw > 0 ? Math.max(8, (raw / max) * 86) : 1.5;
-              const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
-              return (
-                <div key={`${point.label}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end" title={`${point.label}: ${valueLabel(raw)}`}>
-                  <div
-                    className={`w-full max-w-12 rounded-md ${barClass[tone]} shadow-[0_14px_22px_-18px_rgba(49,95,156,0.9)] transition-all duration-200 group-hover:brightness-110`}
-                    style={{ height: `${height}%`, opacity: raw > 0 ? 1 : 0.18 }}
+      <div className="relative mt-5 min-w-0 overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-2)/0.58),hsl(var(--surface-card-1)/0.72))] px-2 py-2">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[250px] w-full [direction:ltr]" role="img" aria-label={title}>
+          {tickValues.map((tick, index) => {
+            const y = pad.top + (index / (tickValues.length - 1)) * chartHeight;
+            return (
+              <g key={`${tick}-${index}`}>
+                <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="currentColor" strokeOpacity="0.12" strokeDasharray="5 6" />
+                <text x={pad.left - 10} y={y + 4} textAnchor="end" className="fill-current text-[11px] text-[hsl(var(--fg))]/50">
+                  {valueLabel(tick)}
+                </text>
+              </g>
+            );
+          })}
+          {data.map((point, index) => {
+            const raw = Math.max(0, Number(point.value) || 0);
+            const barHeight = raw > 0 ? Math.max(4, (raw / max) * chartHeight) : 0;
+            const x = pad.left + index * step + (step - barWidth) / 2;
+            const y = pad.top + chartHeight - barHeight;
+            const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
+            return (
+              <g key={`${point.label}-${index}`}>
+                {raw > 0 ? (
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barWidth}
+                    height={barHeight}
+                    rx={Math.min(8, barWidth / 2)}
+                    fill={fill}
+                    opacity="0.96"
                   />
-                  {showLabel ? <span className="absolute bottom-0 translate-y-full whitespace-nowrap pt-2 text-[10px] text-[hsl(var(--fg))]/50">{point.label}</span> : null}
-                </div>
-              );
-            })}
-          </div>
+                ) : null}
+                {showLabel ? (
+                  <text x={x + barWidth / 2} y={height - 14} textAnchor="middle" className="fill-current text-[10px] text-[hsl(var(--fg))]/48">
+                    {point.label}
+                  </text>
+                ) : null}
+                <title>{`${point.label}: ${valueLabel(raw)}`}</title>
+              </g>
+            );
+          })}
+          <line x1={pad.left} y1={pad.top + chartHeight} x2={width - pad.right} y2={pad.top + chartHeight} stroke="currentColor" strokeOpacity="0.14" />
+        </svg>
           {!hasData ? (
-            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.9)] px-3 py-2 text-center text-xs text-[hsl(var(--fg))]/58 [direction:rtl]">
+            <div className="absolute inset-x-5 top-1/2 -translate-y-1/2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.92)] px-3 py-2 text-center text-xs text-[hsl(var(--fg))]/58">
               {emptyLabel}
             </div>
           ) : null}
-        </div>
       </div>
 
       <div className="mt-4 grid gap-2 border-t border-[hsl(var(--border))] pt-3 text-xs text-[hsl(var(--fg))]/64 sm:grid-cols-2">
@@ -1106,6 +1133,7 @@ function RecentUsersPanel({ users, copy = dashboardCopy("fa") }: { users: UserLi
 export default function Dashboard() {
   const { me } = useAuth();
   const { t, lang } = useI18n();
+  const d = React.useMemo(() => dashboardCopy(lang), [lang]);
 
   const [adminStats, setAdminStats] = React.useState<AdminStats | null>(null);
   const [resellerStats, setResellerStats] = React.useState<ResellerStats | null>(null);
@@ -1114,7 +1142,7 @@ export default function Dashboard() {
   const [accountOptions, setAccountOptions] = React.useState<AccountOption[]>([]);
   const [chartRangeDays, setChartRangeDays] = React.useState(7);
   const [chartScope, setChartScope] = React.useState<string>("all");
-  const [chartMetric, setChartMetric] = React.useState<ChartMetric>("both");
+  const [chartMetric, setChartMetric] = React.useState<ChartMetric>("used");
   const [chartLoading, setChartLoading] = React.useState(false);
   const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [recentUsers, setRecentUsers] = React.useState<UserLite[]>([]);
@@ -1238,22 +1266,6 @@ export default function Dashboard() {
     };
   }, [me?.role, adminStats, resellerStats]);
 
-  const scopedTraffic = React.useMemo(() => {
-    const source =
-      me?.role === "admin" && scopedAdminStats
-        ? { sold: Number(scopedAdminStats.sold_gb_total || 0), usedBytes: Number(scopedAdminStats.used_bytes_total || 0) }
-        : scopedResellerStats
-          ? { sold: Number(scopedResellerStats.sold_gb_total || 0), usedBytes: Number(scopedResellerStats.used_bytes_total || 0) }
-          : { sold: 0, usedBytes: 0 };
-    const used = bytesToGb(source.usedBytes);
-    return {
-      soldGb: source.sold,
-      usedGb: used,
-      remainingGb: Math.max(source.sold - used, 0),
-      ratio: source.sold > 0 ? pct((used / source.sold) * 100) : 0,
-    };
-  }, [me?.role, scopedAdminStats, scopedResellerStats]);
-
   const orderStats = React.useMemo(() => {
     const completedOrders = orders.filter((x) => (x.status || "").toLowerCase() === "completed");
     const completed = completedOrders.length;
@@ -1293,6 +1305,22 @@ export default function Dashboard() {
 
   const visibleTrafficSeries = React.useMemo(() => compactSeries(trafficSeries, chartRangeDays > 90 ? 54 : 42), [trafficSeries, chartRangeDays]);
   const visibleUsedSeries = React.useMemo(() => compactSeries(usedSeries, chartRangeDays > 90 ? 54 : 42), [usedSeries, chartRangeDays]);
+  const chartPeriodTraffic = React.useMemo(() => {
+    const soldGb = sum(trafficSeries, (point) => Number(point.value || 0));
+    const usedGb = [...usedSeries].reverse().find((point) => Number(point.value || 0) > 0)?.value || 0;
+    return {
+      soldGb,
+      usedGb,
+      remainingGb: Math.max(soldGb - Number(usedGb || 0), 0),
+      ratio: soldGb > 0 ? pct((Number(usedGb || 0) / soldGb) * 100) : 0,
+    };
+  }, [trafficSeries, usedSeries]);
+  const activeChartSeries = chartMetric === "sold" ? visibleTrafficSeries : visibleUsedSeries;
+  const activeChartTitle = chartMetric === "sold" ? d.soldMetric : d.usedMetric;
+  const activeChartSubtitle = chartMetric === "sold" ? d.soldHint : d.usedHint;
+  const activeChartTone: TileTone = chartMetric === "sold" ? "cyan" : "green";
+  const activeChartTotalLabel = chartMetric === "sold" ? d.totalSold : d.totalUsed;
+  const activeChartTotalValue = chartMetric === "sold" ? chartPeriodTraffic.soldGb : chartPeriodTraffic.usedGb;
 
   const userSummary = React.useMemo(() => {
     if (me?.role === "admin" && scopedAdminStats) {
@@ -1376,7 +1404,6 @@ export default function Dashboard() {
   if (!me) return null;
 
   const isAdmin = me.role === "admin";
-  const d = dashboardCopy(lang);
   const title = isAdmin ? d.adminTitle : d.resellerTitle;
   const subtitle = isAdmin ? d.adminSubtitle : d.resellerSubtitle;
   const selectedAccount = isAdmin && chartScope !== "all" ? accountOptions.find((account) => String(account.id) === String(chartScope)) : null;
@@ -1450,138 +1477,6 @@ export default function Dashboard() {
               lowBalanceWarn.affordableGb != null ? fmtNumber(Math.max(0, Math.floor(lowBalanceWarn.affordableGb))) : undefined
             )}
           </div>
-        </div>
-      ) : null}
-
-      {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.45fr)] xl:items-start">
-          <SectionPanel
-            title={isAdmin ? d.userOverviewTitleAdmin : d.userOverviewTitleReseller}
-            subtitle={`${isAdmin ? d.userOverviewSubtitleAdmin : d.userOverviewSubtitleReseller} ${chartContextText}`}
-            icon={<UsersRound size={18} />}
-          >
-            <UserStatusOverview
-              total={userSummary.total}
-              active={userSummary.active}
-              disabled={userSummary.disabled}
-              expired={userSummary.expired}
-              limited={userSummary.limited}
-              onHold={userSummary.onHold}
-              deleted={userSummary.deleted}
-              copy={d.userStatus}
-            />
-          </SectionPanel>
-
-          <SectionPanel
-            title={d.trafficTitle}
-            subtitle={`${d.trafficSubtitle} ${chartContextText}`}
-            icon={<BarChart3 size={18} />}
-            action={<Badge variant={chartLoading ? "warning" : "default"}>{chartLoading ? d.updating : `${fmtNumber(scopedTraffic.ratio)}%`}</Badge>}
-          >
-            <div className="space-y-4">
-              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <label className="space-y-1">
-                  <span className="text-xs text-[hsl(var(--fg))]/65">{d.range}</span>
-                  <select
-                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
-                    value={chartRangeDays}
-                    onChange={(e) => setChartRangeDays(Number(e.target.value))}
-                  >
-                    {CHART_RANGE_OPTIONS.map((option) => (
-                      <option key={option.days} value={option.days}>
-                        {isEnglish(lang) ? option.en : option.fa}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {isAdmin ? (
-                  <label className="space-y-1">
-                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
-                    <select
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
-                      value={chartScope}
-                      onChange={(e) => setChartScope(e.target.value)}
-                    >
-                      <option value="all">{d.allAccounts}</option>
-                      {accountOptions.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {accountRoleLabel(account.role, lang)} - {account.username}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <div className="space-y-1">
-                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
-                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.76)] px-3 py-2 text-sm">{d.myAccount}</div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs text-[hsl(var(--fg))]/65">{d.metric}</div>
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    ["both", d.both],
-                    ["sold", d.soldMetric],
-                    ["used", d.usedMetric],
-                  ] as Array<[ChartMetric, string]>).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setChartMetric(value)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        chartMetric === value
-                          ? "border-[hsl(var(--accent))] bg-[hsl(var(--accent))] text-white shadow-[0_10px_24px_-18px_hsl(var(--accent))]"
-                          : "border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.76)] text-[hsl(var(--fg))]/72 hover:border-[hsl(var(--accent)/0.45)]"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className={`grid gap-4 ${chartMetric === "both" ? "2xl:grid-cols-2" : ""}`}>
-                {chartMetric !== "used" ? (
-                <div className="space-y-3">
-                  <UsageBarChart
-                    data={visibleTrafficSeries}
-                    title={d.soldMetric}
-                    subtitle={d.soldHint}
-                    valueLabel={(v) => `${fmtGig(v)} GB`}
-                    tone="cyan"
-                    rangeLabel={chartRangeText}
-                    emptyLabel={d.noData}
-                    totalLabel={d.totalSold}
-                    trendLabel={d.trend}
-                  />
-                </div>
-                ) : null}
-                {chartMetric !== "sold" ? (
-                <div className="space-y-3">
-                  <UsageBarChart
-                    data={visibleUsedSeries}
-                    title={d.usedMetric}
-                    subtitle={d.usedHint}
-                    valueLabel={(v) => `${fmtGig(v)} GB`}
-                    tone="green"
-                    rangeLabel={chartRangeText}
-                    emptyLabel={d.noData}
-                    totalLabel={d.totalUsed}
-                    trendLabel={d.trend}
-                  />
-                </div>
-                ) : null}
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-3">
-                <TrafficRow label={d.totalSold} value={`${fmtGig(scopedTraffic.soldGb)} GB`} color="bg-emerald-500" />
-                <TrafficRow label={d.totalUsed} value={`${fmtGig(scopedTraffic.usedGb)} GB`} color="bg-blue-500" />
-                <TrafficRow label={d.totalRemaining} value={`${fmtGig(scopedTraffic.remainingGb)} GB`} color="bg-amber-500" />
-              </div>
-            </div>
-          </SectionPanel>
         </div>
       ) : null}
 
@@ -1705,6 +1600,119 @@ export default function Dashboard() {
             <OperationsPanel orders={orders} isAdmin={false} copy={d} lang={lang} />
           </SectionPanel>
         </>
+      ) : null}
+
+      {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.18fr)] xl:items-stretch">
+          <SectionPanel
+            className="h-full"
+            title={isAdmin ? d.userOverviewTitleAdmin : d.userOverviewTitleReseller}
+            subtitle={`${isAdmin ? d.userOverviewSubtitleAdmin : d.userOverviewSubtitleReseller} ${chartContextText}`}
+            icon={<UsersRound size={18} />}
+          >
+            <UserStatusOverview
+              total={userSummary.total}
+              active={userSummary.active}
+              disabled={userSummary.disabled}
+              expired={userSummary.expired}
+              limited={userSummary.limited}
+              onHold={userSummary.onHold}
+              deleted={userSummary.deleted}
+              copy={d.userStatus}
+            />
+          </SectionPanel>
+
+          <SectionPanel
+            className="h-full"
+            title={d.trafficTitle}
+            subtitle={`${d.trafficSubtitle} ${chartContextText}`}
+            icon={<BarChart3 size={18} />}
+            action={<Badge variant={chartLoading ? "warning" : "default"}>{chartLoading ? d.updating : `${fmtNumber(chartPeriodTraffic.ratio)}%`}</Badge>}
+          >
+            <div className="space-y-4">
+              <div className="grid gap-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <label className="space-y-1">
+                  <span className="text-xs text-[hsl(var(--fg))]/65">{d.range}</span>
+                  <select
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
+                    value={chartRangeDays}
+                    onChange={(e) => setChartRangeDays(Number(e.target.value))}
+                  >
+                    {CHART_RANGE_OPTIONS.map((option) => (
+                      <option key={option.days} value={option.days}>
+                        {isEnglish(lang) ? option.en : option.fa}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {isAdmin ? (
+                  <label className="space-y-1">
+                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
+                    <select
+                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--accent)/0.35)]"
+                      value={chartScope}
+                      onChange={(e) => setChartScope(e.target.value)}
+                    >
+                      <option value="all">{d.allAccounts}</option>
+                      {accountOptions.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {accountRoleLabel(account.role, lang)} - {account.username}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="space-y-1">
+                    <span className="text-xs text-[hsl(var(--fg))]/65">{d.account}</span>
+                    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.76)] px-3 py-2 text-sm">{d.myAccount}</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-medium text-[hsl(var(--fg))]/65">{d.metric}</div>
+                <div className="inline-flex rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2)/0.75)] p-1">
+                  {([
+                    ["used", d.usedMetric],
+                    ["sold", d.soldMetric],
+                  ] as Array<[ChartMetric, string]>).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setChartMetric(value)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        chartMetric === value
+                          ? "bg-[hsl(var(--accent))] text-white shadow-[0_10px_24px_-18px_hsl(var(--accent))]"
+                          : "text-[hsl(var(--fg))]/66 hover:text-[hsl(var(--fg))]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <UsageBarChart
+                data={activeChartSeries}
+                title={activeChartTitle}
+                subtitle={activeChartSubtitle}
+                valueLabel={(v) => `${fmtGig(v)} GB`}
+                tone={activeChartTone}
+                rangeLabel={chartRangeText}
+                emptyLabel={d.noData}
+                totalLabel={activeChartTotalLabel}
+                totalValue={activeChartTotalValue}
+                trendLabel={d.trend}
+              />
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <TrafficRow label={d.totalSold} value={`${fmtGig(chartPeriodTraffic.soldGb)} GB`} color="bg-emerald-500" />
+                <TrafficRow label={d.totalUsed} value={`${fmtGig(chartPeriodTraffic.usedGb)} GB`} color="bg-blue-500" />
+                <TrafficRow label={d.totalRemaining} value={`${fmtGig(chartPeriodTraffic.remainingGb)} GB`} color="bg-amber-500" />
+              </div>
+            </div>
+          </SectionPanel>
+        </div>
       ) : null}
 
       {!loading && !err && ((isAdmin && !adminStats) || (!isAdmin && !resellerStats)) ? (
