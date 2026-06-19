@@ -133,7 +133,6 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
         )
 
     if refresh:
-        user.used_bytes = sum(max(0, int(sa.used_bytes or 0)) for sa in subs if sa.id not in missing_sub_ids)
         if missing_subs >= len(subs):
             meta = user.meta if isinstance(user.meta, dict) else {}
             user.status = UserStatus.deleted
@@ -142,6 +141,8 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                 "remote_deleted_at": now.isoformat(),
                 "remote_deleted_reason": "missing_in_panel",
             }
+        else:
+            user.used_bytes = sum(max(0, int(sa.used_bytes or 0)) for sa in subs if sa.id not in missing_sub_ids)
         await db.commit()
 
     master = None

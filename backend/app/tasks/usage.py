@@ -12,7 +12,7 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.models.node_allocation import NodeAllocation
 from app.services.adapters.factory import get_adapter
-from app.services.adapters.base import RemoteUserNotFound
+from app.services.adapters.base import RemoteUserListItem, RemoteUserNotFound
 from app.services.panel_access import get_adapter_for_allocation, get_adapter_for_subaccount
 from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
@@ -42,6 +42,49 @@ def _sync_create_status_meta(user: GuardinoUser, remote_status: str | None, used
             extra["first_connection_synced_at"] = now.isoformat()
         user.meta = {**meta, **extra}
 
+
+def _remote_identifier(value: str | None) -> str:
+    return str(value or "").strip()
+
+
+async def _fetch_remote_user_list(
+    adapter: object,
+    wanted_identifiers: set[str],
+) -> tuple[dict[str, RemoteUserListItem], bool]:
+    if not wanted_identifiers or not hasattr(adapter, "list_users"):
+        return {}, False
+
+    page_size = max(100, min(5000, int(getattr(settings, "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE", 1000) or 1000)))
+    max_pages = max(1, min(1000, int(getattr(settings, "USAGE_SYNC_REMOTE_LIST_MAX_PAGES", 200) or 200)))
+    found: dict[str, RemoteUserListItem] = {}
+    offset = 0
+    total: int | None = None
+
+    for _page in range(max_pages):
+        result = await adapter.list_users(offset=offset, limit=page_size)  # type: ignore[attr-defined]
+        items = list(getattr(result, "items", []) or [])
+        maybe_total = getattr(result, "total", None)
+        total = int(maybe_total) if maybe_total is not None else total
+
+        for item in items:
+            for candidate in (item.remote_identifier, item.username):
+                key = _remote_identifier(candidate)
+                if key and key in wanted_identifiers:
+                    found[key] = item
+
+        if wanted_identifiers.issubset(found.keys()):
+            return found, True
+        if not items:
+            return found, True
+        offset += page_size
+        if total is not None and offset >= total:
+            return found, True
+        if len(items) < page_size:
+            return found, True
+
+    return found, False
+
+
 @celery_app.task(name="app.tasks.usage.sync_usage")
 def sync_usage():
     lock_ttl = max(90, int(getattr(settings, "USAGE_SYNC_SECONDS", 60) or 60) * 2)
@@ -69,6 +112,7 @@ async def _sync_usage_async():
             users = q.scalars().all()
             if not users:
                 break
+            next_last_id = int(users[-1].id)
 
             stats.scanned_users += len(users)
             touched_reseller_ids: set[int] = set()
@@ -152,6 +196,31 @@ async def _sync_usage_async():
                         )
                         failure_log_budget -= 1
 
+            remote_list_by_access: dict[tuple[str, int], tuple[dict[str, RemoteUserListItem], bool]] = {}
+            for key, access_subs in by_access.items():
+                node = nodes.get(access_subs[0].node_id)
+                if not node or node.panel_type not in {PanelType.pasarguard, PanelType.marzban}:
+                    continue
+                adapter = adapters.get(key)
+                if not adapter or not hasattr(adapter, "list_users"):
+                    continue
+                wanted = {_remote_identifier(s.remote_identifier) for s in access_subs if _remote_identifier(s.remote_identifier)}
+                if not wanted:
+                    continue
+                try:
+                    remote_list_by_access[key] = await _fetch_remote_user_list(adapter, wanted)
+                except Exception as e:
+                    stats.remote_failures += len(access_subs)
+                    if failure_log_budget > 0:
+                        logger.warning(
+                            "sync_usage remote bulk list failed access=%s node_id=%s local_users=%s err=%s",
+                            key,
+                            node.id,
+                            len(access_subs),
+                            str(e)[:220],
+                        )
+                        failure_log_budget -= 1
+
             for u in users:
                 touched_reseller_ids.add(int(u.owner_reseller_id))
                 u_subs = by_user.get(u.id, [])
@@ -211,6 +280,40 @@ async def _sync_usage_async():
                         stats.remote_success += 1
                         total_used += effective_used
                         continue
+                    bulk_result = remote_list_by_access.get(access_key)
+                    if bulk_result is not None:
+                        remote_items, remote_list_exhausted = bulk_result
+                        remote_id = _remote_identifier(s.remote_identifier)
+                        remote_item = remote_items.get(remote_id)
+                        if remote_item is not None:
+                            effective_used = max(0, int(remote_item.used_bytes or 0))
+                            s.used_bytes = effective_used
+                            s.last_sync_at = now
+                            if remote_item.direct_sub_url:
+                                s.panel_sub_url_cached = remote_item.direct_sub_url
+                                s.panel_sub_url_cached_at = now
+                            _sync_create_status_meta(u, remote_item.status, effective_used, now)
+                            remote_success_count += 1
+                            stats.remote_success += 1
+                            total_used += effective_used
+                            continue
+                        if remote_list_exhausted:
+                            missing_subs += 1
+                            missing_sub_ids.add(s.id)
+                            stats.remote_missing += 1
+                            try:
+                                await db.delete(s)
+                            except Exception:
+                                stats.errors += 1
+                            if failure_log_budget > 0:
+                                logger.info(
+                                    "sync_usage remote user missing from bulk list user_id=%s node_id=%s remote_identifier=%s",
+                                    u.id,
+                                    s.node_id,
+                                    s.remote_identifier,
+                                )
+                                failure_log_budget -= 1
+                            continue
                     try:
                         remote_status = None
                         if hasattr(adapter, "get_user_snapshot"):
@@ -328,7 +431,7 @@ async def _sync_usage_async():
             except Exception as e:
                 await db.rollback()
                 logger.warning("sync_usage daily metrics refresh failed reseller_count=%s err=%s", len(touched_reseller_ids), str(e)[:220])
-            last_id = users[-1].id
+            last_id = next_last_id
             if len(users) < batch_size:
                 break
 

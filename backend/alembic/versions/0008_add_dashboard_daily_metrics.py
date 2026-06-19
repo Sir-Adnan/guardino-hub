@@ -39,7 +39,7 @@ def upgrade():
             sa.Column("users_limited", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("users_on_hold", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("users_deleted", sa.Integer(), nullable=False, server_default="0"),
-            sa.Column("sold_gb_total", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("sold_gb_total", sa.BigInteger(), nullable=False, server_default="0"),
             sa.Column("used_bytes_total", sa.BigInteger(), nullable=False, server_default="0"),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -94,14 +94,14 @@ def upgrade():
                   AND orders.status = 'completed'
               )
           )::integer,
-          COALESCE(SUM(total_gb) FILTER (
+          COALESCE(SUM(total_gb::bigint) FILTER (
             WHERE status <> 'deleted'
                OR EXISTS (
                  SELECT 1 FROM orders
                  WHERE orders.user_id = users.id
                    AND orders.status = 'completed'
                )
-          ), 0)::integer,
+          ), 0)::bigint,
           COALESCE(SUM(used_bytes) FILTER (
             WHERE status <> 'deleted'
                OR EXISTS (

@@ -27,5 +27,5 @@ class DashboardDailyMetric(Base, TimestampMixin):
     users_on_hold: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     users_deleted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    sold_gb_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sold_gb_total: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     used_bytes_total: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import BigInteger, cast, func, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,10 +54,11 @@ async def get_reseller_stats(
     ).all()
     user_summary = summarize_users(user_rows, now)
 
+    zero_bigint = literal(0, type_=BigInteger())
     uq = await db.execute(
         select(
-            func.coalesce(func.sum(GuardinoUser.used_bytes), 0).label("used_bytes_total"),
-            func.coalesce(func.sum(GuardinoUser.total_gb), 0).label("sold_gb_total"),
+            func.coalesce(func.sum(cast(GuardinoUser.used_bytes, BigInteger)), zero_bigint).label("used_bytes_total"),
+            func.coalesce(func.sum(cast(GuardinoUser.total_gb, BigInteger)), zero_bigint).label("sold_gb_total"),
         ).where(
             GuardinoUser.owner_reseller_id == reseller.id,
             accounted_user_condition(),
@@ -116,7 +117,10 @@ async def get_reseller_stats(
     try:
         metric_series_rows = (
             await db.execute(
-                select(DashboardDailyMetric.day, DashboardDailyMetric.used_bytes_total)
+                select(
+                    DashboardDailyMetric.day,
+                    cast(DashboardDailyMetric.used_bytes_total, BigInteger).label("used_bytes_total"),
+                )
                 .where(
                     DashboardDailyMetric.reseller_id == reseller.id,
                     DashboardDailyMetric.day >= series_since.date(),

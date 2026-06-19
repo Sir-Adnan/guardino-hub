@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import delete, func, select
 
 from app.core.db import get_db
 from app.api.deps import require_admin
 from app.models.node import Node, PanelType
+from app.models.node_allocation import NodeAllocation
 from app.models.subaccount import SubAccount
 from app.schemas.admin import CreateNodeRequest, UpdateNodeRequest, NodeOut, NodeList
+from app.services.dashboard_metrics import refresh_daily_metrics_for_resellers
+from app.services.local_detach import detach_subaccounts_locally
 
 router = APIRouter()
 
@@ -112,11 +115,30 @@ async def soft_delete_node(node_id: int, db: AsyncSession = Depends(get_db), adm
     # Soft delete: فقط از Guardino غیرفعال می‌کنیم؛ هیچ تغییری در پنل مقصد اعمال نمی‌شود.
     if n.is_enabled:
         raise HTTPException(status_code=400, detail="Disable the node before deleting it.")
+    subaccounts = (await db.execute(select(SubAccount).where(SubAccount.node_id == n.id))).scalars().all()
+    detach_result = await detach_subaccounts_locally(
+        db,
+        subaccounts,
+        reason="node_removed",
+    )
+    await db.execute(delete(NodeAllocation).where(NodeAllocation.node_id == n.id))
     n.is_enabled = False
     n.is_visible_in_sub = False
     n.is_deleted = True
     await db.commit()
-    return {"ok": True, "is_enabled": n.is_enabled, "is_deleted": n.is_deleted}
+    if detach_result.affected_reseller_ids:
+        try:
+            await refresh_daily_metrics_for_resellers(db, detach_result.affected_reseller_ids)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+    return {
+        "ok": True,
+        "is_enabled": n.is_enabled,
+        "is_deleted": n.is_deleted,
+        "subaccounts_detached": detach_result.subaccounts_detached,
+        "users_archived": detach_result.users_archived,
+    }
 
 @router.post("/{node_id}/test-connection")
 async def test_connection(node_id: int, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):

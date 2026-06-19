@@ -4,7 +4,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import and_, desc, func, or_, select
 
 from app.core.db import get_db
 from app.api.deps import require_admin
@@ -25,6 +25,7 @@ from app.schemas.admin import (
 from app.services.panel_access import get_adapter_for_allocation
 from app.services.urls import normalize_url
 from app.services.dashboard_metrics import refresh_daily_metrics_for_resellers
+from app.services.local_detach import detach_subaccounts_locally
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -355,6 +356,37 @@ async def delete_allocation(allocation_id: int, db: AsyncSession = Depends(get_d
     a = (await db.execute(select(NodeAllocation).where(NodeAllocation.id == allocation_id))).scalar_one_or_none()
     if not a:
         raise HTTPException(status_code=404, detail="Allocation not found")
+    reseller_id = int(a.reseller_id)
+    subaccounts = (
+        await db.execute(
+            select(SubAccount)
+            .join(GuardinoUser, GuardinoUser.id == SubAccount.user_id)
+            .where(
+                or_(
+                    SubAccount.allocation_id == a.id,
+                    and_(
+                        SubAccount.node_id == a.node_id,
+                        GuardinoUser.owner_reseller_id == a.reseller_id,
+                    ),
+                )
+            )
+        )
+    ).scalars().all()
+    detach_result = await detach_subaccounts_locally(
+        db,
+        subaccounts,
+        reason="allocation_removed",
+    )
     await db.delete(a)
     await db.commit()
-    return {"ok": True}
+    try:
+        await refresh_daily_metrics_for_resellers(db, [reseller_id])
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.warning("allocation delete metrics refresh failed allocation_id=%s reseller_id=%s err=%s", allocation_id, reseller_id, str(e)[:220])
+    return {
+        "ok": True,
+        "subaccounts_detached": detach_result.subaccounts_detached,
+        "users_archived": detach_result.users_archived,
+    }

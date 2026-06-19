@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import BigInteger, cast, func, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,8 +58,9 @@ async def get_admin_stats(
         GuardinoUser.meta,
         accounted_user.label("is_accounted"),
     )
-    used_stmt = select(func.coalesce(func.sum(GuardinoUser.used_bytes), 0)).where(accounted_user)
-    sold_stmt = select(func.coalesce(func.sum(GuardinoUser.total_gb), 0)).where(accounted_user)
+    zero_bigint = literal(0, type_=BigInteger())
+    used_stmt = select(func.coalesce(func.sum(cast(GuardinoUser.used_bytes, BigInteger)), zero_bigint)).where(accounted_user)
+    sold_stmt = select(func.coalesce(func.sum(cast(GuardinoUser.total_gb, BigInteger)), zero_bigint)).where(accounted_user)
     if reseller_id is not None:
         user_stmt = user_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         used_stmt = used_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
@@ -101,7 +102,7 @@ async def get_admin_stats(
     metric_series_stmt = (
         select(
             DashboardDailyMetric.day,
-            func.coalesce(func.sum(DashboardDailyMetric.used_bytes_total), 0).label("used_bytes_total"),
+            func.coalesce(func.sum(cast(DashboardDailyMetric.used_bytes_total, BigInteger)), zero_bigint).label("used_bytes_total"),
         )
         .where(DashboardDailyMetric.day >= series_since.date())
         .group_by(DashboardDailyMetric.day)

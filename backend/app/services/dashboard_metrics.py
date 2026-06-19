@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
-from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy import BigInteger, and_, case, cast, exists, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +132,10 @@ def _count_if(condition: Any) -> Any:
     return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
 
 
+def _bigint_zero() -> Any:
+    return literal(0, type_=BigInteger())
+
+
 def accounted_user_condition() -> Any:
     has_completed_order = exists().where(
         Order.user_id == GuardinoUser.id,
@@ -157,11 +161,13 @@ async def refresh_daily_metrics_for_resellers(
     create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
     not_deleted = GuardinoUser.status != UserStatus.deleted
     accounted = accounted_user_condition()
+    total_bytes = cast(GuardinoUser.total_gb, BigInteger) * literal(BYTES_PER_GB, type_=BigInteger())
     limited = and_(
         not_deleted,
         GuardinoUser.total_gb > 0,
-        GuardinoUser.used_bytes >= GuardinoUser.total_gb * BYTES_PER_GB,
+        GuardinoUser.used_bytes >= total_bytes,
     )
+    zero = _bigint_zero()
 
     stmt = select(
         GuardinoUser.owner_reseller_id.label("reseller_id"),
@@ -172,8 +178,14 @@ async def refresh_daily_metrics_for_resellers(
         _count_if(limited).label("users_limited"),
         _count_if(and_(GuardinoUser.status == UserStatus.active, create_status == "on_hold")).label("users_on_hold"),
         _count_if(and_(GuardinoUser.status == UserStatus.deleted, accounted)).label("users_deleted"),
-        func.coalesce(func.sum(case((accounted, GuardinoUser.total_gb), else_=0)), 0).label("sold_gb_total"),
-        func.coalesce(func.sum(case((accounted, GuardinoUser.used_bytes), else_=0)), 0).label("used_bytes_total"),
+        func.coalesce(
+            func.sum(case((accounted, cast(GuardinoUser.total_gb, BigInteger)), else_=zero)),
+            zero,
+        ).label("sold_gb_total"),
+        func.coalesce(
+            func.sum(case((accounted, cast(GuardinoUser.used_bytes, BigInteger)), else_=zero)),
+            zero,
+        ).label("used_bytes_total"),
     ).group_by(GuardinoUser.owner_reseller_id)
     if clean_ids is not None:
         stmt = stmt.where(GuardinoUser.owner_reseller_id.in_(clean_ids))

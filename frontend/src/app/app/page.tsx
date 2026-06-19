@@ -208,6 +208,7 @@ function dashboardCopy(lang: string) {
       totalUsed: "Total recorded usage",
       totalRemaining: "Remaining capacity",
       noData: "No data has been recorded for this range yet.",
+      trend: "Trend",
       recentDays: (count: string) => `Last ${count} days`,
       gbUnit: "GB",
       usageLabel: "Usage",
@@ -329,6 +330,7 @@ function dashboardCopy(lang: string) {
     totalUsed: "مصرف کل ثبت‌شده",
     totalRemaining: "ظرفیت باقی‌مانده",
     noData: "هنوز داده‌ای برای این بازه ثبت نشده است.",
+    trend: "روند",
     recentDays: (count: string) => `${count} روز اخیر`,
     gbUnit: "گیگ",
     usageLabel: "مصرف",
@@ -728,6 +730,107 @@ function MiniBars({
         <span>{data[data.length - 1]?.label || ""}</span>
         <span>{rangeLabel || `Last ${fmtNumber(data.length)} days`}</span>
         <span>{data[0]?.label || ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function UsageBarChart({
+  data,
+  title,
+  subtitle,
+  valueLabel,
+  tone = "blue",
+  rangeLabel,
+  emptyLabel = "No data has been recorded for this range yet.",
+  totalLabel,
+  trendLabel,
+}: {
+  data: Array<{ label: string; value: number }>;
+  title: string;
+  subtitle?: string;
+  valueLabel: (value: number) => string;
+  tone?: TileTone;
+  rangeLabel?: string;
+  emptyLabel?: string;
+  totalLabel: string;
+  trendLabel?: string;
+}) {
+  const values = data.map((point) => Math.max(0, Number(point.value) || 0));
+  const max = Math.max(1, ...values);
+  const total = values.reduce((acc, value) => acc + value, 0);
+  const first = values.find((value) => value > 0) || 0;
+  const last = [...values].reverse().find((value) => value > 0) || 0;
+  const trend = first > 0 ? Math.round(((last - first) / first) * 100) : last > 0 ? 100 : 0;
+  const hasData = values.some((value) => value > 0);
+  const tickValues = [max, max * 0.75, max * 0.5, max * 0.25, 0];
+  const labelStep = Math.max(1, Math.ceil(data.length / 6));
+  const barClass: Record<TileTone, string> = {
+    blue: "bg-[#315f9c]",
+    green: "bg-emerald-600",
+    orange: "bg-orange-500",
+    rose: "bg-rose-500",
+    cyan: "bg-[#315f9c]",
+    violet: "bg-violet-600",
+    slate: "bg-slate-500",
+  };
+  const trendClass = trend < 0 ? "text-rose-600 dark:text-rose-300" : trend > 0 ? "text-emerald-600 dark:text-emerald-300" : "text-[hsl(var(--fg))]/58";
+
+  return (
+    <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.86)] p-4 shadow-[0_14px_28px_-26px_hsl(var(--fg)/0.5)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle ? <div className="mt-1 text-xs leading-5 text-[hsl(var(--fg))]/58">{subtitle}</div> : null}
+        </div>
+        {rangeLabel ? (
+          <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-2)/0.86)] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--fg))]/72">
+            {rangeLabel}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-5 grid min-w-0 grid-cols-[54px_minmax(0,1fr)] gap-3 [direction:ltr]">
+        <div className="flex h-64 flex-col justify-between pb-8 pt-2 text-right text-[10px] text-[hsl(var(--fg))]/50">
+          {tickValues.map((tick, index) => (
+            <span key={`${tick}-${index}`}>{valueLabel(tick)}</span>
+          ))}
+        </div>
+        <div className="relative min-w-0">
+          {[12, 31, 50, 69, 88].map((top) => (
+            <div key={top} className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[hsl(var(--border))]" style={{ top: `${top}%` }} />
+          ))}
+          <div className="flex h-64 min-w-0 items-end gap-2 pb-8 pt-2">
+            {data.map((point, index) => {
+              const raw = Math.max(0, Number(point.value) || 0);
+              const height = raw > 0 ? Math.max(8, (raw / max) * 86) : 1.5;
+              const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
+              return (
+                <div key={`${point.label}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end" title={`${point.label}: ${valueLabel(raw)}`}>
+                  <div
+                    className={`w-full max-w-12 rounded-md ${barClass[tone]} shadow-[0_14px_22px_-18px_rgba(49,95,156,0.9)] transition-all duration-200 group-hover:brightness-110`}
+                    style={{ height: `${height}%`, opacity: raw > 0 ? 1 : 0.18 }}
+                  />
+                  {showLabel ? <span className="absolute bottom-0 translate-y-full whitespace-nowrap pt-2 text-[10px] text-[hsl(var(--fg))]/50">{point.label}</span> : null}
+                </div>
+              );
+            })}
+          </div>
+          {!hasData ? (
+            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.9)] px-3 py-2 text-center text-xs text-[hsl(var(--fg))]/58 [direction:rtl]">
+              {emptyLabel}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 border-t border-[hsl(var(--border))] pt-3 text-xs text-[hsl(var(--fg))]/64 sm:grid-cols-2">
+        <div className={trendClass}>
+          {trendLabel || "Trend"}: {trend > 0 ? "+" : ""}{fmtNumber(trend)}%
+        </div>
+        <div className="sm:text-right">
+          {totalLabel}: {valueLabel(total)}
+        </div>
       </div>
     </div>
   );
@@ -1351,7 +1454,7 @@ export default function Dashboard() {
       ) : null}
 
       {!loading && !err && ((isAdmin && adminStats) || (!isAdmin && resellerStats)) ? (
-        <div className="grid gap-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.45fr)] xl:items-start">
           <SectionPanel
             title={isAdmin ? d.userOverviewTitleAdmin : d.userOverviewTitleReseller}
             subtitle={`${isAdmin ? d.userOverviewSubtitleAdmin : d.userOverviewSubtitleReseller} ${chartContextText}`}
@@ -1439,29 +1542,35 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className={`grid gap-4 ${chartMetric === "both" ? "lg:grid-cols-2" : ""}`}>
+              <div className={`grid gap-4 ${chartMetric === "both" ? "2xl:grid-cols-2" : ""}`}>
                 {chartMetric !== "used" ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">{d.soldMetric}</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.soldHint}</div>
-                    </div>
-                    <Badge variant="default">{fmtGig(trafficSeries.reduce((acc, p) => acc + Number(p.value || 0), 0))} GB</Badge>
-                  </div>
-                  <MiniBars data={visibleTrafficSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="cyan" rangeLabel={chartRangeText} emptyLabel={d.noData} />
+                  <UsageBarChart
+                    data={visibleTrafficSeries}
+                    title={d.soldMetric}
+                    subtitle={d.soldHint}
+                    valueLabel={(v) => `${fmtGig(v)} GB`}
+                    tone="cyan"
+                    rangeLabel={chartRangeText}
+                    emptyLabel={d.noData}
+                    totalLabel={d.totalSold}
+                    trendLabel={d.trend}
+                  />
                 </div>
                 ) : null}
                 {chartMetric !== "sold" ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">{d.usedMetric}</div>
-                      <div className="text-xs text-[hsl(var(--fg))]/58">{d.usedHint}</div>
-                    </div>
-                    <Badge variant="success">{fmtGig(scopedTraffic.usedGb)} GB</Badge>
-                  </div>
-                  <MiniBars data={visibleUsedSeries} valueLabel={(v) => `${fmtGig(v)} GB`} tone="green" rangeLabel={chartRangeText} emptyLabel={d.noData} />
+                  <UsageBarChart
+                    data={visibleUsedSeries}
+                    title={d.usedMetric}
+                    subtitle={d.usedHint}
+                    valueLabel={(v) => `${fmtGig(v)} GB`}
+                    tone="green"
+                    rangeLabel={chartRangeText}
+                    emptyLabel={d.noData}
+                    totalLabel={d.totalUsed}
+                    trendLabel={d.trend}
+                  />
                 </div>
                 ) : null}
               </div>
