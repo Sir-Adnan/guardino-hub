@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { HelpTip } from "@/components/ui/help-tip";
 import { apiFetch } from "@/lib/api";
+import { formatNumberWithDigits, localizeDigits } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth-context";
 import { copyText } from "@/lib/copy";
 import { useI18n } from "@/components/i18n-context";
-import { CalendarDays, Copy, KeyRound, Palette, Shield, ShieldCheck, Sparkles } from "lucide-react";
+import { CalendarDays, Copy, Hash, KeyRound, Palette, Shield, ShieldCheck, Sparkles } from "lucide-react";
 
 type UserDefaults = {
   default_pricing_mode: "bundle" | "per_node";
@@ -110,11 +111,11 @@ const TRAFFIC_PRESET_OPTIONS = [20, 30, 50, 70, 100, 150, 200];
 
 function durationPresetLabel(preset: string, lang: string): string {
   const en = lang === "en";
-  if (preset === "7d") return en ? "7 days" : "۷ روز";
-  if (preset === "1m") return en ? "1 month" : "۱ ماه";
-  if (preset === "3m") return en ? "3 months" : "۳ ماه";
-  if (preset === "6m") return en ? "6 months" : "۶ ماه";
-  if (preset === "1y") return en ? "1 year" : "۱ سال";
+  if (preset === "7d") return en ? "7 days" : localizeDigits("7 روز");
+  if (preset === "1m") return en ? "1 month" : localizeDigits("1 ماه");
+  if (preset === "3m") return en ? "3 months" : localizeDigits("3 ماه");
+  if (preset === "6m") return en ? "6 months" : localizeDigits("6 ماه");
+  if (preset === "1y") return en ? "1 year" : localizeDigits("1 سال");
   return en ? "Unlimited" : "نامحدود";
 }
 
@@ -203,7 +204,7 @@ export default function SettingsPage() {
   const r = useRouter();
   const { push } = useToast();
   const { me } = useAuth();
-  const { lang } = useI18n();
+  const { lang, digitStyle, setDigitStyle } = useI18n();
   const isEn = lang === "en";
   const [activeTab, setActiveTab] = React.useState<SettingsTabKey>("security");
   const copy = React.useMemo(
@@ -224,7 +225,7 @@ export default function SettingsPage() {
             toastPasswordError: "Could not change password",
             toastCurrentPasswordRequired: "Enter your current password",
             toast2faSecretCreated: "Two-factor key created",
-            toast2faSecretCreatedDesc: "Add it to your authenticator app and confirm the 6-digit code.",
+            toast2faSecretCreatedDesc: `Add it to your authenticator app and confirm the ${formatNumberWithDigits(6)}-digit code.`,
             toast2faSetupError: "Could not start setup",
             toast2faCodeRequired: "Enter current password and Authenticator code",
             toast2faEnabled: "Two-factor authentication enabled",
@@ -253,7 +254,7 @@ export default function SettingsPage() {
             tabPolicyDesc: "Reseller rules",
             twoFactorTitle: "Account Two-Factor Authentication",
             twoFactorHelp:
-              "Security guide: enter your current password first and generate a 2FA key. Add the secret to an Authenticator app and confirm the 6-digit code. After activation, the secret is encrypted in the database and recovery codes are stored only as hashes. Recovery codes are shown once; each code can be used one time.",
+              `Security guide: enter your current password first and generate a 2FA key. Add the secret to an Authenticator app and confirm the ${formatNumberWithDigits(6)}-digit code. After activation, the secret is encrypted in the database and recovery codes are stored only as hashes. Recovery codes are shown once; each code can be used one time.`,
             twoFactorSubtitle:
               "Enable a TOTP security layer for super-admin and reseller logins. It works with Google Authenticator, Microsoft Authenticator, 1Password and Bitwarden.",
             enabled: "Enabled",
@@ -265,7 +266,7 @@ export default function SettingsPage() {
             copySecret: "Copy secret",
             copyUri: "Copy URI",
             setupInstructions:
-              "In your Authenticator app, choose manual setup or enter setup key, name the account Guardino Hub / {account}, select time based mode, and enter the secret above. Then paste the generated 6-digit code and confirm activation.",
+              `In your Authenticator app, choose manual setup or enter setup key, name the account Guardino Hub / {account}, select time based mode, and enter the secret above. Then paste the generated ${formatNumberWithDigits(6)}-digit code and confirm activation.`,
             recoveryCodesTitle: "One-time recovery codes",
             copyAll: "Copy all",
             secureRelogin: "Secure logout and login again",
@@ -287,8 +288,12 @@ export default function SettingsPage() {
             accentColor: "Accent color",
             colorPreset: "Color preset",
             presetHint: "The theme preset changes cards, gradients and the panel background glow together.",
+            digitStyleTitle: "Number digits",
+            digitStyleHint: "Choose whether panel numbers are rendered with English or Persian digits. This does not change the panel language.",
+            digitLatin: "English digits",
+            digitPersian: "Persian digits",
             passwordTitle: "Change password",
-            passwordDesc: "For better security, choose a new password with at least 8 characters.",
+            passwordDesc: `For better security, choose a new password with at least ${formatNumberWithDigits(8)} characters.`,
             currentPassword: "Current password",
             newPassword: "New password",
             confirmPassword: "Repeat new password",
@@ -372,7 +377,7 @@ export default function SettingsPage() {
             toastPasswordError: "خطا در تغییر رمز",
             toastCurrentPasswordRequired: "رمز فعلی را وارد کنید",
             toast2faSecretCreated: "کلید دومرحله‌ای ساخته شد",
-            toast2faSecretCreatedDesc: "آن را در برنامه Authenticator وارد کنید و کد ۶ رقمی را تایید کنید.",
+            toast2faSecretCreatedDesc: `آن را در برنامه Authenticator وارد کنید و کد ${formatNumberWithDigits(6)} رقمی را تایید کنید.`,
             toast2faSetupError: "خطا در شروع راه‌اندازی",
             toast2faCodeRequired: "رمز فعلی و کد Authenticator را وارد کنید",
             toast2faEnabled: "تایید دومرحله‌ای فعال شد",
@@ -401,7 +406,7 @@ export default function SettingsPage() {
             tabPolicyDesc: "قوانین رسیلرها",
             twoFactorTitle: "تایید دومرحله‌ای حساب",
             twoFactorHelp:
-              "راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ۶ رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.",
+              `راهنمای امنیتی: ابتدا رمز فعلی را وارد کنید و کلید 2FA بسازید. سپس secret را در برنامه Authenticator اضافه کنید و کد ${formatNumberWithDigits(6)} رقمی را تایید کنید. بعد از فعال‌سازی، secret به‌صورت رمزنگاری‌شده در دیتابیس ذخیره می‌شود و backup codeها فقط به شکل hash نگهداری می‌شوند. کدهای بازیابی فقط همین یک‌بار نمایش داده می‌شوند؛ هر کد فقط یک‌بار قابل استفاده است.`,
             twoFactorSubtitle:
               "برای ورود سوپرادمین و رسیلرها می‌توانید یک لایه امنیتی TOTP فعال کنید. این روش با Google Authenticator، Microsoft Authenticator، 1Password و Bitwarden سازگار است.",
             enabled: "فعال",
@@ -413,7 +418,7 @@ export default function SettingsPage() {
             copySecret: "کپی secret",
             copyUri: "کپی URI",
             setupInstructions:
-              "در برنامه Authenticator گزینه manual setup یا enter setup key را بزنید؛ نام حساب را Guardino Hub / {account} بگذارید، نوع را Time based انتخاب کنید و secret بالا را وارد کنید. سپس کد ۶ رقمی تولیدشده را در فیلد کد وارد و فعال‌سازی را تایید کنید.",
+              `در برنامه Authenticator گزینه manual setup یا enter setup key را بزنید؛ نام حساب را Guardino Hub / {account} بگذارید، نوع را Time based انتخاب کنید و secret بالا را وارد کنید. سپس کد ${formatNumberWithDigits(6)} رقمی تولیدشده را در فیلد کد وارد و فعال‌سازی را تایید کنید.`,
             recoveryCodesTitle: "کدهای بازیابی یک‌بارمصرف",
             copyAll: "کپی همه",
             secureRelogin: "خروج و ورود مجدد امن",
@@ -435,8 +440,12 @@ export default function SettingsPage() {
             accentColor: "رنگ اصلی",
             colorPreset: "پریست رنگی",
             presetHint: "preset تم، گرادیانت باکس‌ها و نور پس‌زمینه کل پنل را یک‌جا تغییر می‌دهد.",
+            digitStyleTitle: "نمایش اعداد",
+            digitStyleHint: "انتخاب کنید عددهای پنل با رقم انگلیسی یا فارسی نمایش داده شوند؛ این گزینه زبان پنل را تغییر نمی‌دهد.",
+            digitLatin: "اعداد انگلیسی",
+            digitPersian: "اعداد فارسی",
             passwordTitle: "تغییر رمز عبور",
-            passwordDesc: "برای امنیت بیشتر، رمز جدید حداقل ۸ کاراکتر انتخاب کنید.",
+            passwordDesc: `برای امنیت بیشتر، رمز جدید حداقل ${formatNumberWithDigits(8)} کاراکتر انتخاب کنید.`,
             currentPassword: "رمز فعلی",
             newPassword: "رمز جدید",
             confirmPassword: "تکرار رمز جدید",
@@ -505,7 +514,7 @@ export default function SettingsPage() {
             resetVolumeCarryTime: "ریست حجم و اضافه شدن زمان باقی‌مانده قبلی",
             logout: "خروج از حساب",
           },
-    [isEn]
+    [isEn, digitStyle]
   );
 
   const [loadingDefaults, setLoadingDefaults] = React.useState(true);
@@ -810,12 +819,12 @@ export default function SettingsPage() {
 
   const todayLabel = React.useMemo(
     () =>
-      new Date().toLocaleDateString(isEn ? "en-US" : "fa-IR-u-ca-persian", {
+      localizeDigits(new Date().toLocaleDateString(isEn ? "en-US" : "fa-IR-u-ca-persian", {
         year: "numeric",
         month: "long",
         day: "numeric",
-      }),
-    [isEn]
+      }), digitStyle),
+    [isEn, digitStyle]
   );
   const selectClass =
     "w-full rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(155deg,hsl(var(--surface-input-1))_0%,hsl(var(--surface-input-2))_55%,hsl(var(--surface-input-3))_100%)] px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-[hsl(var(--accent)/0.32)] focus:border-[hsl(var(--accent)/0.45)] focus:ring-2 focus:ring-[hsl(var(--accent)/0.30)]";
@@ -1070,10 +1079,10 @@ export default function SettingsPage() {
             <div className="grid gap-2 text-xs text-[hsl(var(--fg))]/65 sm:grid-cols-3">
               <div className="rounded-xl border border-[hsl(var(--border))] p-3">{copy.remainingCodes}: {twoFactorStatus.recovery_codes_remaining}</div>
               <div className="rounded-xl border border-[hsl(var(--border))] p-3">
-                {copy.activatedAt}: {twoFactorStatus.confirmed_at ? new Date(twoFactorStatus.confirmed_at).toLocaleString(isEn ? "en-US" : "fa-IR") : "-"}
+                {copy.activatedAt}: {twoFactorStatus.confirmed_at ? localizeDigits(new Date(twoFactorStatus.confirmed_at).toLocaleString(isEn ? "en-US" : "fa-IR"), digitStyle) : "-"}
               </div>
               <div className="rounded-xl border border-[hsl(var(--border))] p-3">
-                {copy.lastUsedAt}: {twoFactorStatus.last_used_at ? new Date(twoFactorStatus.last_used_at).toLocaleString(isEn ? "en-US" : "fa-IR") : "-"}
+                {copy.lastUsedAt}: {twoFactorStatus.last_used_at ? localizeDigits(new Date(twoFactorStatus.last_used_at).toLocaleString(isEn ? "en-US" : "fa-IR"), digitStyle) : "-"}
               </div>
             </div>
           ) : null}
@@ -1086,7 +1095,7 @@ export default function SettingsPage() {
           <div className="text-sm text-[hsl(var(--fg))]/70">{copy.settingsSubtitle}</div>
         </CardHeader>
         <CardContent data-settings-tab={activeTab} className="settings-tab-content space-y-6">
-          <div className={activeTab === "appearance" ? "grid gap-4 lg:grid-cols-3" : "hidden"}>
+          <div className={activeTab === "appearance" ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4" : "hidden"}>
             <div className="space-y-2 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-1)/0.20),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-1)/0.75)]">
               <div className="text-sm font-medium flex items-center gap-2"><Sparkles size={15} /> {copy.displayMode}</div>
               <div className="flex flex-wrap gap-2">
@@ -1131,6 +1140,25 @@ export default function SettingsPage() {
                 ))}
               </div>
               <div className="text-xs text-[hsl(var(--fg))]/70">{copy.presetHint}</div>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(145deg,hsl(var(--surface-page-glow-1)/0.16),hsl(var(--surface-card-1))_78%)] p-4 shadow-[0_10px_24px_-20px_hsl(var(--surface-page-glow-1)/0.72)]">
+              <div className="flex items-center gap-2 text-sm font-medium"><Hash size={15} /> {copy.digitStyleTitle}</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  variant={digitStyle === "latin" ? "primary" : "outline"}
+                  onClick={() => setDigitStyle("latin")}
+                >
+                  {copy.digitLatin}
+                </Button>
+                <Button
+                  variant={digitStyle === "persian" ? "primary" : "outline"}
+                  onClick={() => setDigitStyle("persian")}
+                >
+                  {copy.digitPersian}
+                </Button>
+              </div>
+              <div className="text-xs leading-5 text-[hsl(var(--fg))]/70">{copy.digitStyleHint}</div>
             </div>
           </div>
 

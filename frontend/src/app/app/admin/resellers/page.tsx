@@ -11,7 +11,7 @@ import { ConfirmModal } from "@/components/ui/confirm";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
@@ -307,11 +307,11 @@ function allocationSummaryVariant(a: ResellerAllocationSummaryItem): "default" |
 
 function durationPresetLabel(preset: string, lang: string): string {
   const en = lang === "en";
-  if (preset === "7d") return en ? "7 days" : "۷ روز";
-  if (preset === "1m") return en ? "1 month" : "۱ ماه";
-  if (preset === "3m") return en ? "3 months" : "۳ ماه";
-  if (preset === "6m") return en ? "6 months" : "۶ ماه";
-  if (preset === "1y") return en ? "1 year" : "۱ سال";
+  if (preset === "7d") return en ? "7 days" : `${formatNumberWithDigits(7)} روز`;
+  if (preset === "1m") return en ? "1 month" : `${formatNumberWithDigits(1)} ماه`;
+  if (preset === "3m") return en ? "3 months" : `${formatNumberWithDigits(3)} ماه`;
+  if (preset === "6m") return en ? "6 months" : `${formatNumberWithDigits(6)} ماه`;
+  if (preset === "1y") return en ? "1 year" : `${formatNumberWithDigits(1)} سال`;
   return en ? "Unlimited" : "نامحدود";
 }
 

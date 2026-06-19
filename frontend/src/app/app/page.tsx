@@ -26,7 +26,7 @@ import {
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, formatNumberWithDigits, localizeDigits } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatJalaliDateTime } from "@/lib/jalali";
@@ -144,7 +144,7 @@ function isEnglish(lang: string) {
 
 function chartRangeLabel(days: number, lang: string) {
   const option = CHART_RANGE_OPTIONS.find((item) => item.days === days) || CHART_RANGE_OPTIONS[1];
-  return isEnglish(lang) ? option.en : option.fa;
+  return localizeDigits(isEnglish(lang) ? option.en : option.fa);
 }
 
 function accountRoleLabel(role: string | undefined, lang: string) {
@@ -397,7 +397,7 @@ function dashboardCopy(lang: string) {
       totalUsers: "کاربران کل",
       nodes: "نودها",
       orders: "سفارش‌ها",
-      ledger30: "فروش/مصرف ۳۰ روز",
+      ledger30: `فروش/مصرف ${formatNumberWithDigits(30)} روز`,
       recentTurnover: "گردش فروش اخیر",
       avgPrice: "میانگین قیمت/GB",
       ledgerEntries: "تراکنش‌های دفتر کل",
@@ -407,8 +407,8 @@ function dashboardCopy(lang: string) {
       balance: "موجودی",
       users: "کاربران",
       allowedNodes: "نودهای مجاز",
-      orders30: "سفارش ۳۰ روز",
-      wallet30: "مصرف کیف پول ۳۰ روز",
+      orders30: `سفارش ${formatNumberWithDigits(30)} روز`,
+      wallet30: `مصرف کیف پول ${formatNumberWithDigits(30)} روز`,
       priceGb: "قیمت/GB",
       bundleGb: "باندل/GB",
       priceDay: "قیمت/روز",
@@ -421,7 +421,7 @@ function bytesToGb(bytes: number) {
 }
 
 function fmtGig(value: number) {
-  return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0);
+  return formatNumberWithDigits(Number.isFinite(value) ? value : 0, { maximumFractionDigits: 1 });
 }
 
 function pct(value: number) {
@@ -503,7 +503,7 @@ function chartDays(days = CHART_DAYS, lang = "fa") {
     d.setDate(today.getDate() - (days - 1 - index));
     return {
       key: dateKey(d),
-      label: d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" }),
+      label: localizeDigits(d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" })),
     };
   });
 }
@@ -512,7 +512,7 @@ function labelForDateKey(key: string, lang = "fa") {
   const [year, month, day] = key.split("-").map(Number);
   if (!year || !month || !day) return key;
   const d = new Date(year, month - 1, day);
-  return d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" });
+  return localizeDigits(d.toLocaleDateString(isEnglish(lang) ? "en-US" : "fa-IR-u-ca-persian", { month: "short", day: "numeric" }));
 }
 
 function normalizeApiSeries(points: DashboardSeriesPoint[] | undefined, fallback: Array<{ label: string; value: number }>, days = CHART_DAYS, lang = "fa") {
@@ -558,7 +558,7 @@ function buildOrderGbSeries(items: OrderRow[], days = CHART_DAYS, lang = "fa") {
 function formatSync(value: string | null | undefined, lang = "fa") {
   if (!value) return isEnglish(lang) ? "Not set" : "ثبت نشده";
   const d = new Date(value);
-  if (isEnglish(lang) && !Number.isNaN(d.getTime())) return d.toLocaleString("en-US");
+  if (isEnglish(lang) && !Number.isNaN(d.getTime())) return localizeDigits(d.toLocaleString("en-US"));
   return formatJalaliDateTime(value);
 }
 
@@ -767,28 +767,29 @@ function UsageBarChart({
   const hasData = values.some((value) => value > 0);
   const tickValues = [max, max * 0.75, max * 0.5, max * 0.25, 0];
   const labelStep = Math.max(1, Math.ceil(data.length / 6));
-  const toneColor: Record<TileTone, string> = {
-    blue: "#2563eb",
-    green: "#059669",
-    orange: "#ea580c",
-    rose: "#e11d48",
-    cyan: "#315f9c",
-    violet: "#7c3aed",
-    slate: "#64748b",
+  const gradientId = React.useId().replace(/:/g, "");
+  const toneGradient: Record<TileTone, [string, string, string]> = {
+    blue: ["#60a5fa", "#2563eb", "#1d4ed8"],
+    green: ["#34d399", "#10b981", "#059669"],
+    orange: ["#fbbf24", "#f97316", "#ea580c"],
+    rose: ["#fb7185", "#f43f5e", "#e11d48"],
+    cyan: ["#38bdf8", "#3b82f6", "#315f9c"],
+    violet: ["#a78bfa", "#8b5cf6", "#7c3aed"],
+    slate: ["#94a3b8", "#64748b", "#475569"],
   };
   const trendClass = trend < 0 ? "text-rose-600 dark:text-rose-300" : trend > 0 ? "text-emerald-600 dark:text-emerald-300" : "text-[hsl(var(--fg))]/58";
   const width = 680;
-  const height = 270;
-  const pad = { top: 18, right: 12, bottom: 42, left: 64 };
+  const height = 238;
+  const pad = { top: 16, right: 12, bottom: 34, left: 58 };
   const chartWidth = width - pad.left - pad.right;
   const chartHeight = height - pad.top - pad.bottom;
   const count = Math.max(1, data.length);
   const step = chartWidth / count;
-  const barWidth = Math.max(6, Math.min(42, step * 0.58));
-  const fill = toneColor[tone];
+  const barWidth = Math.max(6, Math.min(38, step * 0.56));
+  const gradient = toneGradient[tone];
 
   return (
-    <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.86)] p-4 shadow-[0_14px_28px_-26px_hsl(var(--fg)/0.5)]">
+    <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.86)] p-3 shadow-[0_14px_28px_-26px_hsl(var(--fg)/0.5)] sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold">{title}</div>
@@ -801,8 +802,15 @@ function UsageBarChart({
         ) : null}
       </div>
 
-      <div className="relative mt-5 min-w-0 overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-2)/0.58),hsl(var(--surface-card-1)/0.72))] px-2 py-2">
-        <svg viewBox={`0 0 ${width} ${height}`} className="h-[250px] w-full [direction:ltr]" role="img" aria-label={title}>
+      <div className="relative mt-4 min-w-0 overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-2)/0.58),hsl(var(--surface-card-1)/0.72))] px-1.5 py-2 sm:mt-5 sm:px-2">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[210px] w-full [direction:ltr] sm:h-[238px]" role="img" aria-label={title}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={gradient[0]} />
+              <stop offset="52%" stopColor={gradient[1]} />
+              <stop offset="100%" stopColor={gradient[2]} />
+            </linearGradient>
+          </defs>
           {tickValues.map((tick, index) => {
             const y = pad.top + (index / (tickValues.length - 1)) * chartHeight;
             return (
@@ -829,7 +837,7 @@ function UsageBarChart({
                     width={barWidth}
                     height={barHeight}
                     rx={Math.min(8, barWidth / 2)}
-                    fill={fill}
+                    fill={`url(#${gradientId})`}
                     opacity="0.96"
                   />
                 ) : null}
@@ -838,7 +846,7 @@ function UsageBarChart({
                     {point.label}
                   </text>
                 ) : null}
-                <title>{`${point.label}: ${valueLabel(raw)}`}</title>
+                <title>{`${point.label} | ${valueLabel(raw)}`}</title>
               </g>
             );
           })}
@@ -1640,7 +1648,7 @@ export default function Dashboard() {
                   >
                     {CHART_RANGE_OPTIONS.map((option) => (
                       <option key={option.days} value={option.days}>
-                        {isEnglish(lang) ? option.en : option.fa}
+                        {localizeDigits(isEnglish(lang) ? option.en : option.fa)}
                       </option>
                     ))}
                   </select>

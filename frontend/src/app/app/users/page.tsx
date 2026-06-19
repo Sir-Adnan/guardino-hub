@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -261,7 +261,7 @@ function qrImageUrl(value: string, size: number = 220) {
 
 function fmtGig(value: number, lang: "fa" | "en" = "fa") {
   const n = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 1 }).format(n);
+  return formatNumberWithDigits(n, { maximumFractionDigits: 1 });
 }
 
 function fmtTrafficBytes(bytes: number, lang: "fa" | "en" = "fa") {
@@ -269,23 +269,23 @@ function fmtTrafficBytes(bytes: number, lang: "fa" | "en" = "fa") {
   if (safe > 0 && safe < 1024 * 1024 * 1024) {
     const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
     const unit = lang === "fa" ? "مگابایت" : "MB";
-    return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 0 }).format(mb)} ${unit}`;
+    return `${formatNumberWithDigits(mb, { maximumFractionDigits: 0 })} ${unit}`;
   }
   return `${fmtGig(safe / (1024 * 1024 * 1024), lang)} ${lang === "fa" ? "گیگ" : "GB"}`;
 }
 
 function usagePercentLabel(percent: number, usedBytes: number, lang: "fa" | "en") {
-  if (usedBytes > 0 && percent === 0) return lang === "fa" ? "<۱٪" : "<1%";
-  return lang === "fa" ? `${percent}٪` : `${percent}%`;
+  if (usedBytes > 0 && percent === 0) return `<${formatNumberWithDigits(1)}%`;
+  return `${formatNumberWithDigits(percent)}%`;
 }
 
 function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
   if (lang === "en") return p.label;
-  if (p.key === "7d") return "۷ روز";
-  if (p.key === "1m") return "۱ ماه";
-  if (p.key === "3m") return "۳ ماه";
-  if (p.key === "6m") return "۶ ماه";
-  if (p.key === "1y") return "۱ سال";
+  if (p.key === "7d") return `${formatNumberWithDigits(7)} روز`;
+  if (p.key === "1m") return `${formatNumberWithDigits(1)} ماه`;
+  if (p.key === "3m") return `${formatNumberWithDigits(3)} ماه`;
+  if (p.key === "6m") return `${formatNumberWithDigits(6)} ماه`;
+  if (p.key === "1y") return `${formatNumberWithDigits(1)} سال`;
   return `${fmtNumber(p.days)} روز`;
 }
 
@@ -298,7 +298,7 @@ function progressTone(percent: number) {
 export default function UsersPage() {
   const router = useRouter();
   const { me, refresh: refreshMe } = useAuth();
-  const { t, lang } = useI18n();
+  const { t, lang, digitStyle } = useI18n();
   const { push } = useToast();
   const locked = (me?.balance ?? 1) <= 0;
 
@@ -306,7 +306,7 @@ export default function UsersPage() {
     () =>
       lang === "en"
         ? {
-            autoRefresh: "Auto refresh every 30 seconds",
+            autoRefresh: `Auto refresh every ${formatNumberWithDigits(30)} seconds`,
             disabled: "Disabled",
             totalUsedTraffic: "Total user traffic",
             soldTraffic: "Total sold traffic",
@@ -385,7 +385,7 @@ export default function UsersPage() {
             unavailableLink: "Link is not available.",
           }
         : {
-            autoRefresh: "بروزرسانی خودکار هر ۳۰ ثانیه",
+            autoRefresh: `بروزرسانی خودکار هر ${formatNumberWithDigits(30)} ثانیه`,
             disabled: "غیرفعال",
             totalUsedTraffic: "حجم مصرف کل کاربران",
             soldTraffic: "مجموع حجم فروخته‌شده",
@@ -463,7 +463,7 @@ export default function UsersPage() {
             copyDirectLinks: "کپی لینک‌های مستقیم",
             unavailableLink: "لینک در دسترس نیست.",
           },
-    [lang]
+    [lang, digitStyle]
   );
 
   const [q, setQ] = React.useState("");

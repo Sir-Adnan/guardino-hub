@@ -9,6 +9,7 @@ import { HelpTip } from "@/components/ui/help-tip";
 import { useI18n } from "@/components/i18n-context";
 import { storage } from "@/lib/storage";
 import { apiFetch } from "@/lib/api";
+import { formatNumberWithDigits } from "@/lib/format";
 
 type TokenResponse = {
   access_token?: string | null;
@@ -30,7 +31,7 @@ function localizeLoginError(raw: string, lang: "fa" | "en"): string {
 
 export default function LoginPage() {
   const r = useRouter();
-  const { lang } = useI18n();
+  const { lang, digitStyle } = useI18n();
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [twoFactorCode, setTwoFactorCode] = React.useState("");
@@ -44,7 +45,7 @@ export default function LoginPage() {
         ? {
             title: challengeToken ? "Two-factor verification" : "Sign in",
             subtitle: challengeToken ? "Enter your Authenticator code or a saved backup code." : "Sign in with an admin or reseller account.",
-            twoFactorHelp: `This step protects your account. Authenticator codes rotate every 30 seconds and this login challenge is valid for about ${challengeTtl || 300} seconds.`,
+            twoFactorHelp: `This step protects your account. Authenticator codes rotate every ${formatNumberWithDigits(30)} seconds and this login challenge is valid for about ${formatNumberWithDigits(challengeTtl || 300)} seconds.`,
             twoFactorLabel: "Two-factor code or backup code",
             username: "Username",
             password: "Password",
@@ -54,14 +55,14 @@ export default function LoginPage() {
         : {
             title: challengeToken ? "تایید دومرحله‌ای" : "ورود",
             subtitle: challengeToken ? "کد Authenticator یا یکی از backup codeهای ذخیره‌شده را وارد کنید." : "با حساب ادمین یا نماینده وارد شوید.",
-            twoFactorHelp: `این مرحله برای محافظت از حساب فعال شده است. کدهای Authenticator هر ۳۰ ثانیه عوض می‌شوند و challenge ورود حدود ${challengeTtl || 300} ثانیه اعتبار دارد.`,
+            twoFactorHelp: `این مرحله برای محافظت از حساب فعال شده است. کدهای Authenticator هر ${formatNumberWithDigits(30)} ثانیه عوض می‌شوند و challenge ورود حدود ${formatNumberWithDigits(challengeTtl || 300)} ثانیه اعتبار دارد.`,
             twoFactorLabel: "کد دومرحله‌ای یا backup code",
             username: "نام کاربری",
             password: "رمز عبور",
             submit: challengeToken ? "تایید و ورود" : "ورود",
             back: "بازگشت به ورود با رمز",
           },
-    [challengeToken, challengeTtl, lang]
+    [challengeToken, challengeTtl, lang, digitStyle]
   );
 
   function resetTwoFactor() {

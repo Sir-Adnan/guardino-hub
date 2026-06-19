@@ -3,11 +3,14 @@
 import * as React from "react";
 import { storage } from "@/lib/storage";
 import { dirFromLang, t as _t, type Lang } from "@/lib/i18n";
+import { getDigitStyle, localizeDigits, setDigitStyle as persistDigitStyle, type DigitStyle } from "@/lib/format";
 
 type I18nCtx = {
   lang: Lang;
   dir: "rtl" | "ltr";
+  digitStyle: DigitStyle;
   setLang: (lang: Lang) => void;
+  setDigitStyle: (style: DigitStyle) => void;
   t: (key: string) => string;
 };
 
@@ -20,6 +23,7 @@ function readInitialLang(): Lang {
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = React.useState<Lang>(readInitialLang);
+  const [digitStyle, setDigitStyleState] = React.useState<DigitStyle>(getDigitStyle);
   const dir = dirFromLang(lang);
 
   const setLang = React.useCallback((next: Lang) => {
@@ -27,20 +31,28 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     storage.set("lang", next);
   }, []);
 
+  const setDigitStyle = React.useCallback((next: DigitStyle) => {
+    setDigitStyleState(next);
+    persistDigitStyle(next);
+  }, []);
+
   React.useEffect(() => {
     // Update HTML direction + language.
     document.documentElement.lang = lang;
     document.documentElement.dir = dir;
-  }, [lang, dir]);
+    document.documentElement.dataset.digitStyle = digitStyle;
+  }, [lang, dir, digitStyle]);
 
   const value = React.useMemo<I18nCtx>(() => {
     return {
       lang,
       dir,
+      digitStyle,
       setLang,
-      t: (key: string) => _t(lang, key),
+      setDigitStyle,
+      t: (key: string) => localizeDigits(_t(lang, key), digitStyle),
     };
-  }, [lang, dir, setLang]);
+  }, [lang, dir, digitStyle, setLang, setDigitStyle]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

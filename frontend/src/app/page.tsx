@@ -92,15 +92,15 @@ const featureCards = [
 ];
 
 const flows = [
-  { icon: <Server size={18} />, title: "۱) اتصال نودها", desc: "پنل‌های مرزبان، پاسارگارد و WGDashboard را با API رسمی متصل کنید." },
-  { icon: <Users size={18} />, title: "۲) تعریف ساختار فروش", desc: "رسیلر بسازید، قیمت‌گذاری و سیاست فروش هر سطح را تنظیم کنید." },
-  { icon: <CircleDollarSign size={18} />, title: "۳) صدور و فروش اشتراک", desc: "ساخت تکی/گروهی کاربر، تحویل لینک/کانفیگ و کسر هزینه خودکار." },
-  { icon: <BarChart3 size={18} />, title: "۴) کنترل و رشد", desc: "گزارش مالی، دفتر کل، مدیریت مصرف و تصمیم‌گیری مبتنی بر داده." },
+  { icon: <Server size={18} />, title: "1) اتصال نودها", desc: "پنل‌های مرزبان، پاسارگارد و WGDashboard را با API رسمی متصل کنید." },
+  { icon: <Users size={18} />, title: "2) تعریف ساختار فروش", desc: "رسیلر بسازید، قیمت‌گذاری و سیاست فروش هر سطح را تنظیم کنید." },
+  { icon: <CircleDollarSign size={18} />, title: "3) صدور و فروش اشتراک", desc: "ساخت تکی/گروهی کاربر، تحویل لینک/کانفیگ و کسر هزینه خودکار." },
+  { icon: <BarChart3 size={18} />, title: "4) کنترل و رشد", desc: "گزارش مالی، دفتر کل، مدیریت مصرف و تصمیم‌گیری مبتنی بر داده." },
 ];
 
 const highlights = [
-  { label: "تحویل سریع", value: "کمتر از ۶۰ ثانیه" },
-  { label: "پنل های پشتیبانی شده", value: "۳ نوع" },
+  { label: "تحویل سریع", value: "کمتر از 60 ثانیه" },
+  { label: "پنل های پشتیبانی شده", value: "3 نوع" },
   { label: "مدیریت همزمان", value: "تکی + گروهی" },
   { label: "گزارش مالی", value: "کاملا شفاف" },
 ];
@@ -275,7 +275,7 @@ export default function Home() {
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="mb-2 flex items-center justify-between">
                   <div className="text-xs text-slate-500">سطح اتوماسیون عملیات</div>
-                  <div className="text-xs font-bold text-slate-900">۸۵٪</div>
+                  <div className="text-xs font-bold text-slate-900">85%</div>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div className="h-full w-[85%] animated-bar rounded-full bg-[linear-gradient(90deg,#0ea5e9,#22c55e)]" />

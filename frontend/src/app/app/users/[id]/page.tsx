@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/toast";
 import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
 import { apiFetch } from "@/lib/api";
 import { copyText } from "@/lib/copy";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
 
 type UserOut = { id: number; label: string; total_gb: number; used_bytes: number; expire_at: string; status: string; create_status?: string | null };
@@ -64,14 +64,14 @@ function fmtTrafficBytes(bytes: number, lang: "fa" | "en") {
   const safe = Math.max(0, Number(bytes) || 0);
   if (safe > 0 && safe < 1024 * 1024 * 1024) {
     const mb = Math.max(1, Math.ceil(safe / (1024 * 1024)));
-    return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 0 }).format(mb)} ${lang === "fa" ? "مگابایت" : "MB"}`;
+    return `${formatNumberWithDigits(mb, { maximumFractionDigits: 0 })} ${lang === "fa" ? "مگابایت" : "MB"}`;
   }
-  return `${new Intl.NumberFormat(lang === "fa" ? "fa-IR" : "en-US", { maximumFractionDigits: 1 }).format(bytesToGb(safe))} ${lang === "fa" ? "گیگ" : "GB"}`;
+  return `${formatNumberWithDigits(bytesToGb(safe), { maximumFractionDigits: 1 })} ${lang === "fa" ? "گیگ" : "GB"}`;
 }
 
 function usagePercentLabel(percent: number, usedBytes: number, lang: "fa" | "en") {
-  if (usedBytes > 0 && percent === 0) return lang === "fa" ? "<۱٪" : "<1%";
-  return lang === "fa" ? `${percent}٪` : `${percent}%`;
+  if (usedBytes > 0 && percent === 0) return `<${formatNumberWithDigits(1)}%`;
+  return `${formatNumberWithDigits(percent)}%`;
 }
 
 function clamp01(x: number) {
@@ -119,11 +119,11 @@ function statusMeta(raw: string, createStatus: string | null | undefined, lang: 
 
 function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
   if (lang === "en") return p.label;
-  if (p.key === "7d") return "۷ روز";
-  if (p.key === "1m") return "۱ ماه";
-  if (p.key === "3m") return "۳ ماه";
-  if (p.key === "6m") return "۶ ماه";
-  if (p.key === "1y") return "۱ سال";
+  if (p.key === "7d") return `${formatNumberWithDigits(7)} روز`;
+  if (p.key === "1m") return `${formatNumberWithDigits(1)} ماه`;
+  if (p.key === "3m") return `${formatNumberWithDigits(3)} ماه`;
+  if (p.key === "6m") return `${formatNumberWithDigits(6)} ماه`;
+  if (p.key === "1y") return `${formatNumberWithDigits(1)} سال`;
   return `${fmtNumber(p.days)} روز`;
 }
 

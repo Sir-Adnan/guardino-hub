@@ -1,3 +1,5 @@
+import { localizeDigits } from "./format";
+
 const JALALI_BREAKS = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
 
 function div(a: number, b: number) {
@@ -91,12 +93,12 @@ export function parseJalaliDateTime(input: string) {
 export function formatJalaliDateTime(input: Date | string | number) {
   const dt = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleString("fa-IR-u-ca-persian", {
+  return localizeDigits(dt.toLocaleString("fa-IR-u-ca-persian", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  });
+  }));
 }

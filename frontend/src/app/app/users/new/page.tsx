@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/api";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
 import { copyText } from "@/lib/copy";
 import { useToast } from "@/components/ui/toast";
@@ -171,11 +171,11 @@ function qrImageUrl(value: string, size: number = 240) {
 
 function durationPresetLabel(p: { key: string; label: string; days: number }, lang: "fa" | "en") {
   if (lang === "en") return p.label;
-  if (p.key === "7d") return "۷ روز";
-  if (p.key === "1m") return "۱ ماه";
-  if (p.key === "3m") return "۳ ماه";
-  if (p.key === "6m") return "۶ ماه";
-  if (p.key === "1y") return "۱ سال";
+  if (p.key === "7d") return `${formatNumberWithDigits(7)} روز`;
+  if (p.key === "1m") return `${formatNumberWithDigits(1)} ماه`;
+  if (p.key === "3m") return `${formatNumberWithDigits(3)} ماه`;
+  if (p.key === "6m") return `${formatNumberWithDigits(6)} ماه`;
+  if (p.key === "1y") return `${formatNumberWithDigits(1)} سال`;
   if (p.key === "unlimited") return "نامحدود";
   return `${fmtNumber(p.days)} روز`;
 }

@@ -30,6 +30,7 @@ import { HelpTip } from "@/components/ui/help-tip";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/components/i18n-context";
 import { apiFetch } from "@/lib/api";
+import { localizeDigits } from "@/lib/format";
 
 type NodeOut = {
   id: number;
@@ -92,7 +93,7 @@ function panelBadgeVariant(panel: string): "muted" | "success" | "warning" {
 
 function fmtCheckedAt(ts: number, lang: "fa" | "en"): string {
   try {
-    return new Date(ts).toLocaleString(lang === "fa" ? "fa-IR" : "en-US");
+    return localizeDigits(new Date(ts).toLocaleString(lang === "fa" ? "fa-IR" : "en-US"));
   } catch {
     return "-";
   }

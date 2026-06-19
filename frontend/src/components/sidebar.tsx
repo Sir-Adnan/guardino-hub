@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-context";
 import { useI18n } from "@/components/i18n-context";
 import { BrandMark } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
-import { fmtNumber } from "@/lib/format";
+import { fmtNumber, localizeDigits } from "@/lib/format";
 import { storage } from "@/lib/storage";
 import {
   ArrowDownUp,
@@ -52,11 +52,11 @@ export function Sidebar({
   const [now, setNow] = React.useState(() => new Date());
   const dateLabel = React.useMemo(
     () =>
-      now.toLocaleDateString(lang === "en" ? "en-US" : "fa-IR-u-ca-persian", {
+      localizeDigits(now.toLocaleDateString(lang === "en" ? "en-US" : "fa-IR-u-ca-persian", {
         year: "numeric",
         month: "long",
         day: "numeric",
-      }),
+      })),
     [lang, now]
   );
   const dateTitle = lang === "en" ? "Date" : "تاریخ شمسی";

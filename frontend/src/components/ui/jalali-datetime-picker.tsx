@@ -6,6 +6,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react
 
 import { cn } from "@/lib/cn";
 import { formatJalaliDateTime, jalaliToGregorian, normalizeFaDigits } from "@/lib/jalali";
+import { localizeDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-context";
 
@@ -42,12 +43,8 @@ const MONTHS_EN = [
 const WEEKDAYS_FA = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
 const WEEKDAYS_EN = ["Sa", "Su", "Mo", "Tu", "We", "Th", "Fr"];
 
-function toPersianDigits(value: number | string) {
-  return String(value).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)] || d);
-}
-
-function formatNumber(value: number | string, lang: string) {
-  return lang === "en" ? String(value) : toPersianDigits(value);
+function formatNumber(value: number | string, _lang: string) {
+  return localizeDigits(String(value));
 }
 
 function formatJalaliDisplay(date: Date, lang: string) {
