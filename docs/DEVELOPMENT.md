@@ -48,12 +48,90 @@ Frontend با Next.js 14، React 18، Tailwind CSS، TanStack Query و lucide-re
 
 ## Runtime
 
-Docker Compose سرویس‌های `db`، `redis`، `api`، `worker`، `beat`، `web` و `nginx` را اجرا می‌کند. تنظیمات runtime از `.env` خوانده می‌شوند.
+Docker Compose سرویس‌های `db`، `redis`، `api`, `worker`, `beat`, `web` و `nginx` را اجرا می‌کند. تنظیمات runtime از `.env` خوانده می‌شوند.
 
-دستورهای موجود برای بررسی محلی:
+برای اجرای کامل محیط توسعه یا تست deploy از Docker Compose استفاده می‌شود:
 
 ```bash
-python -m compileall backend/app backend/alembic
-cd frontend && npm run build
+docker compose up -d --build
+docker compose exec api alembic upgrade head
+```
+
+## AI Testing & Execution Rules
+
+این پروژه با کمک ابزارهای AI مثل Codex، Claude Code و VS Code توسعه داده می‌شود. برای جلوگیری از مصرف بی‌مورد توکن، زمان و لاگ‌های طولانی، AI نباید بعد از هر تغییر به‌صورت خودکار تست‌های سنگین اجرا کند.
+
+### قوانین اصلی
+
+* بعد از تغییرات معمولی، به‌صورت خودکار `npm run build`، `docker compose up --build`، `docker compose build` یا `python -m compileall backend/app backend/alembic` اجرا نشود.
+* اجرای build کامل فقط وقتی مجاز است که کاربر صریحاً بگوید: `FULL TEST`، `BUILD` یا `DEPLOY CHECK`.
+* اگر فقط Backend تغییر کرده، Frontend تست نشود.
+* اگر فقط Frontend تغییر کرده، Backend تست نشود.
+* اگر فقط مستندات، README، متن، comment یا فایل‌های غیر اجرایی تغییر کرده‌اند، هیچ build یا test سنگینی اجرا نشود.
+* خروجی طولانی commandها در پاسخ آورده نشود؛ فقط نتیجه خلاصه یا خطاهای مهم گزارش شود.
+
+### بررسی سریع Backend
+
+برای تغییرات کوچک Python، فقط همان فایل تغییرکرده بررسی شود:
+
+```bash
+python -m py_compile path/to/changed_file.py
+```
+
+اگر `ruff` در پروژه موجود بود، می‌توان از آن برای فایل‌های تغییرکرده استفاده کرد:
+
+```bash
+ruff check path/to/changed_file.py
+```
+
+برای تغییرات مهم در routeها، schemaها یا FastAPI، در صورت آماده بودن محیط backend، smoke test سبک OpenAPI قابل اجراست:
+
+```bash
+python -c "from app.main import app; print(len(app.openapi().get('paths', {})))"
+```
+
+اگر dependencyهای backend روی سیستم محلی نصب نیستند، این تست باید داخل container `api` اجرا شود، نه با نصب خودکار dependencyها.
+
+### بررسی سریع Frontend
+
+برای تغییرات معمولی Frontend، build کامل اجرا نشود. ابتدا از checkهای سبک استفاده شود:
+
+```bash
+npm run lint
+```
+
+یا اگر script مربوطه وجود داشت:
+
+```bash
+npm run typecheck
+```
+
+اگر dependencyهای frontend روی سیستم محلی نصب نیستند و خطای `next is not recognized` یا نبودن `node_modules` دیده شد، این به‌تنهایی نشانه خطای کد UI نیست. در این حالت، AI باید موضوع را گزارش کند و بدون اجازه کاربر `npm install` یا build کامل اجرا نکند.
+
+### Full Test / Deploy Check
+
+فقط وقتی کاربر صریحاً درخواست `FULL TEST`، `BUILD` یا `DEPLOY CHECK` داد، اجرای کامل مجاز است:
+
+```bash
+docker compose up -d --build
+docker compose exec api alembic upgrade head
+docker compose ps
 git diff --check
 ```
+
+برای Frontend build کامل:
+
+```bash
+cd frontend
+npm run build
+```
+
+### Migration Rule
+
+اگر مدل‌های دیتابیس یا فایل‌های Alembic تغییر کردند، AI باید واضح گزارش کند که در deploy بعدی migration باید اجرا شود:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+AI نباید migration را روی production اجرا کند مگر کاربر صریحاً درخواست دهد.
