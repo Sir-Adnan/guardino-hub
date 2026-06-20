@@ -1,4 +1,4 @@
-const CACHE_NAME = "guardino-pwa-v4-brand-refresh";
+const CACHE_NAME = "guardino-pwa-v5-icon-refresh";
 const APP_SHELL = [
   "/manifest.webmanifest",
   "/favicon.ico",
@@ -8,7 +8,6 @@ const APP_SHELL = [
   "/brand/guardino-logo.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
-  "/icons/maskable-512.png",
   "/icons/apple-touch-icon.png"
 ];
 

@@ -12,7 +12,7 @@ type BeforeInstallPromptEvent = Event & {
 
 const DISMISSED_AT_KEY = "guardino:pwa-install-dismissed-at";
 const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const BRAND_ASSET_VERSION = "2026-06-19-1";
+const BRAND_ASSET_VERSION = "2026-06-20-1";
 const brandAsset = (path: string) => `${path}?v=${BRAND_ASSET_VERSION}`;
 
 function isStandaloneMode() {

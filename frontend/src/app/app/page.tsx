@@ -675,47 +675,70 @@ function MiniBars({
   rangeLabel?: string;
   emptyLabel?: string;
 }) {
+  const [active, setActive] = React.useState<number | null>(null);
   const max = Math.max(1, ...data.map((d) => Number(d.value) || 0));
   const hasData = data.some((d) => Number(d.value) > 0);
   const barClass: Record<TileTone, string> = {
-    blue: "bg-[linear-gradient(180deg,#2563eb,#38bdf8)]",
-    green: "bg-[linear-gradient(180deg,#059669,#2dd4bf)]",
-    orange: "bg-[linear-gradient(180deg,#ea580c,#fbbf24)]",
-    rose: "bg-[linear-gradient(180deg,#e11d48,#fb7185)]",
-    cyan: "bg-[linear-gradient(180deg,#0891b2,#60a5fa)]",
-    violet: "bg-[linear-gradient(180deg,#7c3aed,#818cf8)]",
-    slate: "bg-[linear-gradient(180deg,#475569,#94a3b8)]",
+    blue: "bg-[linear-gradient(180deg,#60a5fa,#2563eb)]",
+    green: "bg-[linear-gradient(180deg,#34d399,#059669)]",
+    orange: "bg-[linear-gradient(180deg,#fbbf24,#ea580c)]",
+    rose: "bg-[linear-gradient(180deg,#fb7185,#e11d48)]",
+    cyan: "bg-[linear-gradient(180deg,#38bdf8,#0891b2)]",
+    violet: "bg-[linear-gradient(180deg,#a78bfa,#7c3aed)]",
+    slate: "bg-[linear-gradient(180deg,#94a3b8,#475569)]",
   };
   const tickValues = [max, max / 2, 0];
   const labelStep = Math.max(1, Math.ceil(data.length / 5));
+  const activePoint = active != null ? data[active] : null;
 
   return (
     <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-3">
-      <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] gap-3 [direction:ltr]">
+      <div className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)] gap-2 [direction:ltr] sm:grid-cols-[44px_minmax(0,1fr)] sm:gap-3">
         <div className="flex h-48 flex-col justify-between pb-7 pt-1 text-right text-[10px] text-[hsl(var(--fg))]/50">
           {tickValues.map((tick) => (
-            <span key={tick}>{valueLabel(tick)}</span>
+            <span key={tick} className="tabular-nums">{valueLabel(tick)}</span>
           ))}
         </div>
-        <div className="relative min-w-0">
+        <div className="relative min-w-0" onMouseLeave={() => setActive(null)}>
           <div className="pointer-events-none absolute inset-x-0 top-1 h-px border-t border-dashed border-[hsl(var(--border))]" />
           <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px border-t border-dashed border-[hsl(var(--border))]" />
           <div className="pointer-events-none absolute inset-x-0 bottom-7 h-px border-t border-dashed border-[hsl(var(--border))]" />
-          <div className="flex h-48 min-w-0 items-end gap-1.5 pb-7 pt-1">
+
+          {/* Tap/hover tooltip — works on mobile (tap) and desktop (hover). */}
+          {activePoint ? (
+            <div
+              className="pointer-events-none absolute bottom-9 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-2 py-1 text-center shadow-[0_8px_20px_-8px_hsl(var(--fg)/0.5)]"
+              style={{ left: `${((active! + 0.5) / Math.max(1, data.length)) * 100}%` }}
+            >
+              <div className="text-[11px] font-semibold tabular-nums text-[hsl(var(--fg))]">{valueLabel(Math.max(0, Number(activePoint.value) || 0))}</div>
+              <div className="text-[10px] text-[hsl(var(--fg))]/60">{activePoint.label}</div>
+            </div>
+          ) : null}
+
+          <div className="flex h-48 min-w-0 items-end gap-1 pb-7 pt-1 sm:gap-1.5">
             {data.map((d, index) => {
               const raw = Math.max(0, Number(d.value) || 0);
-              const height = raw > 0 ? Math.max(10, (raw / max) * 100) : 2;
+              const height = raw > 0 ? Math.max(8, (raw / max) * 100) : 2;
               const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
+              const isActive = active === index;
+              const dimmed = active != null && !isActive;
               return (
-                <div key={`${d.label}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end" title={`${d.label}: ${valueLabel(raw)}`}>
+                <button
+                  key={`${d.label}-${index}`}
+                  type="button"
+                  aria-label={`${d.label}: ${valueLabel(raw)}`}
+                  onClick={() => setActive((cur) => (cur === index ? null : index))}
+                  onMouseEnter={() => setActive(index)}
+                  className="group relative flex min-w-0 flex-1 cursor-pointer flex-col items-center justify-end outline-none"
+                >
                   <div
-                    className={`w-full max-w-10 rounded-t-md ${barClass[tone]} shadow-[0_10px_20px_-14px_currentColor] transition-all duration-200 group-hover:brightness-110`}
-                    style={{ height: `${height}%`, opacity: raw > 0 ? 1 : 0.28 }}
+                    className={`w-full max-w-10 rounded-t-md ${barClass[tone]} shadow-[0_10px_20px_-14px_currentColor] transition-all duration-200 ${isActive ? "brightness-125 ring-2 ring-[hsl(var(--accent)/0.5)]" : "group-hover:brightness-110"} ${dimmed ? "opacity-40" : ""}`}
+                    style={{ height: `${height}%`, opacity: raw > 0 ? undefined : 0.28 }}
                   />
                   {showLabel ? (
                     <span className="absolute -bottom-0 translate-y-full whitespace-nowrap text-[10px] text-[hsl(var(--fg))]/48">{d.label}</span>
                   ) : null}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -787,6 +810,10 @@ function UsageBarChart({
   const step = chartWidth / count;
   const barWidth = Math.max(6, Math.min(38, step * 0.56));
   const gradient = toneGradient[tone];
+  const [active, setActive] = React.useState<number | null>(null);
+  const activePoint = active != null ? data[active] : null;
+  // Clamp so the tooltip stays inside the overflow-hidden chart container.
+  const activeCenterPct = active != null ? Math.min(90, Math.max(10, ((pad.left + active * step + step / 2) / width) * 100)) : 0;
 
   return (
     <div className="min-w-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1)/0.86)] p-3 shadow-[0_14px_28px_-26px_hsl(var(--fg)/0.5)] sm:p-4">
@@ -802,7 +829,19 @@ function UsageBarChart({
         ) : null}
       </div>
 
-      <div className="relative mt-4 min-w-0 overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-2)/0.58),hsl(var(--surface-card-1)/0.72))] px-1.5 py-2 sm:mt-5 sm:px-2">
+      <div
+        className="relative mt-4 min-w-0 overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[linear-gradient(180deg,hsl(var(--surface-card-2)/0.58),hsl(var(--surface-card-1)/0.72))] px-1.5 py-2 sm:mt-5 sm:px-2"
+        onMouseLeave={() => setActive(null)}
+      >
+        {activePoint ? (
+          <div
+            className="pointer-events-none absolute top-1 z-10 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] px-2 py-1 text-center shadow-[0_8px_20px_-8px_hsl(var(--fg)/0.5)]"
+            style={{ left: `${activeCenterPct}%` }}
+          >
+            <div className="text-[11px] font-semibold tabular-nums text-[hsl(var(--fg))]">{valueLabel(Math.max(0, Number(activePoint.value) || 0))}</div>
+            <div className="text-[10px] text-[hsl(var(--fg))]/60">{activePoint.label}</div>
+          </div>
+        ) : null}
         <svg viewBox={`0 0 ${width} ${height}`} className="h-[210px] w-full [direction:ltr] sm:h-[238px]" role="img" aria-label={title}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -828,8 +867,21 @@ function UsageBarChart({
             const x = pad.left + index * step + (step - barWidth) / 2;
             const y = pad.top + chartHeight - barHeight;
             const showLabel = index === 0 || index === data.length - 1 || index % labelStep === 0;
+            const isActive = active === index;
+            const barOpacity = active != null ? (isActive ? 1 : 0.38) : 0.96;
             return (
               <g key={`${point.label}-${index}`}>
+                {/* Full-height transparent hit area so tapping anywhere in the column works on mobile. */}
+                <rect
+                  x={pad.left + index * step}
+                  y={pad.top}
+                  width={step}
+                  height={chartHeight}
+                  fill="transparent"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setActive((cur) => (cur === index ? null : index))}
+                  onMouseEnter={() => setActive(index)}
+                />
                 {raw > 0 ? (
                   <rect
                     x={x}
@@ -838,15 +890,19 @@ function UsageBarChart({
                     height={barHeight}
                     rx={Math.min(8, barWidth / 2)}
                     fill={`url(#${gradientId})`}
-                    opacity="0.96"
+                    opacity={barOpacity}
+                    className="transition-opacity duration-150"
+                    pointerEvents="none"
                   />
                 ) : null}
+                {isActive && raw > 0 ? (
+                  <circle cx={x + barWidth / 2} cy={y - 5} r={2.6} fill="hsl(var(--accent))" pointerEvents="none" />
+                ) : null}
                 {showLabel ? (
-                  <text x={x + barWidth / 2} y={height - 14} textAnchor="middle" className="fill-current text-[10px] text-[hsl(var(--fg))]/48">
+                  <text x={x + barWidth / 2} y={height - 14} textAnchor="middle" className="fill-current text-[10px] text-[hsl(var(--fg))]/48" pointerEvents="none">
                     {point.label}
                   </text>
                 ) : null}
-                <title>{`${point.label} | ${valueLabel(raw)}`}</title>
               </g>
             );
           })}

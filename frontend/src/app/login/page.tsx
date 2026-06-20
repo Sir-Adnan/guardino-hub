@@ -109,11 +109,18 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
+      {/* Layered gradient background + soft glows */}
+      <div className="pointer-events-none absolute inset-0 -z-20 bg-[hsl(var(--bg))]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(1100px_560px_at_50%_-12%,hsl(var(--surface-page-glow-1)/0.20),transparent_60%),radial-gradient(820px_520px_at_110%_115%,hsl(var(--surface-page-glow-2)/0.16),transparent_55%)]" />
+      <div className="pointer-events-none absolute -left-24 top-6 -z-10 h-72 w-72 rounded-full bg-[hsl(var(--surface-page-glow-1)/0.22)] blur-[90px]" />
+      <div className="pointer-events-none absolute -right-24 bottom-2 -z-10 h-80 w-80 rounded-full bg-[hsl(var(--surface-page-glow-2)/0.16)] blur-[100px]" />
+
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-md space-y-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-soft"
+        className="relative w-full max-w-md space-y-4 overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card)/0.82)] p-6 shadow-[0_30px_80px_-40px_hsl(var(--fg)/0.55)] backdrop-blur-xl"
       >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,hsl(var(--accent)/0.65),transparent)]" />
         <div className="flex items-center gap-3">
           <BrandMark markClassName="h-14 w-14 rounded-2xl" />
           <div className="min-w-0">

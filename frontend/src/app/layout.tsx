@@ -5,7 +5,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { I18nProvider } from "@/components/i18n-context";
 import { PwaRegister } from "@/components/pwa-register";
 
-const BRAND_ASSET_VERSION = "2026-06-19-1";
+const BRAND_ASSET_VERSION = "2026-06-20-1";
 const brandAsset = (path: string) => `${path}?v=${BRAND_ASSET_VERSION}`;
 
 export const metadata: Metadata = {
