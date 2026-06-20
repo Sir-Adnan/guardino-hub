@@ -9,3 +9,5 @@ frontend/.next/
 frontend/node_modules/
 frontend/dev-server*.log
 !.gitkeep
+.claude/settings.local.json
+.claude/local/
