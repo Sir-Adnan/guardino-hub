@@ -150,12 +150,14 @@ ensure_kv_if_missing() {
 
 # Keep required runtime keys present, but preserve server-specific tuning.
 ensure_kv_if_missing "REDIS_URL" "redis://redis:6379/0"
-ensure_kv_if_missing "USAGE_SYNC_SECONDS" "60"
-ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "60"
-ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
+ensure_kv_if_missing "USAGE_SYNC_SECONDS" "180"
+ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "120"
+ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "5000"
 ensure_kv_if_missing "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE" "1000"
 ensure_kv_if_missing "USAGE_SYNC_REMOTE_LIST_MAX_PAGES" "200"
-ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
+ensure_kv_if_missing "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS" "3"
+ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "1000"
+ensure_kv_if_missing "HTTP_TIMEOUT_SECONDS" "60"
 ensure_kv_if_missing "NEXT_PUBLIC_API_BASE" "/api"
 
 env_get() {
@@ -239,6 +241,10 @@ fi
 
 log "Update completed."
 echo "USAGE_SYNC_SECONDS=$(grep -E '^USAGE_SYNC_SECONDS=' .env | cut -d= -f2-)"
+echo "USAGE_SYNC_BATCH_SIZE=$(grep -E '^USAGE_SYNC_BATCH_SIZE=' .env | cut -d= -f2-)"
 echo "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE=$(grep -E '^USAGE_SYNC_REMOTE_LIST_PAGE_SIZE=' .env | cut -d= -f2-)"
 echo "USAGE_SYNC_REMOTE_LIST_MAX_PAGES=$(grep -E '^USAGE_SYNC_REMOTE_LIST_MAX_PAGES=' .env | cut -d= -f2-)"
+echo "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS=$(grep -E '^USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS=' .env | cut -d= -f2-)"
+echo "EXPIRY_SYNC_BATCH_SIZE=$(grep -E '^EXPIRY_SYNC_BATCH_SIZE=' .env | cut -d= -f2-)"
+echo "HTTP_TIMEOUT_SECONDS=$(grep -E '^HTTP_TIMEOUT_SECONDS=' .env | cut -d= -f2-)"
 echo "EXPIRY_SYNC_SECONDS=$(grep -E '^EXPIRY_SYNC_SECONDS=' .env | cut -d= -f2-)"

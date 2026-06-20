@@ -187,12 +187,14 @@ env_set_if_missing() {
 
 ensure_runtime_env_defaults() {
   env_set_if_missing "REDIS_URL" "redis://redis:6379/0"
-  env_set_if_missing "USAGE_SYNC_SECONDS" "60"
-  env_set_if_missing "EXPIRY_SYNC_SECONDS" "60"
-  env_set_if_missing "USAGE_SYNC_BATCH_SIZE" "2000"
+  env_set_if_missing "USAGE_SYNC_SECONDS" "180"
+  env_set_if_missing "EXPIRY_SYNC_SECONDS" "120"
+  env_set_if_missing "USAGE_SYNC_BATCH_SIZE" "5000"
   env_set_if_missing "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE" "1000"
   env_set_if_missing "USAGE_SYNC_REMOTE_LIST_MAX_PAGES" "200"
-  env_set_if_missing "EXPIRY_SYNC_BATCH_SIZE" "500"
+  env_set_if_missing "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS" "3"
+  env_set_if_missing "EXPIRY_SYNC_BATCH_SIZE" "1000"
+  env_set_if_missing "HTTP_TIMEOUT_SECONDS" "60"
   env_set_if_missing "NEXT_PUBLIC_API_BASE" "/api"
 }
 
@@ -671,7 +673,7 @@ validate_env_file() {
   file="$(env_file)"
   local errors=0
   local key value
-  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE USAGE_SYNC_REMOTE_LIST_PAGE_SIZE USAGE_SYNC_REMOTE_LIST_MAX_PAGES EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
+  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE USAGE_SYNC_REMOTE_LIST_PAGE_SIZE USAGE_SYNC_REMOTE_LIST_MAX_PAGES USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
     value="$(env_get "${key}" "")"
     if [ -n "${value}" ] && ! [[ "${value}" =~ ^[0-9]+$ ]]; then
       fail "${key} must be a positive integer. Current value: ${value}"

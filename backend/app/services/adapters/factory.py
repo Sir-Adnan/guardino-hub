@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.config import settings
 from app.models.node import Node, PanelType
 from app.services.adapters.marzban import MarzbanAdapter
 from app.services.adapters.pasarguard import PasarguardAdapter
@@ -9,7 +10,7 @@ from app.services.adapters.wg_dashboard import WGDashboardAdapter
 def get_adapter(node: Node, credentials: dict | None = None):
     creds = credentials if credentials is not None else (node.credentials or {})
     verify_ssl = bool(creds.get("verify_ssl", True))
-    timeout = float(creds.get("timeout", 20.0))
+    timeout = float(creds.get("timeout") or settings.HTTP_TIMEOUT_SECONDS or 45)
 
     if node.panel_type == PanelType.marzban:
         return MarzbanAdapter(node.base_url, creds, verify_ssl=verify_ssl, timeout=timeout)

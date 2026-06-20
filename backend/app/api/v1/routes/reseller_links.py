@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.api.deps import block_if_balance_zero
 from app.models.user import GuardinoUser, UserStatus
@@ -11,6 +12,7 @@ from app.models.subaccount import SubAccount
 from app.models.node import Node, PanelType
 from app.services.adapters.base import RemoteUserNotFound
 from app.services.panel_access import get_adapter_for_subaccount
+from app.services.remote_missing import clear_remote_missing, mark_remote_missing
 from app.services.urls import normalize_url
 from app.schemas.links import UserLinksResponse, NodeLink
 from app.services.user_defaults import (
@@ -69,8 +71,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
 
     node_links: list[NodeLink] = []
     now = datetime.now(timezone.utc)
-    missing_subs = 0
-    missing_sub_ids: set[int] = set()
+    missing_confirmations = max(1, min(20, int(getattr(settings, "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS", 3) or 3)))
 
     for sa in subs:
         node = node_map.get(sa.node_id)
@@ -95,7 +96,9 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                     if snapshot.used_bytes is not None:
                         sa.used_bytes = max(0, int(snapshot.used_bytes))
                     _sync_create_status_meta(user, snapshot.status, int(sa.used_bytes or 0), now)
+                    clear_remote_missing(user, sa)
                 direct_new = await adapter.get_direct_subscription_url(sa.remote_identifier)
+                clear_remote_missing(user, sa)
                 if direct_new:
                     normalized_new = normalize_url(direct_new, node.base_url if node else None)
                     sa.panel_sub_url_cached = normalized_new or direct_new
@@ -105,12 +108,10 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
                 else:
                     status = "missing"
             except RemoteUserNotFound:
-                missing_subs += 1
-                missing_sub_ids.add(sa.id)
-                await db.delete(sa)
+                missing_count = mark_remote_missing(user, sa, now, source="links_refresh_404")
                 direct = None
                 status = "missing"
-                detail = "Remote user not found"
+                detail = f"Remote user not found; pending confirmation {missing_count}/{missing_confirmations}"
             except Exception as e:
                 status = "error"
                 detail = str(e)[:160]
@@ -133,16 +134,7 @@ async def get_links(user_id: int, request: Request, refresh: bool = False, db: A
         )
 
     if refresh:
-        if missing_subs >= len(subs):
-            meta = user.meta if isinstance(user.meta, dict) else {}
-            user.status = UserStatus.deleted
-            user.meta = {
-                **meta,
-                "remote_deleted_at": now.isoformat(),
-                "remote_deleted_reason": "missing_in_panel",
-            }
-        else:
-            user.used_bytes = sum(max(0, int(sa.used_bytes or 0)) for sa in subs if sa.id not in missing_sub_ids)
+        user.used_bytes = sum(max(0, int(sa.used_bytes or 0)) for sa in subs)
         await db.commit()
 
     master = None

@@ -175,8 +175,10 @@ class ResellerList(BaseModel):
 
 class ImportRemoteUsersRequest(BaseModel):
     dry_run: bool = True
-    limit: int = Field(default=500, ge=1, le=5000)
+    limit: int = Field(default=1000, ge=1, le=5000)
     offset: int = Field(default=0, ge=0)
+    max_pages: int = Field(default=200, ge=1, le=1000)
+    all_pages: bool = True
     skip_existing: bool = True
     remote_admin: Optional[str] = Field(default=None, max_length=128)
 

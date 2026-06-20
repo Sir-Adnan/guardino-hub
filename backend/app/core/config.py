@@ -15,18 +15,19 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     REDIS_URL: str = "redis://localhost:6379/0"
-    USAGE_SYNC_SECONDS: int = 60
-    EXPIRY_SYNC_SECONDS: int = 60
-    USAGE_SYNC_BATCH_SIZE: int = 2000
+    USAGE_SYNC_SECONDS: int = 180
+    EXPIRY_SYNC_SECONDS: int = 120
+    USAGE_SYNC_BATCH_SIZE: int = 5000
     USAGE_SYNC_REMOTE_LIST_PAGE_SIZE: int = 1000
     USAGE_SYNC_REMOTE_LIST_MAX_PAGES: int = 200
-    EXPIRY_SYNC_BATCH_SIZE: int = 500
+    USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS: int = 3
+    EXPIRY_SYNC_BATCH_SIZE: int = 1000
 
     REFUND_WINDOW_DAYS: int = 10
 
     CORS_ORIGINS: str = ""  # comma separated
     PANEL_TLS_VERIFY: bool = True
-    HTTP_TIMEOUT_SECONDS: int = 15
+    HTTP_TIMEOUT_SECONDS: int = 60
 
     @property
     def cors_origins_list(self) -> List[str]:
