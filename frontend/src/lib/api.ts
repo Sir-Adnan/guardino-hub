@@ -35,6 +35,19 @@ function extractApiErrorDetail(raw: string): string | null {
   return txt;
 }
 
+// Idempotency key for money/account mutations so an accidental retry or
+// double-submit cannot create a duplicate order/charge on the backend.
+export function newRequestId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID().replace(/-/g, "");
+    }
+  } catch {
+    // fall through
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = storage.get("token");
   const headers: Record<string, string> = {
@@ -51,6 +64,20 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     // Avoid stale lists/pagination in browser/proxy caches.
     cache: method === "GET" ? "no-store" : init?.cache,
   });
+  if (res.status === 401) {
+    // Session expired / token invalid: drop the stored token and send the user
+    // back to login. We skip this while on the login page itself so a wrong
+    // password (which also returns 401) doesn't trigger a redirect loop.
+    if (typeof window !== "undefined") {
+      const onLogin = window.location.pathname.startsWith("/login");
+      const hadToken = !!storage.get("token");
+      if (hadToken) storage.del("token");
+      if (hadToken && !onLogin) {
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/login?next=${next}`;
+      }
+    }
+  }
   if (!res.ok) {
     const txt = await res.text();
     if (txt) {

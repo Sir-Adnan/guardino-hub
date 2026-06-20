@@ -10,7 +10,7 @@ import { Menu } from "@/components/ui/menu";
 import { ConfirmModal } from "@/components/ui/confirm";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, newRequestId } from "@/lib/api";
 import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -533,6 +533,7 @@ export default function AdminResellersPage() {
   const [creditQuery, setCreditQuery] = React.useState("");
   const [creditAmount, setCreditAmount] = React.useState<number>(10000);
   const [creditMode, setCreditMode] = React.useState<"credit" | "debit">("credit");
+  const [creditBusy, setCreditBusy] = React.useState(false);
 
   const [confirmDelete, setConfirmDelete] = React.useState<ResellerOut | null>(null);
   const [deletePreview, setDeletePreview] = React.useState<DeleteResellerPreview | null>(null);
@@ -912,6 +913,8 @@ export default function AdminResellersPage() {
   }
 
   async function credit() {
+    if (creditBusy) return; // prevent double-submit / double-charge
+    setCreditBusy(true);
     try {
       if (creditId === "") throw new Error(t("adminResellers.errCreditId"));
       const rawAmount = Math.abs(Number(creditAmount) || 0);
@@ -919,12 +922,18 @@ export default function AdminResellersPage() {
       const signedAmount = creditMode === "debit" ? -rawAmount : rawAmount;
       const res = await apiFetch<any>(`/api/v1/admin/resellers/${Number(creditId)}/credit`, {
         method: "POST",
-        body: JSON.stringify({ amount: signedAmount, reason: creditMode === "debit" ? "manual_debit" : "manual_credit" }),
+        body: JSON.stringify({
+          amount: signedAmount,
+          reason: creditMode === "debit" ? "manual_debit" : "manual_credit",
+          request_id: newRequestId(),
+        }),
       });
       push({ title: creditMode === "debit" ? copy.balanceDecreased : t("adminResellers.credited"), desc: `balance=${fmtNumber(res.balance)}`, type: "success" });
       await Promise.all([load(page, pageSize), loadCreditOptions()]);
     } catch (e: any) {
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
+    } finally {
+      setCreditBusy(false);
     }
   }
 
@@ -1607,7 +1616,7 @@ export default function AdminResellersPage() {
       {copy.creditDecrease}
     </Button>
   </div>
-  <Button type="button" variant="outline" onClick={credit}>
+  <Button type="button" variant="outline" onClick={credit} disabled={creditBusy || !(Number(creditAmount) > 0) || creditId === ""}>
     {creditMode === "debit" ? copy.applyDecrease : t("adminResellers.credit")}
   </Button>
 </CardContent>

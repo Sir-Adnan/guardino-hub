@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     USAGE_SYNC_REMOTE_LIST_PAGE_SIZE: int = 1000
     USAGE_SYNC_REMOTE_LIST_MAX_PAGES: int = 200
     USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS: int = 3
+    # A subaccount is only deleted after it has been reported missing for at
+    # least this many wall-clock hours (in addition to the confirmation count),
+    # so a transient panel/proxy outage that returns 404 cannot wipe live users.
+    USAGE_SYNC_REMOTE_MISSING_MIN_HOURS: int = 6
     EXPIRY_SYNC_BATCH_SIZE: int = 1000
 
     REFUND_WINDOW_DAYS: int = 10

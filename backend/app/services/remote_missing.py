@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.subaccount import SubAccount
 from app.models.user import GuardinoUser
@@ -49,3 +49,24 @@ def mark_remote_missing(user: GuardinoUser, subaccount: SubAccount, now: datetim
     meta["remote_missing"] = missing
     user.meta = meta
     return count
+
+
+def remote_missing_first_seen_at(user: GuardinoUser, subaccount: SubAccount) -> datetime | None:
+    """Return when this subaccount was first reported missing, if recorded."""
+    meta = user.meta if isinstance(user.meta, dict) else {}
+    missing = meta.get("remote_missing")
+    if not isinstance(missing, dict):
+        return None
+    record = missing.get(remote_missing_key(subaccount))
+    if not isinstance(record, dict):
+        return None
+    raw = record.get("first_seen_at")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed

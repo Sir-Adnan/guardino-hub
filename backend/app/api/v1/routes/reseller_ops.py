@@ -183,7 +183,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
     if time_amount > 0:
         reseller.balance -= time_amount
         charged = time_amount
-        db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, amount=-time_amount, reason="extend", balance_after=reseller.balance, occurred_at=now))
+        db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, client_request_id=request_id, amount=-time_amount, reason="extend", balance_after=reseller.balance, occurred_at=now))
 
     order.status = OrderStatus.completed
     await db.commit()
@@ -307,6 +307,7 @@ async def renew_user(user_id: int, payload: RenewRequest, request: Request, db: 
         LedgerTransaction(
             reseller_id=reseller.id,
             order_id=order.id,
+            client_request_id=request_id,
             amount=-total_amount,
             reason=f"renew_{renewal_policy}",
             balance_after=reseller.balance,
@@ -353,7 +354,16 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
 
     old_total_gb = int(user.total_gb)
     old_expire_at = user.expire_at
-    user.expire_at = old_expire_at - timedelta(days=int(payload.days))
+    # Cap the decreased days to the time the user actually has left, so a reseller
+    # cannot push expiry far into the past and be refunded for time that was
+    # never purchased. floor() keeps the refund conservative.
+    cap_now = _now()
+    expire_ref = old_expire_at if old_expire_at.tzinfo else old_expire_at.replace(tzinfo=timezone.utc)
+    remaining_days = max(0, int((expire_ref - cap_now).total_seconds() // 86400))
+    effective_days = max(0, min(int(payload.days), remaining_days))
+    if effective_days <= 0:
+        raise HTTPException(status_code=400, detail="No remaining time to decrease.")
+    user.expire_at = old_expire_at - timedelta(days=effective_days)
 
     # Update remote panels before local financial commit.
     qs_sub = await db.execute(select(SubAccount).where(SubAccount.user_id == user.id))
@@ -408,12 +418,13 @@ async def decrease_time(user_id: int, payload: DecreaseTimeRequest, request: Req
     now = _now()
     refund_amount = 0
     if reseller.price_per_day is not None and reseller.price_per_day > 0:
-        refund_amount = int(reseller.price_per_day) * int(payload.days)
+        refund_amount = int(reseller.price_per_day) * int(effective_days)
         reseller.balance += refund_amount
         db.add(
             LedgerTransaction(
                 reseller_id=reseller.id,
                 order_id=order.id,
+                client_request_id=request_id,
                 amount=refund_amount,
                 reason="refund_decrease_time",
                 balance_after=reseller.balance,
@@ -511,7 +522,7 @@ async def add_traffic(user_id: int, payload: AddTrafficRequest, request: Request
 
     now = _now()
     reseller.balance -= total_amount
-    db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, amount=-total_amount, reason="add_traffic", balance_after=reseller.balance, occurred_at=now))
+    db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, client_request_id=request_id, amount=-total_amount, reason="add_traffic", balance_after=reseller.balance, occurred_at=now))
 
     order.status = OrderStatus.completed
     await db.commit()
@@ -626,7 +637,7 @@ async def change_nodes(user_id: int, payload: ChangeNodesRequest, request: Reque
 
             reseller.balance -= total_amount
             charged = total_amount
-            db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, amount=-total_amount, reason="change_nodes_add", balance_after=reseller.balance, occurred_at=now))
+            db.add(LedgerTransaction(reseller_id=reseller.id, order_id=order.id, client_request_id=request_id, amount=-total_amount, reason="change_nodes_add", balance_after=reseller.balance, occurred_at=now))
             order.status = OrderStatus.completed
 
     await db.commit()
@@ -762,6 +773,7 @@ async def refund_or_delete(user_id: int, payload: RefundRequest, request: Reques
             LedgerTransaction(
                 reseller_id=reseller.id,
                 order_id=order.id,
+                client_request_id=request_id,
                 amount=refund_amount,
                 reason=f"refund_{payload.action}",
                 balance_after=reseller.balance,

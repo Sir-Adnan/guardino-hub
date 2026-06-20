@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.core.celery_app import celery_app
@@ -18,10 +18,41 @@ from app.services.status_policy import enforce_volume_exhausted
 from app.services.locks import redis_lock
 from app.services.task_metrics import TaskRunStats
 from app.services.dashboard_metrics import refresh_daily_metrics_for_resellers
-from app.services.remote_missing import clear_remote_missing, mark_remote_missing, remote_identifier
+from app.services.remote_missing import (
+    clear_remote_missing,
+    mark_remote_missing,
+    remote_identifier,
+    remote_missing_first_seen_at,
+)
 
 BYTES_PER_GB = 1024 ** 3
 logger = logging.getLogger(__name__)
+
+
+def _apply_remote_usage(s: SubAccount, raw_used: int | None) -> int:
+    """Update a subaccount's cumulative usage from a freshly read raw value.
+
+    Returns the cumulative ``used_bytes`` after the update. In the normal
+    monotonic case the cumulative value equals the raw value (identical to the
+    previous behavior). Only when the upstream counter drops — a panel-side
+    reset, monthly rollover or peer recreation — do we carry the prior total
+    forward instead of letting the user's usage silently go backwards, which
+    would otherwise let an exhausted user become usable again after a reset.
+    """
+    raw = max(0, int(raw_used or 0))
+    last_raw = getattr(s, "last_raw_used", None)
+    if last_raw is None:
+        # First observation / legacy row: adopt the raw value as the baseline.
+        s.used_bytes = raw
+    else:
+        last_raw_int = int(last_raw)
+        if raw >= last_raw_int:
+            s.used_bytes = int(s.used_bytes or 0) + (raw - last_raw_int)
+        else:
+            # Upstream counter reset/rolled over: carry the prior total forward.
+            s.used_bytes = int(s.used_bytes or 0) + raw
+    s.last_raw_used = raw
+    return int(s.used_bytes)
 
 
 def _sync_create_status_meta(user: GuardinoUser, remote_status: str | None, used_bytes: int, now: datetime) -> None:
@@ -109,6 +140,7 @@ async def _sync_usage_async():
     now = datetime.now(timezone.utc)
     batch_size = max(100, min(10000, int(getattr(settings, "USAGE_SYNC_BATCH_SIZE", 2000) or 2000)))
     missing_confirmations = max(1, min(20, int(getattr(settings, "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS", 3) or 3)))
+    missing_min_hours = max(0, int(getattr(settings, "USAGE_SYNC_REMOTE_MISSING_MIN_HOURS", 6) or 0))
     last_id = 0
     failure_log_budget = 25
 
@@ -303,14 +335,13 @@ async def _sync_usage_async():
                                 stats.remote_skipped += 1
                                 total_used += effective_used
                                 continue
-                        effective_used = max(0, int(used))
-                        s.used_bytes = effective_used
+                        cumulative_used = _apply_remote_usage(s, used)
                         s.last_sync_at = now
                         clear_remote_missing(u, s)
-                        _sync_create_status_meta(u, None, effective_used, now)
+                        _sync_create_status_meta(u, None, cumulative_used, now)
                         remote_success_count += 1
                         stats.remote_success += 1
-                        total_used += effective_used
+                        total_used += cumulative_used
                         continue
                     bulk_result = remote_list_by_access.get(access_key)
                     if bulk_result is not None:
@@ -318,17 +349,16 @@ async def _sync_usage_async():
                         remote_id = remote_identifier(s.remote_identifier)
                         remote_item = remote_items.get(remote_id)
                         if remote_item is not None:
-                            effective_used = max(0, int(remote_item.used_bytes or 0))
-                            s.used_bytes = effective_used
+                            cumulative_used = _apply_remote_usage(s, remote_item.used_bytes or 0)
                             s.last_sync_at = now
                             if remote_item.direct_sub_url:
                                 s.panel_sub_url_cached = remote_item.direct_sub_url
                                 s.panel_sub_url_cached_at = now
                             clear_remote_missing(u, s)
-                            _sync_create_status_meta(u, remote_item.status, effective_used, now)
+                            _sync_create_status_meta(u, remote_item.status, cumulative_used, now)
                             remote_success_count += 1
                             stats.remote_success += 1
-                            total_used += effective_used
+                            total_used += cumulative_used
                             continue
                         if remote_list_exhausted and access_key in remote_list_untrusted_missing_access:
                             direct_budget = int(remote_list_untrusted_direct_budget.get(access_key, 0))
@@ -349,29 +379,36 @@ async def _sync_usage_async():
                             stats.remote_skipped += 1
                             total_used += effective_used
                             continue
-                        effective_used = max(0, int(used))
-                        s.used_bytes = effective_used
+                        cumulative_used = _apply_remote_usage(s, used)
                         s.last_sync_at = now
                         clear_remote_missing(u, s)
-                        _sync_create_status_meta(u, remote_status, effective_used, now)
+                        _sync_create_status_meta(u, remote_status, cumulative_used, now)
                         remote_success_count += 1
                         stats.remote_success += 1
-                        total_used += effective_used
+                        total_used += cumulative_used
                     except RemoteUserNotFound:
                         stats.remote_missing += 1
                         missing_count = mark_remote_missing(u, s, now, source="direct_404")
-                        if missing_count < missing_confirmations:
+                        # Require BOTH enough confirmations AND a minimum wall-clock
+                        # window since the first miss, so a transient panel/proxy
+                        # outage returning 404 cannot permanently delete live users.
+                        first_seen = remote_missing_first_seen_at(u, s)
+                        enough_time = True
+                        if missing_min_hours > 0 and first_seen is not None:
+                            enough_time = (now - first_seen) >= timedelta(hours=missing_min_hours)
+                        if missing_count < missing_confirmations or not enough_time:
                             stats.remote_missing_pending += 1
                             stats.remote_skipped += 1
                             total_used += effective_used
                             if failure_log_budget > 0:
                                 logger.info(
-                                    "sync_usage remote user missing pending user_id=%s node_id=%s remote_identifier=%s confirmation=%s/%s",
+                                    "sync_usage remote user missing pending user_id=%s node_id=%s remote_identifier=%s confirmation=%s/%s enough_time=%s",
                                     u.id,
                                     s.node_id,
                                     s.remote_identifier,
                                     missing_count,
                                     missing_confirmations,
+                                    enough_time,
                                 )
                                 failure_log_budget -= 1
                             continue

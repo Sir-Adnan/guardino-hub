@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, newRequestId } from "@/lib/api";
 import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
 import { copyText } from "@/lib/copy";
@@ -365,6 +365,7 @@ export default function NewUserPage() {
   const [createFailed, setCreateFailed] = React.useState(0);
   const [createCurrentLabel, setCreateCurrentLabel] = React.useState("");
   const cancelCreateRef = React.useRef(false);
+  const creatingRef = React.useRef(false);
   const activeRequestRef = React.useRef<AbortController | null>(null);
   const appliedNodeSelectionFromUrlRef = React.useRef(false);
 
@@ -710,6 +711,8 @@ export default function NewUserPage() {
   }
 
   async function doCreate() {
+    if (creatingRef.current) return; // guard against double-submit before re-render disables the button
+    creatingRef.current = true;
     setLoading(true);
     setCreating(true);
     const created: CreatedUserLinks[] = [];
@@ -734,7 +737,7 @@ export default function NewUserPage() {
 
         const labelValue = buildLabel(i, count);
         setCreateCurrentLabel(labelValue);
-        const payload = buildPayload(labelValue);
+        const payload = { ...buildPayload(labelValue), request_id: newRequestId() };
         const ctrl = new AbortController();
         activeRequestRef.current = ctrl;
         try {
@@ -802,6 +805,7 @@ export default function NewUserPage() {
       setCreating(false);
       setCreateCurrentLabel("");
       setLoading(false);
+      creatingRef.current = false;
     }
   }
 

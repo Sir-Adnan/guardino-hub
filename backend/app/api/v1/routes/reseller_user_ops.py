@@ -219,6 +219,7 @@ async def create_user(
         ledger = LedgerTransaction(
             reseller_id=reseller.id,
             order_id=order.id,
+            client_request_id=request_id,
             amount=-total_amount,
             reason="user_create",
             balance_after=reseller.balance,

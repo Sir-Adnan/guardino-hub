@@ -24,4 +24,8 @@ class SubAccount(Base, TimestampMixin):
     panel_sub_url_cached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     used_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # Last raw usage value read from the upstream panel. Used by the usage sync
+    # to detect counter resets/rollovers so the cumulative `used_bytes` never
+    # goes backwards. NULL means "not yet observed" (legacy rows).
+    last_raw_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -16,7 +16,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { JalaliDateTimePicker } from "@/components/ui/jalali-datetime-picker";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, newRequestId } from "@/lib/api";
 import { copyText } from "@/lib/copy";
 import { fmtNumber, formatNumberWithDigits } from "@/lib/format";
 import { formatJalaliDateTime } from "@/lib/jalali";
@@ -275,6 +275,7 @@ export default function UserDetailPage() {
   const [nodes, setNodes] = React.useState<NodeLite[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
+  const opBusyRef = React.useRef(false);
   const [err, setErr] = React.useState<string | null>(null);
 
   const [opMode, setOpMode] = React.useState<OpMode>("renewal");
@@ -361,9 +362,17 @@ export default function UserDetailPage() {
   }, [userId, hasValidUserId]);
 
   async function runOp(path: string, body: any, successTitle: string) {
+    if (opBusyRef.current) return false; // block double-submit before re-render disables buttons
+    opBusyRef.current = true;
     setBusy(true);
     try {
-      const res = await apiFetch<OpResult>(path, { method: "POST", body: JSON.stringify(body) });
+      // Financial operations get an idempotency key so an accidental retry
+      // cannot double-charge / double-refund on the backend.
+      const financial = /(extend|add-traffic|renew|decrease-time|refund|change-nodes)$/.test(path);
+      const payload = financial
+        ? { ...(body || {}), request_id: (body && body.request_id) || newRequestId() }
+        : body;
+      const res = await apiFetch<OpResult>(path, { method: "POST", body: JSON.stringify(payload) });
       push({
         title: successTitle,
         desc: `${t("users.balance")}: ${fmtNumber(res.new_balance)}`,
@@ -377,6 +386,7 @@ export default function UserDetailPage() {
       return false;
     } finally {
       setBusy(false);
+      opBusyRef.current = false;
     }
   }
 

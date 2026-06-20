@@ -72,19 +72,43 @@ def current_totp(secret: str, now: int | None = None) -> str:
     return _hotp(secret, timestamp // TOTP_PERIOD_SECONDS)
 
 
-def verify_totp(secret: str, code: str | None, now: int | None = None, window: int = TOTP_WINDOW) -> bool:
+def verify_totp_step(secret: str, code: str | None, now: int | None = None, window: int = TOTP_WINDOW) -> int | None:
+    """Return the matched TOTP time-step counter, or None when the code is invalid.
+
+    The counter lets callers reject replays of an already-consumed code that is
+    still inside its validity window.
+    """
     normalized = normalize_otp_code(code)
     if len(normalized) != TOTP_DIGITS or not normalized.isdigit():
-        return False
+        return None
     timestamp = int(now if now is not None else time.time())
     counter = timestamp // TOTP_PERIOD_SECONDS
     try:
         for drift in range(-window, window + 1):
             if hmac.compare_digest(_hotp(secret, counter + drift), normalized):
-                return True
+                return counter + drift
     except Exception:
-        return False
-    return False
+        return None
+    return None
+
+
+def verify_totp(secret: str, code: str | None, now: int | None = None, window: int = TOTP_WINDOW) -> bool:
+    return verify_totp_step(secret, code, now=now, window=window) is not None
+
+
+def totp_step_from_datetime(value: datetime | None) -> int | None:
+    """Map a stored "last used" timestamp back to its TOTP time-step counter."""
+    if value is None:
+        return None
+    try:
+        return int(value.timestamp()) // TOTP_PERIOD_SECONDS
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def datetime_for_totp_step(step: int) -> datetime:
+    """Inverse of ``totp_step_from_datetime`` for persisting the consumed step."""
+    return datetime.fromtimestamp(int(step) * TOTP_PERIOD_SECONDS, tz=timezone.utc)
 
 
 def build_otpauth_uri(secret: str, username: str, issuer: str | None = None) -> str:
@@ -124,15 +148,31 @@ def verify_recovery_code(code: str | None, hashes: list[str] | None) -> tuple[bo
     return matched, remaining
 
 
-def verify_reseller_second_factor(reseller: Reseller, code: str | None) -> tuple[bool, bool]:
+def verify_reseller_second_factor(
+    reseller: Reseller,
+    code: str | None,
+    *,
+    last_used_step: int | None = None,
+) -> tuple[bool, bool, int | None]:
+    """Verify a TOTP code or a recovery code.
+
+    Returns ``(ok, used_recovery, used_step)``. ``used_step`` is the consumed
+    TOTP counter (or ``None`` for a recovery code) so the caller can persist it
+    and reject replays of the same code within its validity window.
+    """
     secret = decrypt_secret(getattr(reseller, "two_factor_secret_enc", None))
-    if secret and verify_totp(secret, code):
-        return True, False
+    if secret:
+        step = verify_totp_step(secret, code)
+        if step is not None:
+            if last_used_step is not None and step <= last_used_step:
+                # Same (or older) time-step already consumed: reject the replay.
+                return False, False, None
+            return True, False, step
     ok, remaining = verify_recovery_code(code, getattr(reseller, "two_factor_recovery_hashes", []) or [])
     if ok:
         reseller.two_factor_recovery_hashes = remaining
-        return True, True
-    return False, False
+        return True, True, None
+    return False, False, None
 
 
 def create_two_factor_challenge_token(reseller: Reseller, role: str) -> str:

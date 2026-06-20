@@ -33,11 +33,13 @@ from app.services.two_factor import (
     TWO_FACTOR_CHALLENGE_MINUTES,
     build_otpauth_uri,
     create_two_factor_challenge_token,
+    datetime_for_totp_step,
     decode_two_factor_challenge_token,
     encrypt_secret,
     generate_recovery_codes,
     generate_totp_secret,
     hash_recovery_codes,
+    totp_step_from_datetime,
     verify_reseller_second_factor,
     verify_totp,
 )
@@ -107,10 +109,11 @@ async def login_two_factor(payload: TwoFactorLoginRequest, request: Request, db:
             expires_in_seconds=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES) * 60,
         )
 
-    ok, _used_recovery = verify_reseller_second_factor(user, payload.code)
+    last_used_step = totp_step_from_datetime(getattr(user, "two_factor_last_used_at", None))
+    ok, _used_recovery, used_step = verify_reseller_second_factor(user, payload.code, last_used_step=last_used_step)
     if not ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid two-factor code.")
-    user.two_factor_last_used_at = datetime.now(timezone.utc)
+    user.two_factor_last_used_at = datetime_for_totp_step(used_step) if used_step is not None else datetime.now(timezone.utc)
     await db.commit()
     await clear_auth_identity_limit(action="two-factor", identity=rate_identity)
 
@@ -200,7 +203,8 @@ async def two_factor_disable(
     if not verify_password(payload.current_password, reseller.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
     if bool(getattr(reseller, "two_factor_enabled", False)):
-        ok, _used_recovery = verify_reseller_second_factor(reseller, payload.code)
+        last_used_step = totp_step_from_datetime(getattr(reseller, "two_factor_last_used_at", None))
+        ok, _used_recovery, _used_step = verify_reseller_second_factor(reseller, payload.code, last_used_step=last_used_step)
         if not ok:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid two-factor code.")
     reseller.two_factor_enabled = False
@@ -223,9 +227,12 @@ async def two_factor_regenerate_recovery_codes(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor authentication is not enabled.")
     if not verify_password(payload.current_password, reseller.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
-    ok, _used_recovery = verify_reseller_second_factor(reseller, payload.code)
+    last_used_step = totp_step_from_datetime(getattr(reseller, "two_factor_last_used_at", None))
+    ok, _used_recovery, used_step = verify_reseller_second_factor(reseller, payload.code, last_used_step=last_used_step)
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid two-factor code.")
+    if used_step is not None:
+        reseller.two_factor_last_used_at = datetime_for_totp_step(used_step)
     recovery_codes = generate_recovery_codes(RECOVERY_CODE_COUNT)
     reseller.two_factor_recovery_hashes = hash_recovery_codes(recovery_codes)
     await db.commit()

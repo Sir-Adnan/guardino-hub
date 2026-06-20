@@ -9,7 +9,7 @@ from app.core.db import get_db
 from app.core.security import ALGORITHM
 from app.core.rbac import Role
 from app.models.reseller import Reseller, ResellerStatus
-from app.services.api_tokens import find_active_api_token, touch_api_token
+from app.services.api_tokens import TOKEN_PREFIX, find_active_api_token, touch_api_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -31,16 +31,21 @@ async def get_current_principal(
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
 ) -> tuple[Reseller, Role]:
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    # Dispatch by credential type instead of falling through on decode errors.
+    # API tokens always carry the TOKEN_PREFIX; everything else is treated as a
+    # JWT, so an expired/invalid JWT is rejected outright rather than being
+    # reinterpreted as a (never-matching) API-token lookup.
+    if not token.startswith(TOKEN_PREFIX):
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
         sub: str | None = payload.get("sub")
         token_role: str | None = payload.get("role")
         token_mfa = bool(payload.get("mfa", False))
         if not sub or not token_role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="توکن نامعتبر است.")
-    except JWTError:
-        pass
-    else:
+
         q = await db.execute(select(Reseller).where(Reseller.username == sub))
         reseller = q.scalar_one_or_none()
         if not reseller:

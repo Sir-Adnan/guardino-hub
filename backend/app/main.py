@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
@@ -8,7 +10,33 @@ from app.core.db import AsyncSessionLocal
 from sqlalchemy import text
 from redis.asyncio import Redis
 
+logger = logging.getLogger(__name__)
+
 OPENAPI_URL = "/api/openapi.json"
+
+_INSECURE_SECRET_KEYS = {"", "please-change-me", "changeme", "change-me"}
+
+
+def _validate_runtime_security() -> None:
+    """Fail fast in production when the JWT signing key is a known placeholder.
+
+    A properly installed Guardino server has a randomized SECRET_KEY (the
+    installer rotates it), so this never trips on a real deployment. It only
+    guards against accidentally running with the public default value, which
+    would let anyone forge admin tokens.
+    """
+    env = str(getattr(settings, "ENV", "dev") or "dev").strip().lower()
+    secret = str(getattr(settings, "SECRET_KEY", "") or "").strip()
+    if env not in {"dev", "test", "local"} and secret.lower() in _INSECURE_SECRET_KEYS:
+        raise RuntimeError(
+            "SECRET_KEY is set to an insecure default. Set a strong random "
+            "SECRET_KEY in .env before starting in production (e.g. `openssl rand -hex 32`)."
+        )
+    if len(secret) < 32:
+        logger.warning(
+            "SECRET_KEY is shorter than 32 characters; use a longer random value for production."
+        )
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -16,6 +44,11 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    _validate_runtime_security()
 
 if settings.cors_origins_list:
     app.add_middleware(

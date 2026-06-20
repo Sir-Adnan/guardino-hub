@@ -671,6 +671,26 @@ restore_backup_archive() {
   db_user="$(env_get POSTGRES_USER guardino)"
   db_name="$(env_get POSTGRES_DB guardino)"
 
+  # Safety net: snapshot the CURRENT database BEFORE destroying the volume, so a
+  # corrupt/partial backup file can never leave the server with neither the old
+  # data nor a valid restore.
+  local safety_dir safety_file
+  safety_dir="${INSTALL_DIR}/backups/pre-restore-$(date -u +'%Y%m%dT%H%M%SZ')"
+  safety_file="${safety_dir}/db.sql.gz"
+  mkdir -p "${safety_dir}"
+  log_info "Snapshotting current database before restore..."
+  compose_base up -d db >/dev/null 2>&1 || true
+  if wait_for_db "${db_user}" "${db_name}"; then
+    if compose_base exec -T db pg_dump -U "${db_user}" -d "${db_name}" --no-owner --no-privileges 2>/dev/null | gzip -9 > "${safety_file}"; then
+      log_ok "Pre-restore safety snapshot saved: ${safety_file}"
+    else
+      rm -f "${safety_file}" 2>/dev/null || true
+      log_warn "Could not snapshot current database (it may be empty/new); continuing."
+    fi
+  else
+    log_warn "Current database not reachable for snapshot; continuing."
+  fi
+
   # Reset DB volume to ensure PostgreSQL initializes with restored .env credentials.
   compose_base down -v --remove-orphans >/dev/null 2>&1 || true
 
@@ -692,7 +712,18 @@ restore_backup_archive() {
   fi
 
   log_info "Restoring database data..."
-  gunzip -c "${root_dir}/database/db.sql.gz" | compose_base exec -T db psql -U "${db_user}" -d "${db_name}" >/dev/null
+  # ON_ERROR_STOP=1 makes a broken/partial dump fail loudly instead of silently
+  # restoring only some rows.
+  if ! gunzip -c "${root_dir}/database/db.sql.gz" | compose_base exec -T db psql -v ON_ERROR_STOP=1 -U "${db_user}" -d "${db_name}" >/dev/null; then
+    log_err "Database restore FAILED from the provided backup file."
+    if [ -f "${safety_file}" ]; then
+      log_err "Your previous data was snapshotted before the restore at:"
+      log_err "  ${safety_file}"
+      log_err "Recover it with:"
+      log_err "  gunzip -c '${safety_file}' | docker compose exec -T db psql -U '${db_user}' -d '${db_name}'"
+    fi
+    return 1
+  fi
 
   log_info "Starting full stack..."
   compose_effective up -d --build

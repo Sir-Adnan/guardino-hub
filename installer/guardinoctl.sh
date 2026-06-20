@@ -212,6 +212,7 @@ ensure_runtime_env_defaults() {
   env_set_if_missing "USAGE_SYNC_REMOTE_LIST_PAGE_SIZE" "1000"
   env_set_if_missing "USAGE_SYNC_REMOTE_LIST_MAX_PAGES" "200"
   env_set_if_missing "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS" "3"
+  env_set_if_missing "USAGE_SYNC_REMOTE_MISSING_MIN_HOURS" "6"
   env_set_if_missing "EXPIRY_SYNC_BATCH_SIZE" "1000"
   env_set_if_missing "HTTP_TIMEOUT_SECONDS" "60"
   env_set_if_missing "NEXT_PUBLIC_API_BASE" "/api"
@@ -698,7 +699,7 @@ validate_env_file() {
   file="$(env_file)"
   local errors=0
   local key value
-  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE USAGE_SYNC_REMOTE_LIST_PAGE_SIZE USAGE_SYNC_REMOTE_LIST_MAX_PAGES USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
+  for key in USAGE_SYNC_SECONDS EXPIRY_SYNC_SECONDS USAGE_SYNC_BATCH_SIZE USAGE_SYNC_REMOTE_LIST_PAGE_SIZE USAGE_SYNC_REMOTE_LIST_MAX_PAGES USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS USAGE_SYNC_REMOTE_MISSING_MIN_HOURS EXPIRY_SYNC_BATCH_SIZE HTTP_TIMEOUT_SECONDS; do
     value="$(env_get "${key}" "")"
     if [ -n "${value}" ] && ! [[ "${value}" =~ ^[0-9]+$ ]]; then
       fail "${key} must be a positive integer. Current value: ${value}"

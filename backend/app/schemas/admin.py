@@ -3,13 +3,15 @@ from typing import Optional, List
 
 from app.schemas.settings import ResellerUserPolicy
 
+_PRICE_MAX = 2_000_000_000  # keep per-unit prices safely within int32
+
 class CreateResellerRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=128)
     parent_id: Optional[int] = None
-    price_per_gb: int
-    bundle_price_per_gb: Optional[int] = 0
-    price_per_day: Optional[int] = 0
+    price_per_gb: int = Field(ge=0, le=_PRICE_MAX)
+    bundle_price_per_gb: Optional[int] = Field(default=0, ge=0, le=_PRICE_MAX)
+    price_per_day: Optional[int] = Field(default=0, ge=0, le=_PRICE_MAX)
     can_create_subreseller: bool = True
     user_policy: Optional[ResellerUserPolicy] = None
 
@@ -30,9 +32,9 @@ class ResellerOut(BaseModel):
 class UpdateResellerRequest(BaseModel):
     parent_id: Optional[int] = None
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
-    price_per_gb: Optional[int] = None
-    bundle_price_per_gb: Optional[int] = None
-    price_per_day: Optional[int] = None
+    price_per_gb: Optional[int] = Field(default=None, ge=0, le=_PRICE_MAX)
+    bundle_price_per_gb: Optional[int] = Field(default=None, ge=0, le=_PRICE_MAX)
+    price_per_day: Optional[int] = Field(default=None, ge=0, le=_PRICE_MAX)
     can_create_subreseller: Optional[bool] = None
     user_policy: Optional[ResellerUserPolicy] = None
 
@@ -41,8 +43,9 @@ class SetResellerStatusRequest(BaseModel):
     status: str = Field(min_length=3, max_length=16)  # active|disabled
 
 class CreditRequest(BaseModel):
-    amount: int
-    reason: str = Field(default="manual_credit")
+    # Negative amounts debit the wallet; bounded to avoid integer overflow.
+    amount: int = Field(ge=-1_000_000_000_000, le=1_000_000_000_000)
+    reason: str = Field(default="manual_credit", max_length=255)
     request_id: Optional[str] = Field(default=None, min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
