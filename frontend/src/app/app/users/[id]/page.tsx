@@ -440,8 +440,10 @@ export default function UserDetailPage() {
   const expiryDate = user ? new Date(user.expire_at) : null;
   const now = new Date();
   const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
-  const isExpired = daysLeft !== null ? daysLeft < 0 : false;
-  const isNearExpire = daysLeft !== null ? daysLeft >= 0 && daysLeft <= 3 : false;
+  // Compare timestamps directly: Math.ceil() of a small negative value rounds to
+  // 0, which would wrongly mark a user who expired hours ago as "not expired".
+  const isExpired = expiryDate ? expiryDate.getTime() < now.getTime() : false;
+  const isNearExpire = !isExpired && daysLeft !== null ? daysLeft >= 0 && daysLeft <= 3 : false;
   const isDisabled = (user?.status || "").toLowerCase() !== "active";
   const isExhausted = (user?.total_gb || 0) > 0 && usagePct >= 100;
   const blocked = isDisabled || isExpired || isExhausted;

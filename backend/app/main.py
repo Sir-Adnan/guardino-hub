@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse
@@ -62,33 +62,44 @@ if settings.cors_origins_list:
 app.include_router(api_router, prefix="/api/v1")
 
 
+def _docs_guard() -> None:
+    if not bool(getattr(settings, "EXPOSE_API_DOCS", True)):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 @app.get("/api/docs", include_in_schema=False)
 async def docs_alias():
+    _docs_guard()
     return get_swagger_ui_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} API docs")
 
 
 @app.get("/docs", include_in_schema=False)
 async def docs():
+    _docs_guard()
     return get_swagger_ui_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} API docs")
 
 
 @app.get("/api/redoc", include_in_schema=False)
 async def redoc_alias():
+    _docs_guard()
     return get_redoc_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} ReDoc")
 
 
 @app.get("/redoc", include_in_schema=False)
 async def redoc():
+    _docs_guard()
     return get_redoc_html(openapi_url=OPENAPI_URL, title=f"{settings.APP_NAME} ReDoc")
 
 
 @app.get("/api/openapi.json", include_in_schema=False)
 async def openapi_alias():
+    _docs_guard()
     return JSONResponse(app.openapi())
 
 
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi():
+    _docs_guard()
     return JSONResponse(app.openapi())
 
 @app.get("/health")

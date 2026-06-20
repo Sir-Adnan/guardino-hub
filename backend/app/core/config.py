@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = ""  # comma separated
     PANEL_TLS_VERIFY: bool = True
     HTTP_TIMEOUT_SECONDS: int = 60
+    # Set to false to hide /docs, /redoc and /openapi.json in production.
+    EXPOSE_API_DOCS: bool = True
 
     @property
     def cors_origins_list(self) -> List[str]:

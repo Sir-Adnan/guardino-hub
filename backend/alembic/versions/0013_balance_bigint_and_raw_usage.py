@@ -1,8 +1,11 @@
 """widen reseller balance to bigint and track raw subaccount usage
 
-Revision ID: 0013_balance_bigint_and_raw_usage
+Revision ID: 0013_bigint_raw_usage
 Revises: 0012_ledger_request_id
 Create Date: 2026-06-20
+
+NOTE: the revision id must stay <= 32 chars because alembic_version.version_num
+is VARCHAR(32). The filename can be longer; alembic reads the `revision` value.
 
 Both operations are idempotent and safe to re-run:
   * resellers.balance INTEGER -> BIGINT (tiny table, instant rewrite) so
@@ -18,7 +21,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0013_balance_bigint_and_raw_usage"
+revision = "0013_bigint_raw_usage"
 down_revision = "0012_ledger_request_id"
 branch_labels = None
 depends_on = None

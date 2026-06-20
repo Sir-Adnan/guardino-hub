@@ -241,7 +241,9 @@ class MarzbanAdapter:
         }
         if create_status == "on_hold":
             now = datetime.now(expire_at.tzinfo) if expire_at.tzinfo else datetime.utcnow()
-            duration = max(0, int((expire_at - now).total_seconds()))
+            # Clamp to int32 max: the "no expire" sentinel (~36500 days) overflows
+            # a signed 32-bit integer and the panel would reject it.
+            duration = max(0, min(int((expire_at - now).total_seconds()), 2_147_483_647))
             payload["expire"] = None
             payload["on_hold_expire_duration"] = duration
 

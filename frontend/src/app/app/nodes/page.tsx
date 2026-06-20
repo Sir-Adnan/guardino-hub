@@ -362,7 +362,8 @@ export default function NodesPage() {
     const defaults = items.filter((x) => x.default_for_reseller).length;
     const visible = items.filter((x) => x.is_visible_in_sub).length;
     const withOverride = items.filter((x) => x.price_per_gb_override != null).length;
-    const cheapest = items.length ? Math.min(...items.map((x) => effectivePerGb(x)).filter((x) => Number.isFinite(x))) : 0;
+    const finitePrices = items.map((x) => effectivePerGb(x)).filter((x) => Number.isFinite(x));
+    const cheapest = finitePrices.length ? Math.min(...finitePrices) : 0;
     const totalTags = tagOptions.length;
     return { total, defaults, visible, withOverride, cheapest, totalTags };
   }, [items, tagOptions, resellerStats]);
