@@ -69,7 +69,7 @@ guardino domain set panel.example.com
 guardino update
 ```
 
-آپدیت رسمی قبل از migration از PostgreSQL بکاپ می‌گیرد، imageها را build می‌کند، `alembic upgrade head` را اجرا می‌کند و سرویس‌ها را دوباره ایجاد می‌کند. migration فعلی پروژه تا revision `0011_dashboard_metric_bigint` ادامه دارد.
+آپدیت رسمی قبل از migration از PostgreSQL بکاپ می‌گیرد، imageها را build می‌کند، `alembic upgrade head` را اجرا می‌کند و سرویس‌ها را دوباره ایجاد می‌کند. migration فعلی پروژه تا revision `0012_ledger_request_id` ادامه دارد.
 
 Updater کلیدهای غایب `.env` را اضافه می‌کند. مقدارهای stock نسخه‌های قدیمی sync و timeout نیز به پروفایل پنل سنگین منتقل می‌شوند، در حالی که مقدارهای سفارشی حفظ می‌شوند.
 

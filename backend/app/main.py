@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.api.v1.router import api_router
 from app.core.db import AsyncSessionLocal
 from sqlalchemy import text
-import redis
+from redis.asyncio import Redis
 
 OPENAPI_URL = "/api/openapi.json"
 
@@ -68,9 +68,15 @@ async def health():
         db_ok = True
     except Exception:
         db_ok = False
+    rds = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
-        rds = redis.Redis.from_url(settings.REDIS_URL)
-        redis_ok = bool(rds.ping())
+        redis_ok = bool(await rds.ping())
     except Exception:
         redis_ok = False
-    return {"status": "ok" if db_ok and redis_ok else "degraded", "db_ok": db_ok, "redis_ok": redis_ok}
+    finally:
+        await rds.aclose()
+    healthy = db_ok and redis_ok
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "degraded", "db_ok": db_ok, "redis_ok": redis_ok},
+    )

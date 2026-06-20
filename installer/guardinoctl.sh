@@ -202,6 +202,10 @@ env_set_if_legacy_default() {
 
 ensure_runtime_env_defaults() {
   env_set_if_missing "REDIS_URL" "redis://redis:6379/0"
+  env_set_if_missing "API_TOKEN_TOUCH_INTERVAL_SECONDS" "300"
+  env_set_if_missing "AUTH_RATE_LIMIT_WINDOW_SECONDS" "300"
+  env_set_if_missing "AUTH_RATE_LIMIT_ATTEMPTS" "10"
+  env_set_if_missing "AUTH_RATE_LIMIT_IP_ATTEMPTS" "100"
   env_set_if_missing "USAGE_SYNC_SECONDS" "180"
   env_set_if_missing "EXPIRY_SYNC_SECONDS" "120"
   env_set_if_missing "USAGE_SYNC_BATCH_SIZE" "5000"

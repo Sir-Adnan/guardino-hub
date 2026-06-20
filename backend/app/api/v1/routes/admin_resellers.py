@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, case
+from sqlalchemy.exc import IntegrityError
 
 from app.core.db import get_db
 from app.api.deps import require_admin
@@ -18,6 +19,7 @@ from app.schemas.admin import (
     ResellerOut,
     ResellerList,
     CreditRequest,
+    CreditResponse,
     AllocationNodeSummary,
     GroupedAllocationItem,
     ResellerAllocationsGroupedList,
@@ -33,6 +35,7 @@ from app.models.node_allocation import NodeAllocation
 from app.schemas.settings import ResellerUserPolicy
 from app.services.api_tokens import api_token_to_out, create_api_token
 from app.services.billing import lock_reseller_for_billing
+from app.services.idempotency import request_id_from
 from app.services.reseller_user_policy import (
     delete_user_policy_setting,
     get_user_policy_setting_optional,
@@ -505,32 +508,80 @@ async def delete_reseller(
     await db.refresh(r)
     return _to_out(r)
 
-@router.post("/{reseller_id}/credit")
-async def credit_reseller(reseller_id: int, payload: CreditRequest, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+@router.post("/{reseller_id}/credit", response_model=CreditResponse)
+async def credit_reseller(
+    reseller_id: int,
+    payload: CreditRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    amount = int(payload.amount)
+    if amount == 0:
+        raise HTTPException(status_code=400, detail="Amount cannot be zero")
+    reason = (payload.reason or "").strip()
+    if not reason or (amount < 0 and reason == "manual_credit"):
+        reason = "manual_debit" if amount < 0 else "manual_credit"
+    request_id = request_id_from(request, payload)
+
+    async def replay_if_present() -> CreditResponse | None:
+        if not request_id:
+            return None
+        existing = (
+            await db.execute(
+                select(LedgerTransaction).where(
+                    LedgerTransaction.reseller_id == reseller_id,
+                    LedgerTransaction.client_request_id == request_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not existing:
+            return None
+        if int(existing.amount) != amount or str(existing.reason) != reason:
+            raise HTTPException(status_code=409, detail="request_id was already used with different credit data.")
+        return CreditResponse(
+            ok=True,
+            balance=int(existing.balance_after),
+            transaction_id=int(existing.id),
+            request_id=request_id,
+            detail="idempotent_replay=1",
+        )
+
+    replay = await replay_if_present()
+    if replay:
+        return replay
     q = await db.execute(select(Reseller).where(Reseller.id == reseller_id))
     r = q.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reseller not found")
     r = await lock_reseller_for_billing(db, r)
-
-    amount = int(payload.amount)
-    if amount == 0:
-        raise HTTPException(status_code=400, detail="Amount cannot be zero")
+    replay = await replay_if_present()
+    if replay:
+        return replay
     if r.balance + amount < 0:
         raise HTTPException(status_code=400, detail="Balance cannot become negative")
-
-    reason = (payload.reason or "").strip()
-    if not reason or (amount < 0 and reason == "manual_credit"):
-        reason = "manual_debit" if amount < 0 else "manual_credit"
 
     r.balance += amount
     tx = LedgerTransaction(
         reseller_id=r.id,
         order_id=None,
+        client_request_id=request_id,
         amount=amount,
         reason=reason,
         balance_after=r.balance,
     )
     db.add(tx)
-    await db.commit()
-    return {"ok": True, "balance": r.balance}
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        replay = await replay_if_present()
+        if replay:
+            return replay
+        raise
+    return CreditResponse(
+        ok=True,
+        balance=int(r.balance),
+        transaction_id=int(tx.id),
+        request_id=request_id,
+    )

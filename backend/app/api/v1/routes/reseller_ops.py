@@ -107,7 +107,7 @@ async def extend_user(user_id: int, payload: ExtendRequest, request: Request, db
 
     q = await db.execute(select(GuardinoUser).where(GuardinoUser.id == user_id, GuardinoUser.owner_reseller_id == reseller.id))
     user = q.scalar_one_or_none()
-    if not user or user.status == UserStatus.deleted or (payload.action != "delete" and user.status != UserStatus.active):
+    if not user or user.status != UserStatus.active:
         raise HTTPException(status_code=404, detail="User not found/active")
     policy = await get_effective_user_policy(db, reseller.id)
     enforce_edit_allowed(policy, "Extend")

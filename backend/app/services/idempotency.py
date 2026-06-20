@@ -28,7 +28,13 @@ def normalize_request_id(value: str | None) -> str | None:
 def request_id_from(request: Request, payload: Any | None = None) -> str | None:
     header_value = request.headers.get(REQUEST_ID_HEADER)
     body_value = getattr(payload, "request_id", None) if payload is not None else None
-    return normalize_request_id(header_value or body_value)
+    request_id = normalize_request_id(header_value or body_value)
+    if not request_id and getattr(request.state, "auth_type", "") == "api_token":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key or request_id is required for API-token financial operations.",
+        )
+    return request_id
 
 
 async def find_order_by_request_id(

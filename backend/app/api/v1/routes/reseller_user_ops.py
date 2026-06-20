@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
+import logging
 import secrets
 
 from app.core.db import get_db
@@ -25,6 +26,7 @@ from app.services.reseller_user_policy import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _panel_username(base_label: str) -> str:
@@ -162,7 +164,9 @@ async def create_user(
 
     provisioned: list[int] = []
     provisioned_nodes = []
+    provisioned_remote = []
     provision_errors: list[str] = []
+    committed = False
     try:
         for n in nodes:
             try:
@@ -175,6 +179,7 @@ async def create_user(
                     expire_at=expire_at,
                     status=create_status,
                 )
+                provisioned_remote.append((n, allocation, pr.remote_identifier))
             except Exception as e:
                 provision_errors.append(f"node#{n.id}: {str(e).strip()[:160]}")
                 continue
@@ -224,9 +229,8 @@ async def create_user(
         order.user_id = user.id
         order.status = OrderStatus.completed
 
-        await db.commit()
         subscription_url = str(request.base_url).rstrip("/") + f"/api/v1/sub/{user.master_sub_token}"
-        return CreateUserResponse(
+        response = CreateUserResponse(
             user_id=user.id,
             label=user.label,
             order_id=order.id,
@@ -238,6 +242,19 @@ async def create_user(
             balance_after=reseller.balance,
             nodes_provisioned=provisioned,
         )
+        await db.commit()
+        committed = True
+        return response
     except Exception:
         await db.rollback()
+        if not committed:
+            cleanup_errors: list[str] = []
+            for node, allocation, remote_identifier in reversed(provisioned_remote):
+                try:
+                    cleanup_adapter = get_adapter_for_allocation(node, allocation)
+                    await cleanup_adapter.delete_user(remote_identifier)
+                except Exception as cleanup_exc:
+                    cleanup_errors.append(f"node#{node.id}: {str(cleanup_exc).strip()[:160]}")
+            if cleanup_errors:
+                logger.error("create user remote rollback incomplete errors=%s", cleanup_errors)
         raise

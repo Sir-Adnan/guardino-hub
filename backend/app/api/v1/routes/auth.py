@@ -4,6 +4,7 @@ from sqlalchemy import select
 from datetime import datetime, timezone
 
 from app.core.db import get_db
+from app.core.config import settings
 from app.core.security import verify_password, create_access_token, hash_password
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -23,6 +24,7 @@ from app.api.deps import get_current_principal
 from app.models.api_token import ApiToken
 from app.schemas.api_tokens import ApiTokenCreateRequest, ApiTokenCreated, ApiTokenList
 from app.services.api_tokens import api_token_to_out, create_api_token
+from app.services.auth_rate_limit import clear_auth_identity_limit, enforce_auth_rate_limit
 from app.services.two_factor import (
     RECOVERY_CODE_COUNT,
     TOTP_ALGORITHM,
@@ -50,7 +52,9 @@ def _datetime_in_past(value: datetime | None) -> bool:
     return value <= now
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    rate_identity = payload.username.strip().lower()
+    await enforce_auth_rate_limit(request, action="password", identity=rate_identity)
     q = await db.execute(select(Reseller).where(Reseller.username == payload.username))
     user = q.scalar_one_or_none()
     if not user or not verify_password(payload.password, user.password_hash):
@@ -62,6 +66,7 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     # IMPORTANT: role must come from the database, not from parent_id.
     # Otherwise a reseller with parent_id=None could become an admin.
     role = (user.role or "reseller").strip().lower()
+    await clear_auth_identity_limit(action="password", identity=rate_identity)
     if bool(getattr(user, "two_factor_enabled", False)):
         challenge = create_two_factor_challenge_token(user, role)
         return TokenResponse(
@@ -71,17 +76,22 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         )
 
     token = create_access_token(subject=user.username, role=role)
-    return TokenResponse(access_token=token)
+    return TokenResponse(
+        access_token=token,
+        expires_in_seconds=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES) * 60,
+    )
 
 
 @router.post("/login/2fa", response_model=TokenResponse)
-async def login_two_factor(payload: TwoFactorLoginRequest, db: AsyncSession = Depends(get_db)):
+async def login_two_factor(payload: TwoFactorLoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     challenge = decode_two_factor_challenge_token(payload.challenge_token)
     if not challenge:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor challenge is invalid or expired.")
 
     username = str(challenge.get("sub") or "")
     reseller_id = int(challenge.get("rid") or 0)
+    rate_identity = f"{reseller_id}:{username}"
+    await enforce_auth_rate_limit(request, action="two-factor", identity=rate_identity)
     q = await db.execute(select(Reseller).where(Reseller.id == reseller_id, Reseller.username == username))
     user = q.scalar_one_or_none()
     if not user:
@@ -90,17 +100,25 @@ async def login_two_factor(payload: TwoFactorLoginRequest, db: AsyncSession = De
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled.")
     role = (user.role or "reseller").strip().lower()
     if not bool(getattr(user, "two_factor_enabled", False)):
+        await clear_auth_identity_limit(action="two-factor", identity=rate_identity)
         token = create_access_token(subject=user.username, role=role)
-        return TokenResponse(access_token=token)
+        return TokenResponse(
+            access_token=token,
+            expires_in_seconds=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES) * 60,
+        )
 
     ok, _used_recovery = verify_reseller_second_factor(user, payload.code)
     if not ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid two-factor code.")
     user.two_factor_last_used_at = datetime.now(timezone.utc)
     await db.commit()
+    await clear_auth_identity_limit(action="two-factor", identity=rate_identity)
 
     token = create_access_token(subject=user.username, role=role, mfa=True)
-    return TokenResponse(access_token=token)
+    return TokenResponse(
+        access_token=token,
+        expires_in_seconds=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES) * 60,
+    )
 
 @router.get("/me", response_model=MeResponse)
 async def me(principal=Depends(get_current_principal)):

@@ -73,6 +73,49 @@ def summarize_users(rows: Iterable[Any], now: datetime | None = None) -> dict[st
     return summary
 
 
+async def summarize_users_query(
+    db: AsyncSession,
+    *,
+    reseller_id: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    now = now or _aware_now()
+    status_active = GuardinoUser.status == UserStatus.active
+    status_disabled = GuardinoUser.status == UserStatus.disabled
+    status_deleted = GuardinoUser.status == UserStatus.deleted
+    not_deleted = GuardinoUser.status != UserStatus.deleted
+    create_status = func.coalesce(GuardinoUser.meta["create_status"].as_string(), "")
+    on_hold = and_(status_active, create_status == "on_hold")
+    expired = and_(not_deleted, ~status_disabled, ~on_hold, GuardinoUser.expire_at < now)
+    total_bytes = cast(GuardinoUser.total_gb, BigInteger) * literal(BYTES_PER_GB, type_=BigInteger())
+    volume_limited = and_(GuardinoUser.total_gb > 0, GuardinoUser.used_bytes >= total_bytes)
+    limited = and_(not_deleted, ~status_disabled, ~on_hold, GuardinoUser.expire_at >= now, volume_limited)
+    active = and_(status_active, ~on_hold, GuardinoUser.expire_at >= now, ~volume_limited)
+    accounted = accounted_user_condition()
+
+    stmt = select(
+        _count_if(not_deleted).label("total"),
+        _count_if(active).label("active"),
+        _count_if(status_disabled).label("disabled"),
+        _count_if(expired).label("expired"),
+        _count_if(limited).label("limited"),
+        _count_if(on_hold).label("on_hold"),
+        _count_if(and_(status_deleted, accounted)).label("deleted"),
+    )
+    if reseller_id is not None:
+        stmt = stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
+    row = (await db.execute(stmt)).one()
+    return {
+        "total": int(row.total or 0),
+        "active": int(row.active or 0),
+        "disabled": int(row.disabled or 0),
+        "expired": int(row.expired or 0),
+        "limited": int(row.limited or 0),
+        "on_hold": int(row.on_hold or 0),
+        "deleted": int(row.deleted or 0),
+    }
+
+
 def day_keys(days: int = 14, today: date | None = None) -> list[str]:
     today = today or datetime.now(timezone.utc).date()
     return [(today - timedelta(days=days - 1 - index)).isoformat() for index in range(days)]

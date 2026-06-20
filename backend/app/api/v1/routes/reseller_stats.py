@@ -23,7 +23,7 @@ from app.services.dashboard_metrics import (
     build_daily_series,
     build_daily_snapshot_series,
     set_today_series_value,
-    summarize_users,
+    summarize_users_query,
 )
 
 router = APIRouter()
@@ -40,19 +40,7 @@ async def get_reseller_stats(
     since = now - timedelta(days=30)
     series_since = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
 
-    user_rows = (
-        await db.execute(
-            select(
-                GuardinoUser.status,
-                GuardinoUser.expire_at,
-                GuardinoUser.used_bytes,
-                GuardinoUser.total_gb,
-                GuardinoUser.meta,
-                accounted_user_condition().label("is_accounted"),
-            ).where(GuardinoUser.owner_reseller_id == reseller.id)
-        )
-    ).all()
-    user_summary = summarize_users(user_rows, now)
+    user_summary = await summarize_users_query(db, reseller_id=reseller.id, now=now)
 
     zero_bigint = literal(0, type_=BigInteger())
     uq = await db.execute(

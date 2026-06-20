@@ -165,6 +165,10 @@ upgrade_kv_if_legacy_default() {
 # Keep required runtime keys present. Legacy stock defaults are upgraded to
 # heavy-panel defaults, while custom server tuning is preserved.
 ensure_kv_if_missing "REDIS_URL" "redis://redis:6379/0"
+ensure_kv_if_missing "API_TOKEN_TOUCH_INTERVAL_SECONDS" "300"
+ensure_kv_if_missing "AUTH_RATE_LIMIT_WINDOW_SECONDS" "300"
+ensure_kv_if_missing "AUTH_RATE_LIMIT_ATTEMPTS" "10"
+ensure_kv_if_missing "AUTH_RATE_LIMIT_IP_ATTEMPTS" "100"
 ensure_kv_if_missing "USAGE_SYNC_SECONDS" "180"
 ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "120"
 ensure_kv_if_missing "USAGE_SYNC_BATCH_SIZE" "5000"

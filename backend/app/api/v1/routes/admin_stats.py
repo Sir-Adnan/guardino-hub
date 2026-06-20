@@ -23,7 +23,7 @@ from app.services.dashboard_metrics import (
     build_daily_series,
     build_daily_snapshot_series,
     set_today_series_value,
-    summarize_users,
+    summarize_users_query,
 )
 
 router = APIRouter()
@@ -50,24 +50,14 @@ async def get_admin_stats(
     resellers_total = int(rq.scalar_one() or 0)
 
     accounted_user = accounted_user_condition()
-    user_stmt = select(
-        GuardinoUser.status,
-        GuardinoUser.expire_at,
-        GuardinoUser.used_bytes,
-        GuardinoUser.total_gb,
-        GuardinoUser.meta,
-        accounted_user.label("is_accounted"),
-    )
     zero_bigint = literal(0, type_=BigInteger())
     used_stmt = select(func.coalesce(func.sum(cast(GuardinoUser.used_bytes, BigInteger)), zero_bigint)).where(accounted_user)
     sold_stmt = select(func.coalesce(func.sum(cast(GuardinoUser.total_gb, BigInteger)), zero_bigint)).where(accounted_user)
     if reseller_id is not None:
-        user_stmt = user_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         used_stmt = used_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
         sold_stmt = sold_stmt.where(GuardinoUser.owner_reseller_id == reseller_id)
 
-    user_rows = (await db.execute(user_stmt)).all()
-    user_summary = summarize_users(user_rows, now)
+    user_summary = await summarize_users_query(db, reseller_id=reseller_id, now=now)
     used_bytes_total = int((await db.execute(used_stmt)).scalar_one() or 0)
     sold_gb_total = int((await db.execute(sold_stmt)).scalar_one() or 0)
 

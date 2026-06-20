@@ -5,7 +5,7 @@ from app.schemas.settings import ResellerUserPolicy
 
 class CreateResellerRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     parent_id: Optional[int] = None
     price_per_gb: int
     bundle_price_per_gb: Optional[int] = 0
@@ -29,7 +29,7 @@ class ResellerOut(BaseModel):
 
 class UpdateResellerRequest(BaseModel):
     parent_id: Optional[int] = None
-    password: Optional[str] = Field(default=None, min_length=6, max_length=128)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     price_per_gb: Optional[int] = None
     bundle_price_per_gb: Optional[int] = None
     price_per_day: Optional[int] = None
@@ -43,6 +43,15 @@ class SetResellerStatusRequest(BaseModel):
 class CreditRequest(BaseModel):
     amount: int
     reason: str = Field(default="manual_credit")
+    request_id: Optional[str] = Field(default=None, min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class CreditResponse(BaseModel):
+    ok: bool
+    balance: int
+    transaction_id: int
+    request_id: Optional[str] = None
+    detail: Optional[str] = None
 
 
 class DeleteResellerRequest(BaseModel):

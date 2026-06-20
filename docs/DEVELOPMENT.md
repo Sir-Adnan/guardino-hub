@@ -12,7 +12,7 @@
 - `backend/app/tasks`: taskهای Celery برای مصرف و انقضا
 - `backend/alembic/versions`: تاریخچه migrationهای PostgreSQL
 
-API با FastAPI اجرا می‌شود و sessionهای دیتابیس asynchronous هستند. revision فعلی Alembic برابر `0011_dashboard_metric_bigint` است.
+API با FastAPI اجرا می‌شود و sessionهای دیتابیس asynchronous هستند. revision فعلی Alembic برابر `0012_ledger_request_id` است.
 
 ## مدل‌های عملیاتی
 

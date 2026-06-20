@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.api_token import ApiToken
 from app.models.reseller import Reseller
 from app.schemas.api_tokens import ApiTokenOut
@@ -80,5 +81,13 @@ async def find_active_api_token(db: AsyncSession, raw_token: str) -> ApiToken | 
 
 
 async def touch_api_token(db: AsyncSession, token: ApiToken) -> None:
-    token.last_used_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    last_used_at = token.last_used_at
+    if last_used_at is not None:
+        if last_used_at.tzinfo is None:
+            last_used_at = last_used_at.replace(tzinfo=timezone.utc)
+        interval = max(60, int(getattr(settings, "API_TOKEN_TOUCH_INTERVAL_SECONDS", 300) or 300))
+        if last_used_at >= now - timedelta(seconds=interval):
+            return
+    token.last_used_at = now
     await db.commit()

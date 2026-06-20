@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "please-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    API_TOKEN_TOUCH_INTERVAL_SECONDS: int = 300
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    AUTH_RATE_LIMIT_ATTEMPTS: int = 10
+    AUTH_RATE_LIMIT_IP_ATTEMPTS: int = 100
 
     DATABASE_URL: str
 

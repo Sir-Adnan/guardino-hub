@@ -67,7 +67,7 @@ HTTP_TIMEOUT_SECONDS=60
 
 ## دیتابیس
 
-تاریخچه schema در `backend/alembic/versions` قرار دارد. revision فعلی `0011_dashboard_metric_bigint` است و مسیر استقرار migrationها را با دستور زیر اجرا می‌کند:
+تاریخچه schema در `backend/alembic/versions` قرار دارد. revision فعلی `0012_ledger_request_id` است و مسیر استقرار migrationها را با دستور زیر اجرا می‌کند:
 
 ```bash
 alembic upgrade head
