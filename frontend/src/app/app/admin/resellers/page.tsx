@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Menu } from "@/components/ui/menu";
@@ -1020,13 +1021,13 @@ export default function AdminResellersPage() {
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.password")}</div>
-                <Input value={credential.password} onChange={(e) => updateInitialNodeCredential(node.id, { password: e.target.value })} type="password" autoComplete="new-password" />
+                <PasswordInput value={credential.password} onChange={(e) => updateInitialNodeCredential(node.id, { password: e.target.value })} autoComplete="new-password" />
               </div>
             </>
           ) : (
             <div className="space-y-1 md:col-span-2">
               <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.token")}</div>
-              <Input value={credential.token} onChange={(e) => updateInitialNodeCredential(node.id, { token: e.target.value })} type="password" autoComplete="off" />
+              <PasswordInput value={credential.token} onChange={(e) => updateInitialNodeCredential(node.id, { token: e.target.value })} autoComplete="off" />
             </div>
           )}
         </div>
@@ -1095,7 +1096,7 @@ export default function AdminResellersPage() {
               <label className="text-sm flex items-center gap-2">
                 {editingId == null ? t("adminResellers.password") : t("adminResellers.passwordOptional")} <HelpTip text={t("adminResellers.help.password")} />
               </label>
-              <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder={editingId == null ? "******" : "(optional)"} />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder={editingId == null ? "******" : "(optional)"} />
             </div>
 
             <div className="space-y-2">

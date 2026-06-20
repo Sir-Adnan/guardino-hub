@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmModal } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Modal } from "@/components/ui/modal";
 import { Pagination } from "@/components/ui/pagination";
 import { Switch } from "@/components/ui/switch";
@@ -606,13 +607,13 @@ export default function AllocationsPage() {
                   </div>
                   <div className="space-y-1">
                     <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.password")}</div>
-                    <Input value={draft.password} onChange={(e) => onChange({ password: e.target.value })} type="password" autoComplete="new-password" />
+                    <PasswordInput value={draft.password} onChange={(e) => onChange({ password: e.target.value })} autoComplete="new-password" />
                   </div>
                 </>
               ) : (
                 <div className="space-y-1 md:col-span-2">
                   <div className="text-xs text-[hsl(var(--fg))]/65">{t("common.token")}</div>
-                  <Input value={draft.token} onChange={(e) => onChange({ token: e.target.value })} type="password" autoComplete="off" />
+                  <PasswordInput value={draft.token} onChange={(e) => onChange({ token: e.target.value })} autoComplete="off" />
                 </div>
               )}
             </div>
@@ -750,7 +751,21 @@ export default function AllocationsPage() {
             })}
           </div>
 
-          {!groups.length ? <div className="rounded-xl border border-[hsl(var(--border))] p-4 text-sm text-[hsl(var(--fg))]/70">{t("common.empty")}</div> : null}
+          {!groups.length ? (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-8 text-center">
+              <Link2 className="h-8 w-8 text-[hsl(var(--fg))]/35" />
+              <div className="text-sm font-medium text-[hsl(var(--fg))]/75">{t("common.empty")}</div>
+              <div className="max-w-sm text-xs text-[hsl(var(--fg))]/55">
+                {q.trim()
+                  ? lang === "fa"
+                    ? "نتیجه‌ای برای این جستجو پیدا نشد. عبارت دیگری را امتحان کنید."
+                    : "No results for this search. Try a different term."
+                  : lang === "fa"
+                  ? "هنوز تخصیصی ثبت نشده است. یک رسیلر را انتخاب کنید و نود به او تخصیص دهید."
+                  : "No allocations yet. Pick a reseller and assign a node to them."}
+              </div>
+            </div>
+          ) : null}
 
           <Pagination
             page={page}

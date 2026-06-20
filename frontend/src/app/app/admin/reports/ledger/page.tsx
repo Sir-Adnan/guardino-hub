@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
 import { useToast } from "@/components/ui/toast";
@@ -369,7 +370,11 @@ export default function LedgerPage() {
                 </div>
               );
             })}
-            {!items.length ? <div className="text-sm text-[hsl(var(--fg))]/70">{copy.empty}</div> : null}
+            {loading && !items.length
+              ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-20 w-full" />)
+              : !items.length
+              ? <div className="text-sm text-[hsl(var(--fg))]/70">{copy.empty}</div>
+              : null}
           </div>
 
           <div className="hidden overflow-x-auto md:block">
@@ -403,7 +408,13 @@ export default function LedgerPage() {
                     </tr>
                   );
                 })}
-                {!items.length ? (
+                {loading && !items.length
+                  ? [0, 1, 2, 3, 4].map((i) => (
+                      <tr key={i}>
+                        <td className="py-2" colSpan={6}><Skeleton className="h-6 w-full" /></td>
+                      </tr>
+                    ))
+                  : !items.length ? (
                   <tr>
                     <td className="py-3 text-[hsl(var(--fg))]/70" colSpan={6}>{copy.empty}</td>
                   </tr>

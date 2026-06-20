@@ -1509,14 +1509,16 @@ export default function SettingsPage() {
                         type="number"
                         min={1}
                         value={globalPolicy.min_days}
-                        onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, min_days: Number(e.target.value) || 1 }))}
+                        onChange={(e) => setGlobalPolicy((x) => ({ ...x, min_days: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
+                        onBlur={() => setGlobalPolicy((x) => normalizePolicy(x))}
                         placeholder={copy.minDays}
                       />
                       <Input
                         type="number"
                         min={1}
                         value={globalPolicy.max_days}
-                        onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, max_days: Number(e.target.value) || x.min_days || 1 }))}
+                        onChange={(e) => setGlobalPolicy((x) => ({ ...x, max_days: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
+                        onBlur={() => setGlobalPolicy((x) => normalizePolicy(x))}
                         placeholder={copy.maxDays}
                       />
                     </div>
@@ -1567,7 +1569,8 @@ export default function SettingsPage() {
                       type="number"
                       min={0}
                       value={globalPolicy.delete_refund_window_days}
-                      onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, delete_refund_window_days: Number(e.target.value) || 0 }))}
+                      onChange={(e) => setGlobalPolicy((x) => ({ ...x, delete_refund_window_days: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
+                      onBlur={() => setGlobalPolicy((x) => normalizePolicy(x))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1577,7 +1580,8 @@ export default function SettingsPage() {
                       min={0}
                       step="0.1"
                       value={globalPolicy.delete_expired_used_gb_limit}
-                      onChange={(e) => setGlobalPolicy((x) => normalizePolicy({ ...x, delete_expired_used_gb_limit: Number(e.target.value) || 0 }))}
+                      onChange={(e) => setGlobalPolicy((x) => ({ ...x, delete_expired_used_gb_limit: Math.max(0, Number(e.target.value) || 0) }))}
+                      onBlur={() => setGlobalPolicy((x) => normalizePolicy(x))}
                     />
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-card-1))] p-3 md:col-span-2">

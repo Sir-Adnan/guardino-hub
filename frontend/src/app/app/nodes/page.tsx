@@ -720,13 +720,13 @@ export default function NodesPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-1">
-                      {(n.tags || []).length ? (n.tags || []).map((tg) => <Badge key={tg} variant="muted">{tg}</Badge>) : <Badge variant="muted">{copy.noTags}</Badge>}
+                      {(n.tags || []).length ? (n.tags || []).map((tg, ti) => <Badge key={`${n.id}-tag-${ti}-${tg}`} variant="muted">{tg}</Badge>) : <Badge variant="muted">{copy.noTags}</Badge>}
                     </div>
 
                     {hints.length ? (
                       <div className="flex flex-wrap gap-1">
-                        {hints.map((h) => (
-                          <Badge key={h} variant="muted">{h}</Badge>
+                        {hints.map((h, hi) => (
+                          <Badge key={`${n.id}-hint-${hi}`} variant="muted">{h}</Badge>
                         ))}
                       </div>
                     ) : null}
