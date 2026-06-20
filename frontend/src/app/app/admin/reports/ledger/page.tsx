@@ -149,8 +149,10 @@ export default function LedgerPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(100);
   const [loading, setLoading] = React.useState(false);
+  const loadReqRef = React.useRef(0);
 
   async function load() {
+    const myReq = ++loadReqRef.current;
     setLoading(true);
     try {
       const offset = (page - 1) * pageSize;
@@ -161,13 +163,16 @@ export default function LedgerPage() {
 
       const endpoint = isAdmin ? "/api/v1/admin/reports/ledger" : "/api/v1/reseller/reports/ledger";
       const res = await apiFetch<any>(`${endpoint}?${q.toString()}`);
+      // Ignore stale responses so a slow earlier request can't overwrite newer data.
+      if (myReq !== loadReqRef.current) return;
       setItems((res.items || []) as LedgerRow[]);
       setSummary((res.summary || null) as LedgerSummary | null);
       setTotal(res.total || 0);
     } catch (e: any) {
+      if (myReq !== loadReqRef.current) return;
       push({ title: t("common.error"), desc: String(e.message || e), type: "error" });
     } finally {
-      setLoading(false);
+      if (myReq === loadReqRef.current) setLoading(false);
     }
   }
 

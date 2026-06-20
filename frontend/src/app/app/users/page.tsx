@@ -1628,6 +1628,24 @@ export default function UsersPage() {
         </div>
       )}
 
+      {data && items.length === 0 ? (
+        <Card className="rounded-xl">
+          <CardContent className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+            <div className="text-sm font-medium">
+              {lang === "en" ? "No users found" : "کاربری یافت نشد"}
+            </div>
+            <div className="text-xs text-[hsl(var(--fg))]/60">
+              {lang === "en"
+                ? "Create your first user to get started."
+                : "برای شروع، اولین کاربر خود را بسازید."}
+            </div>
+            <Button type="button" onClick={() => router.push("/app/users/new")}>
+              {lang === "en" ? "Create user" : "ساخت کاربر"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {data ? (
         <Pagination
           page={page}

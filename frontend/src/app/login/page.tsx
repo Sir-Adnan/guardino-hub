@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/brand-logo";
 import { HelpTip } from "@/components/ui/help-tip";
@@ -151,7 +152,7 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm">{copy.password}</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </div>
           </>
         )}

@@ -358,6 +358,14 @@ export default function NewUserPage() {
 
   const [quote, setQuote] = React.useState<QuoteResp | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  // Invalidate a shown price quote as soon as any price-affecting input changes,
+  // so a reseller can never act on a stale total.
+  React.useEffect(() => {
+    setQuote(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalGb, days, preset, pricingMode, nodeMode, nodeGroup, selectedNodeIds]);
+
   const [creating, setCreating] = React.useState(false);
   const [createTotal, setCreateTotal] = React.useState(0);
   const [createDone, setCreateDone] = React.useState(0);

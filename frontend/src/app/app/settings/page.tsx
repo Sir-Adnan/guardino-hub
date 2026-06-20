@@ -8,6 +8,7 @@ import { storage } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Switch } from "@/components/ui/switch";
 import { HelpTip } from "@/components/ui/help-tip";
 import { apiFetch } from "@/lib/api";
@@ -755,7 +756,8 @@ export default function SettingsPage() {
       setTwoFactorStatus({
         enabled: true,
         confirmed_at: new Date().toISOString(),
-        last_used_at: new Date().toISOString(),
+        // Not used for a login yet; avoid showing a fabricated "last used" time.
+        last_used_at: null,
         recovery_codes_remaining: res.recovery_codes?.length || 0,
       });
       push({ title: copy.toast2faEnabled, desc: copy.toast2faEnabledDesc, type: "success" });
@@ -940,8 +942,7 @@ export default function SettingsPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
               <div className="text-xs text-[hsl(var(--fg))]/70">{copy.currentPasswordLabel}</div>
-              <Input
-                type="password"
+              <PasswordInput
                 value={twoFactorPassword}
                 onChange={(e) => setTwoFactorPassword(e.target.value)}
                 autoComplete="current-password"
@@ -1168,9 +1169,9 @@ export default function SettingsPage() {
               <div className="text-xs text-[hsl(var(--fg))]/70">{copy.passwordDesc}</div>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-3 bg-[linear-gradient(145deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)]">
-              <Input type="password" placeholder={copy.currentPassword} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-              <Input type="password" placeholder={copy.newPassword} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-              <Input type="password" placeholder={copy.confirmPassword} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              <PasswordInput placeholder={copy.currentPassword} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
+              <PasswordInput placeholder={copy.newPassword} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
+              <PasswordInput placeholder={copy.confirmPassword} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
               <div className="md:col-span-3 flex gap-2">
                 <Button type="button" onClick={changePassword} disabled={pwdBusy}>{copy.saveNewPassword}</Button>
                 <Button
