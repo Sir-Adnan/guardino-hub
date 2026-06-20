@@ -83,14 +83,7 @@ Do not run `npm install`, `npm ci`, or `npm install <package>` without asking fi
 
 ## Docker Rules
 
-Docker commands are expensive. Do not run these automatically:
-
-```bash
-docker compose up -d --build
-docker compose build
-docker compose logs -f
-guardino update
-```
+Docker commands are expensive. Do not run them automatically (they are already listed in the Core Rule above).
 
 If Dockerfile, docker-compose files, dependency files, installer scripts, or update scripts changed, explain that a Docker/deploy check may be needed and ask for confirmation first.
 
@@ -161,13 +154,7 @@ Prefer additive migrations over destructive migrations.
 
 Do not drop columns, drop tables, clear data, rewrite ownership, reset balances, or rewrite historical financial records unless the user explicitly approves the risk.
 
-If a migration is required, clearly mention that deployment must run:
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-Do not run production migrations automatically unless the user explicitly asks.
+If a migration is required, clearly mention that deployment must run the migration command shown in the Migration Rule above.
 
 ### Sync and import safety
 
