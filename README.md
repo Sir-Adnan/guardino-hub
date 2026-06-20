@@ -1,8 +1,6 @@
 # Guardino Hub
 
-Guardino Hub یک پنل مرکزی برای فروش و مدیریت سرویس‌های VPN روی چند پنل بالادستی است. گاردینو بین پنل‌هایی مثل PasarGuard، Marzban و WGDashboard قرار می‌گیرد و یک لایه‌ی واحد برای فروش، رسیلرها، کیف پول، سفارش‌ها، کاربران، لینک‌های ساب و گزارش‌ها می‌سازد.
-
-هدف پروژه این است که سوپرادمین بتواند چندین نود و چندین رسیلر را از یک پنل کنترل کند، و هر رسیلر هم بدون درگیری مستقیم با پنل‌های بالادستی، کاربران خودش را بسازد، تمدید کند و فروشش را مدیریت کند.
+Guardino Hub پنل مرکزی فروش و مدیریت سرویس‌های VPN روی چند پنل بالادستی است. این پروژه PasarGuard، Marzban و WGDashboard را پشت یک API و پنل واحد قرار می‌دهد و مدیریت رسیلرها، کاربران، کیف پول، سفارش‌ها، دفترکل، لینک‌های اشتراک و گزارش‌ها را یکپارچه می‌کند.
 
 مخزن رسمی:
 
@@ -10,25 +8,22 @@ Guardino Hub یک پنل مرکزی برای فروش و مدیریت سرویس
 https://github.com/Sir-Adnan/guardino-hub
 ```
 
-## چرا Guardino Hub؟
+## قابلیت‌های اصلی
 
-- مدیریت متمرکز PasarGuard، Marzban و WGDashboard
-- پنل سوپرادمین و پنل رسیلر با کیف پول، قیمت‌گذاری و دفترکل مالی
-- ساخت، تمدید، افزایش حجم/زمان، حذف، ریفاند، revoke و reset usage طبق سیاست‌های قابل تنظیم
-- تخصیص نود به رسیلر با قیمت اختصاصی، نود پیش‌فرض و دسترسی فعال/غیرفعال
-- پشتیبانی از credential اختصاصی برای هر تخصیص؛ مناسب رسیلرهایی که در PasarGuard یا Marzban ادمین جدا دارند
-- import کاربران قدیمی رسیلر از پنل بالادستی بدون کسر موجودی
-- API token برای اتصال امن ابزارهای بیرونی و ربات تلگرام فروش
-- داشبورد آماری با فروش، حجم زده‌شده، مصرف ثبت‌شده و snapshot روزانه
-- اسکریپت نصب، آپدیت، بکاپ، ریستور، دامنه و SSL
-
-## قابلیت‌های کلیدی
-
-سوپرادمین می‌تواند نودها، رسیلرها، قیمت‌ها، موجودی‌ها، سیاست‌ها، API tokenها و تخصیص‌ها را مدیریت کند. رسیلر می‌تواند کاربران خودش را بسازد، وضعیت مصرف و انقضا را ببیند، سفارش‌ها را کنترل کند و لینک‌های مستقیم یا لینک ساب Guardino را تحویل بدهد.
-
-گاردینو برای سناریوی رشد فروش طراحی شده است: می‌توانید همه رسیلرها را روی credential اصلی یک نود نگه دارید، یا برای رسیلرهای بزرگ credential اختصاصی همان رسیلر را روی همان نود ثبت کنید تا کاربرانش در پنل بالادستی هم جدا و مرتب بمانند.
-
-جزئیات کامل قابلیت‌ها در [docs/FEATURES.md](docs/FEATURES.md) آمده است.
+- پنل جداگانه سوپرادمین و رسیلر
+- مدیریت PasarGuard، Marzban و WGDashboard
+- ساخت، تمدید، افزایش حجم و زمان، تغییر وضعیت، حذف، ریفاند، revoke و reset usage
+- کیف پول رسیلر، سفارش‌های idempotent و دفترکل قابل پیگیری
+- تخصیص نود با قیمت، وضعیت و credential مستقل برای هر رسیلر
+- حالت `shared` برای credential اصلی نود و `dedicated` برای حساب اختصاصی رسیلر
+- ورود کامل و صفحه‌بندی‌شده کاربران قدیمی بدون کسر موجودی
+- بازیابی رکوردهای قبلی Guardino هنگام ورود مجدد، با حفظ سابقه سفارش و ریفاند
+- sync مقاوم در برابر timeout، پاسخ ناقص و 404 موقت
+- API token محدود به سوپرادمین یا رسیلر مشخص
+- ورود دومرحله‌ای TOTP، کدهای بازیابی یک‌بارمصرف و نگهداری رمزنگاری‌شده secret
+- داشبورد فروش، مصرف، حجم ثبت‌شده، وضعیت کاربران و snapshotهای روزانه
+- رابط فارسی و انگلیسی، حالت روشن و تاریک و طراحی واکنش‌گرا
+- نصب، آپدیت، migration، بکاپ، ریستور، دامنه و SSL از طریق CLI
 
 ## معماری
 
@@ -37,7 +32,7 @@ Next.js Panel
     |
 FastAPI API
     |
-    +-- PostgreSQL: users, resellers, orders, ledger, nodes, metrics
+    +-- PostgreSQL: users, resellers, orders, ledger, nodes, settings, metrics
     +-- Redis/Celery: usage sync, expiry sync, background jobs
     |
     +-- PasarGuard adapter
@@ -45,7 +40,7 @@ FastAPI API
     +-- WGDashboard adapter
 ```
 
-Backend با FastAPI، SQLAlchemy Async، Alembic، PostgreSQL، Redis و Celery ساخته شده است. Frontend با Next.js App Router، React، Tailwind CSS و lucide-react پیاده‌سازی شده است.
+Backend با FastAPI، SQLAlchemy Async، Alembic، PostgreSQL، Redis و Celery اجرا می‌شود. Frontend بر پایه Next.js App Router، React، Tailwind CSS و lucide-react است. Nginx مسیرهای پنل و API را منتشر می‌کند.
 
 ## نصب سریع
 
@@ -55,63 +50,57 @@ Backend با FastAPI، SQLAlchemy Async، Alembic، PostgreSQL، Redis و Celery
 bash <(curl -Ls --ipv4 https://raw.githubusercontent.com/Sir-Adnan/guardino-hub/main/installer/guardino.sh)
 ```
 
-بعد از نصب، دستورهای سراسری زیر در دسترس هستند:
-
-```bash
-guardino help
-Guardino help
-```
-
 دستورهای پرکاربرد:
 
 ```bash
+guardino help
 guardino status
 guardino logs api
+guardino logs worker
 guardino update
 guardino backup full
 guardino restore /path/to/guardino_backup_YYYYmmddTHHMMSSZ.tar.gz
 guardino domain set panel.example.com
 ```
 
-راهنمای نصب، آپدیت، بکاپ و ریستور در [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) آمده است.
-
-## آپدیت امن
-
-برای آپدیت:
+## آپدیت و دیتابیس
 
 ```bash
 guardino update
 ```
 
-مسیر آپدیت قبل از اجرای migration یک بکاپ PostgreSQL در `backups/pre-update-*` می‌سازد و سپس همه migrationهای جدید را با دستور زیر اعمال می‌کند:
+آپدیت رسمی قبل از migration از PostgreSQL بکاپ می‌گیرد، imageها را build می‌کند، `alembic upgrade head` را اجرا می‌کند و سرویس‌ها را دوباره ایجاد می‌کند. migration فعلی پروژه تا revision `0011_dashboard_metric_bigint` ادامه دارد.
 
-```bash
-alembic upgrade head
+Updater کلیدهای غایب `.env` را اضافه می‌کند. مقدارهای stock نسخه‌های قدیمی sync و timeout نیز به پروفایل پنل سنگین منتقل می‌شوند، در حالی که مقدارهای سفارشی حفظ می‌شوند.
+
+پروفایل پیش‌فرض برای پنل‌های پرتعداد:
+
+```env
+USAGE_SYNC_SECONDS=180
+EXPIRY_SYNC_SECONDS=120
+USAGE_SYNC_BATCH_SIZE=5000
+USAGE_SYNC_REMOTE_LIST_PAGE_SIZE=1000
+USAGE_SYNC_REMOTE_LIST_MAX_PAGES=200
+USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS=3
+EXPIRY_SYNC_BATCH_SIZE=1000
+HTTP_TIMEOUT_SECONDS=60
 ```
 
-اگر در آینده مدل دیتابیس تغییر کند، باید migration جدید اضافه شود تا دیتابیس نسخه‌های قبلی بدون از دست رفتن اطلاعات به نسخه جدید تبدیل شود.
+## API
 
-## آماده برای ربات تلگرام
+OpenAPI هر نصب از مسیرهای زیر در دسترس است:
 
-Guardino Hub فعلا خودش ربات تلگرام نیست، اما API آن برای ربات فروش آماده شده است:
+```text
+https://YOUR_DOMAIN/api/openapi.json
+https://YOUR_DOMAIN/api/docs
+```
 
-- API token برای سوپرادمین و رسیلر
-- عملیات idempotent برای سفارش‌ها با `client_request_id`
-- جداسازی دسترسی رسیلرها
-- import کاربران قدیمی بدون شارژ مالی
-- تخصیص credential اختصاصی برای رسیلر روی نود مشترک
-- آمار فروش و مصرف برای داشبورد مدیریتی
+توکن‌های API محدوده دسترسی حساب را حفظ می‌کنند. عملیات مالی تکرارپذیر از `client_request_id` استفاده می‌کنند تا retry باعث سفارش یا کاربر تکراری نشود.
 
-جزئیات بیشتر در [docs/API_AND_BOT_READY.md](docs/API_AND_BOT_READY.md) آمده است.
+## مستندات
 
-## مسیر مستندات
-
-- [docs/FEATURES.md](docs/FEATURES.md): قابلیت‌ها و سناریوهای اصلی
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): نصب، آپدیت، بکاپ، ریستور و migration
-- [docs/API_AND_BOT_READY.md](docs/API_AND_BOT_READY.md): API، tokenها و آماده‌سازی برای ربات فروش
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): نکات توسعه برای انسان و AI
-- [docs/references/upstream-apis](docs/references/upstream-apis): فایل‌های مرجع API پنل‌های بالادستی
-
-## وضعیت پروژه
-
-گاردینو هاب به یک پایه‌ی بالغ برای پنل فروش چندرسیلری رسیده است: ساختار API، تخصیص‌های اختصاصی، import کاربران قبلی، آپدیت امن دیتابیس و داشبورد متریک‌ها آماده شده‌اند. برای تغییرات مالی، دیتابیس یا API عمومی، حتما migration، تست و مستندات همزمان به‌روزرسانی شوند.
+- [docs/FEATURES.md](docs/FEATURES.md): قابلیت‌های فعال و رفتار پنل
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): نصب، آپدیت، بکاپ، ریستور، دامنه و SSL
+- [docs/API_AND_BOT_READY.md](docs/API_AND_BOT_READY.md): قرارداد API برای ابزارهای بیرونی و ربات فروش
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): ساختار فعلی کد و محیط توسعه
+- [docs/references/upstream-apis](docs/references/upstream-apis): snapshot قرارداد API پنل‌های بالادستی

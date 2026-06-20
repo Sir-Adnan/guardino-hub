@@ -1,64 +1,59 @@
-# Development Notes
+# Current Project Structure
 
-این فایل برای توسعه‌دهندگان و AIهایی است که قرار است Guardino Hub را گسترش دهند.
+این سند ساختار فعلی Guardino Hub را توصیف می‌کند.
 
-## قبل از تغییر
+## Backend
 
-کد مرتبط را کامل بخوانید: route، schema، service، model، adapter، migration و صفحه frontend. رفتار مالی یا دیتابیس را از روی حدس تغییر ندهید.
-
-## ساختار مهم
-
-- `backend/app/api/v1/routes`: endpointهای API
+- `backend/app/api/v1/routes`: routeهای HTTP و کنترل دسترسی
 - `backend/app/models`: مدل‌های SQLAlchemy
-- `backend/app/schemas`: schemaهای Pydantic
-- `backend/app/services`: منطق دامنه، adapterها، قیمت‌گذاری، دسترسی پنل‌ها و متریک‌ها
-- `backend/app/tasks`: taskهای Celery مثل sync مصرف و انقضا
-- `backend/alembic/versions`: migrationهای دیتابیس
-- `frontend/src/app/app`: صفحات اصلی پنل
-- `frontend/src/lib/i18n.ts`: متن‌های چندزبانه
-- `installer`: نصب، آپدیت، بکاپ، ریستور و CLI
+- `backend/app/schemas`: مدل‌های ورودی و خروجی Pydantic
+- `backend/app/services`: منطق مالی، دسترسی پنل، امنیت، متریک‌ها و adapterها
+- `backend/app/services/adapters`: اتصال PasarGuard، Marzban و WGDashboard
+- `backend/app/tasks`: taskهای Celery برای مصرف و انقضا
+- `backend/alembic/versions`: تاریخچه migrationهای PostgreSQL
 
-## قوانین دیتابیس
+API با FastAPI اجرا می‌شود و sessionهای دیتابیس asynchronous هستند. revision فعلی Alembic برابر `0011_dashboard_metric_bigint` است.
 
-- هر تغییر model باید migration داشته باشد.
-- migration باید روی دیتابیس نسخه قبلی بدون حذف داده اجرا شود.
-- ستون جدید در جدول پرکاربر بهتر است ابتدا nullable/default-safe باشد.
-- backfillها باید قابل اجرای مجدد و امن باشند.
-- برای آپدیت production، مسیر رسمی همیشه `alembic upgrade head` است.
+## مدل‌های عملیاتی
 
-## قوانین مالی
+- `Reseller`: حساب سوپرادمین یا رسیلر، موجودی، قیمت و تنظیمات امنیتی
+- `Node`: پنل بالادستی و credential اصلی
+- `NodeAllocation`: اتصال یک رسیلر به یک نود با credential مشترک یا اختصاصی
+- `GuardinoUser`: حساب کاربر در Guardino
+- `SubAccount`: نگاشت کاربر Guardino به حساب همان کاربر روی یک نود
+- `Order`: عملیات مالی و وضعیت اجرای آن
+- `LedgerTransaction`: تغییرات موجودی قابل پیگیری
+- `DashboardDailyMetric`: snapshot روزانه آمار
+- `ApiToken`: دسترسی API محدود به حساب صادرکننده
 
-برای create، renew، add_traffic، extend، delete و refund این موارد را همزمان بررسی کنید:
+## Sync و import
 
-- سفارش با وضعیت درست ساخته می‌شود.
-- ledger دقیق و قابل audit است.
-- balance منفی نمی‌شود مگر سیاست اجازه دهد.
-- خطای پنل بالادستی باعث کسر پول بدون سرویس نمی‌شود.
-- import کاربران قدیمی شارژ مالی ایجاد نمی‌کند.
+`backend/app/tasks/usage.py` مصرف را به‌صورت batch و بر اساس access هر نود یا تخصیص دریافت می‌کند. لیست‌های ناقص remote قابل اعتماد تلقی نمی‌شوند و حذف remote تنها بعد از تأییدهای مستقیم متوالی انجام می‌شود.
 
-## adapterها
+ورود کاربران PasarGuard و Marzban صفحه‌بندی شده است. رکورد قدیمی Guardino در صورت تشخیص حذف اشتباه بازیابی می‌شود و سابقه مالی آن حفظ می‌ماند. کاربر خارجی جدید با مبدأ `external_import` ثبت می‌شود و ورود اولیه آن تراکنش مالی ایجاد نمی‌کند.
 
-adapter هر پنل باید تفاوت API بالادستی را پشت interface داخلی پنهان کند. تغییرات PasarGuard، Marzban یا WGDashboard نباید به صفحات UI یا منطق مالی نشت کند.
+## امنیت
 
-برای credential اختصاصی، از `NodeAllocation.credentials` و سرویس `panel_access` استفاده کنید. اگر تخصیص dedicated باشد، عملیات همان رسیلر باید با credential همان تخصیص انجام شود.
+احراز هویت شامل access token، API token و TOTP دومرحله‌ای است. secret دومرحله‌ای به‌شکل رمزنگاری‌شده و recovery codeها به‌شکل hash ذخیره می‌شوند.
 
-## داشبورد و متریک‌ها
+## Frontend
 
-مصرف کاربران در task سینک به‌روزرسانی می‌شود. برای اینکه داشبورد به اسکن سنگین کاربران وابسته نباشد، snapshot روزانه در `dashboard_daily_metrics` ذخیره می‌شود. endpointهای stats باید تا حد امکان از همین rollupهای سبک استفاده کنند و مقدار امروز را با جمع فعلی کاربران اصلاح کنند.
+- `frontend/src/app`: routeهای Next.js
+- `frontend/src/app/app`: صفحات پنل پس از ورود
+- `frontend/src/components`: اجزای مشترک رابط
+- `frontend/src/lib/i18n.ts`: متن‌های فارسی و انگلیسی
+- `frontend/src/lib/format.ts`: نمایش عدد، حجم و تاریخ
 
-## frontend
+Frontend با Next.js 14، React 18، Tailwind CSS، TanStack Query و lucide-react ساخته شده است.
 
-- UI باید RTL و موبایل را جدی بگیرد.
-- متن‌ها نباید از دکمه، کارت یا جدول بیرون بزنند.
-- لیست‌های پرتعداد باید اسکرول یا صفحه‌بندی داشته باشند، نه اینکه silently truncate شوند.
-- برای iconها از lucide-react استفاده کنید.
-- مسیرهای مدیریتی باید برای سوپرادمین و رسیلر از نظر دسترسی جدا بمانند.
+## Runtime
 
-## checklist قبل از تمام کردن تغییر
+Docker Compose سرویس‌های `db`، `redis`، `api`، `worker`، `beat`، `web` و `nginx` را اجرا می‌کند. تنظیمات runtime از `.env` خوانده می‌شوند.
 
-- `python -m compileall backend/app backend/alembic`
-- `npm run build` در frontend، اگر وابستگی‌ها نصب هستند
-- `git diff --check`
-- بررسی migration جدید و down_revision
-- بررسی آپدیت README یا docs اگر رفتار عمومی تغییر کرده است
-- تست سناریوی موبایل برای صفحات UI حساس
+دستورهای موجود برای بررسی محلی:
+
+```bash
+python -m compileall backend/app backend/alembic
+cd frontend && npm run build
+git diff --check
+```
