@@ -148,7 +148,22 @@ ensure_kv_if_missing() {
   fi
 }
 
-# Keep required runtime keys present, but preserve server-specific tuning.
+upgrade_kv_if_legacy_default() {
+  local key="$1"; local val="$2"; shift 2
+  local current
+  current="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"
+  local legacy
+  for legacy in "$@"; do
+    if [ "${current}" = "${legacy}" ]; then
+      sed -i "s#^${key}=.*#${key}=${val}#" .env
+      return 0
+    fi
+  done
+  return 0
+}
+
+# Keep required runtime keys present. Legacy stock defaults are upgraded to
+# heavy-panel defaults, while custom server tuning is preserved.
 ensure_kv_if_missing "REDIS_URL" "redis://redis:6379/0"
 ensure_kv_if_missing "USAGE_SYNC_SECONDS" "180"
 ensure_kv_if_missing "EXPIRY_SYNC_SECONDS" "120"
@@ -159,6 +174,12 @@ ensure_kv_if_missing "USAGE_SYNC_REMOTE_MISSING_CONFIRMATIONS" "3"
 ensure_kv_if_missing "EXPIRY_SYNC_BATCH_SIZE" "1000"
 ensure_kv_if_missing "HTTP_TIMEOUT_SECONDS" "60"
 ensure_kv_if_missing "NEXT_PUBLIC_API_BASE" "/api"
+
+upgrade_kv_if_legacy_default "USAGE_SYNC_SECONDS" "180" "60"
+upgrade_kv_if_legacy_default "EXPIRY_SYNC_SECONDS" "120" "60"
+upgrade_kv_if_legacy_default "USAGE_SYNC_BATCH_SIZE" "5000" "2000"
+upgrade_kv_if_legacy_default "EXPIRY_SYNC_BATCH_SIZE" "1000" "500"
+upgrade_kv_if_legacy_default "HTTP_TIMEOUT_SECONDS" "60" "15" "20" "45"
 
 env_get() {
   local key="$1"; local default_val="${2:-}"

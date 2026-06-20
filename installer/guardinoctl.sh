@@ -185,6 +185,21 @@ env_set_if_missing() {
   fi
 }
 
+env_set_if_legacy_default() {
+  local key="$1"
+  local value="$2"
+  shift 2
+  local current legacy
+  current="$(env_get "${key}" "")"
+  for legacy in "$@"; do
+    if [ "${current}" = "${legacy}" ]; then
+      env_set "${key}" "${value}"
+      return 0
+    fi
+  done
+  return 0
+}
+
 ensure_runtime_env_defaults() {
   env_set_if_missing "REDIS_URL" "redis://redis:6379/0"
   env_set_if_missing "USAGE_SYNC_SECONDS" "180"
@@ -196,6 +211,12 @@ ensure_runtime_env_defaults() {
   env_set_if_missing "EXPIRY_SYNC_BATCH_SIZE" "1000"
   env_set_if_missing "HTTP_TIMEOUT_SECONDS" "60"
   env_set_if_missing "NEXT_PUBLIC_API_BASE" "/api"
+
+  env_set_if_legacy_default "USAGE_SYNC_SECONDS" "180" "60"
+  env_set_if_legacy_default "EXPIRY_SYNC_SECONDS" "120" "60"
+  env_set_if_legacy_default "USAGE_SYNC_BATCH_SIZE" "5000" "2000"
+  env_set_if_legacy_default "EXPIRY_SYNC_BATCH_SIZE" "1000" "500"
+  env_set_if_legacy_default "HTTP_TIMEOUT_SECONDS" "60" "15" "20" "45"
 }
 
 backup_path() {
