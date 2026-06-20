@@ -79,7 +79,7 @@ npm run typecheck
 
 If `node_modules` is missing or `next is not recognized`, do not assume the UI code is broken. Report that frontend dependencies are not installed locally and wait for user confirmation before installing or building.
 
-Do not run `npm install <package>` without asking first, because it may modify `package.json`, `package-lock.json`, and the local dependency state.
+Do not run `npm install`, `npm ci`, or `npm install <package>` without asking first, because they may modify `package.json`, `package-lock.json`, and the local dependency state.
 
 ## Docker Rules
 
@@ -129,7 +129,7 @@ If changes are ready, summarize the changed files and suggest a commit message. 
 
 * Explain what changed, what was checked, and what still needs manual/full testing.
 * If a full build was not run, say that honestly.
-* Prefer small, safe commits over large mixed changes.
+* Prefer small, safe changes over large mixed changes.
 
 ## Production Data Safety
 
