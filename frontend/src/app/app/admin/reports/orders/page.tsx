@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
+import { downloadCsv } from "@/lib/csv";
 import { useToast } from "@/components/ui/toast";
 import { fmtNumber } from "@/lib/format";
 import { Pagination } from "@/components/ui/pagination";
@@ -228,6 +229,22 @@ export default function OrdersPage() {
     return { total: items.length, completed, pending, failed };
   }, [items, summary]);
 
+  function exportCsv() {
+    const en = lang === "en";
+    const rows = items.map((o) => ({
+      [en ? "ID" : "شناسه"]: o.id,
+      [en ? "Date" : "تاریخ"]: o.created_at ? formatJalaliDateTime(o.created_at) : "-",
+      [en ? "Reseller" : "ریسیلر"]: resellerName(o.reseller_id, resellerMap, isAdmin, lang),
+      [en ? "Type" : "نوع"]: orderTypeMeta(o, lang).label,
+      [en ? "Status" : "وضعیت"]: orderStatusMeta(o.status, lang).label,
+      [en ? "GB" : "حجم (GB)"]: o.purchased_gb ?? "",
+      [en ? "Price/GB" : "قیمت هر GB"]: o.price_per_gb_snapshot ?? "",
+    }));
+    if (!downloadCsv(`orders-page-${page}.csv`, rows)) {
+      push({ title: en ? "Nothing to export" : "داده‌ای برای خروجی نیست", type: "warning" });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[linear-gradient(112deg,hsl(var(--surface-card-1))_0%,hsl(var(--surface-card-3))_100%)] p-4 shadow-[0_15px_28px_-20px_hsl(var(--fg)/0.35)] sm:p-5">
@@ -282,8 +299,15 @@ export default function OrdersPage() {
 
       <Card className="overflow-hidden">
         <CardHeader>
-          <div className="text-xl font-semibold">{copy.detailsTitle}</div>
-          <div className="text-sm text-[hsl(var(--fg))]/70">{copy.detailsSubtitle}</div>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xl font-semibold">{copy.detailsTitle}</div>
+              <div className="text-sm text-[hsl(var(--fg))]/70">{copy.detailsSubtitle}</div>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={exportCsv} disabled={items.length === 0}>
+              {lang === "en" ? "Export CSV (this page)" : "خروجی CSV (این صفحه)"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {isAdmin ? (

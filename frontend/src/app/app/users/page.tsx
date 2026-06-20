@@ -615,26 +615,8 @@ export default function UsersPage() {
     };
   }, []);
 
-  function applyFilter(items: UserOut[]) {
-    const qq = debouncedQ.trim().toLowerCase();
-    let out = items;
-    if (qq) out = out.filter((u) => (u.label || "").toLowerCase().includes(qq));
-
-    if (filter !== "all") {
-      out = out.filter((u) => {
-        const state = userStatusInfo(u, lang).key;
-        if (filter === "active") return state === "active";
-        if (filter === "disabled") return state === "disabled";
-        if (filter === "expired") return state === "expired";
-        if (filter === "limited") return state === "limited";
-        if (filter === "on_hold") return state === "on_hold";
-        return true;
-      });
-    }
-
-    return out;
-  }
-
+  // Search (q) and status filtering are done server-side in load(); re-filtering
+  // here would drop ID matches and hide rows the server legitimately returned.
   function applySort(items: UserOut[]) {
     const arr = [...items];
 
@@ -704,8 +686,7 @@ export default function UsersPage() {
   }
 
   const rawItems = data?.items || [];
-  const filtered = applyFilter(rawItems);
-  const items = applySort(filtered);
+  const items = applySort(rawItems);
   const renewalOnly = !!(userPolicy?.enabled && userPolicy.restrict_edit_to_renewal_only);
   const renewalDurationPresets = React.useMemo(() => {
     const allowed = new Set((userPolicy?.allowed_duration_presets || []).map((x) => String(x).toLowerCase()));

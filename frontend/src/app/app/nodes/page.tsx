@@ -459,28 +459,28 @@ export default function NodesPage() {
                 <div className="text-xs text-[hsl(var(--fg))]/70">{copy.totalNodes}</div>
                 <Network size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.total}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.total)}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{copy.defaultNodes}</div>
                 <Star size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.defaults}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.defaults)}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{copy.visibleInSub}</div>
                 <ShieldCheck size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.visible}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.visible)}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[hsl(var(--fg))]/70">{copy.overridePrice}</div>
                 <Sparkles size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.withOverride}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.withOverride)}</div>
             </div>
             <div className={metricCardClass}>
               <div className="flex items-center justify-between">
@@ -494,7 +494,7 @@ export default function NodesPage() {
                 <div className="text-xs text-[hsl(var(--fg))]/70">{copy.activeTags}</div>
                 <Tags size={16} className="opacity-60" />
               </div>
-              <div className="mt-1 text-lg font-semibold">{stats.totalTags}</div>
+              <div className="mt-1 text-lg font-semibold">{fmtNumber(stats.totalTags)}</div>
             </div>
           </div>
 
